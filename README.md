@@ -20,9 +20,10 @@ On Windows use `.\mvnw.cmd` instead of `./mvnw`.
 ## Commands
 
 ```
-java -jar target/pecia.jar --help      # list commands
-java -jar target/pecia.jar --version   # print version
-java -jar target/pecia.jar init        # write a default .pecia.toml into the current directory
+java -jar target/pecia.jar --help                # list commands
+java -jar target/pecia.jar --version             # print version
+java -jar target/pecia.jar init                  # write a default .pecia.toml into the current directory
+java -jar target/pecia.jar index . --dry-run     # list the files that would be indexed, without embedding
 ```
 
 ## License

@@ -1,8 +1,11 @@
 package dev.eyuppastirmaci.pecia;
 
+import dev.eyuppastirmaci.pecia.cli.IndexCommand;
 import dev.eyuppastirmaci.pecia.cli.InitCommand;
 import dev.eyuppastirmaci.pecia.cli.PeciaCommand;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
+import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
+import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import picocli.CommandLine;
 
 public final class Bootstrap implements CommandLine.IFactory {
@@ -10,6 +13,8 @@ public final class Bootstrap implements CommandLine.IFactory {
     private final CommandLine.IFactory fallback = CommandLine.defaultFactory();
 
     private final PeciaConfigFile configFile = new PeciaConfigFile();
+
+    private final PeciaConfigLoader configLoader = new PeciaConfigLoader(new PeciaConfigParser());
 
     /**
      * Creates a command instance, injecting wired dependencies where needed.
@@ -22,6 +27,10 @@ public final class Bootstrap implements CommandLine.IFactory {
     public <K> K create(Class<K> cls) throws Exception {
         if (cls == InitCommand.class) {
             return cls.cast(new InitCommand(configFile));
+        }
+
+        if (cls == IndexCommand.class) {
+            return cls.cast(new IndexCommand(configLoader));
         }
 
         // Commands without wired dependencies are built by picocli's default factory.
