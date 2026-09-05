@@ -5,6 +5,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.index.GlobFilter;
+import dev.eyuppastirmaci.pecia.index.WalkResult;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -41,27 +42,40 @@ public class IndexCommand implements Callable<Integer> {
     /**
      * Runs the index command; only --dry-run is implemented so far.
      *
-     * @return 0 on a successful dry run, 1 otherwise
-     * @throws IOException if the config cannot be read or the folder cannot be walked
+     * @return 0 on a complete dry run, 1 on invalid input, incomplete scan, or unimplemented indexing
      */
     @Override
-    public Integer call() throws IOException {
+    public Integer call() {
         Path target = path.toAbsolutePath().normalize();
-
-        LoadedConfig loaded = configLoader.load(target);
 
         if (!dryRun) {
             spec.commandLine().getErr().println("pecia index: only --dry-run is implemented yet");
+
             return 1;
         }
 
-        FileWalker walker = new FileWalker(new GlobFilter(loaded.config().include(), loaded.config().exclude()));
+        try {
+            LoadedConfig loaded = configLoader.load(target);
+            FileWalker walker = new FileWalker(new GlobFilter(loaded.config().include(), loaded.config().exclude()));
+            WalkResult result = walker.scan(target, loaded.root());
+            report(loaded, result.files());
 
-        List<Path> files = walker.walk(target);
+            for (WalkResult.Issue issue : result.issues()) {
+                spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.reason());
+            }
 
-        report(loaded, files);
+            if (!result.complete()) {
+                spec.commandLine().getErr().println("pecia index: incomplete scan; listed files are only partial results");
 
-        return 0;
+                return 1;
+            }
+
+            return 0;
+        } catch (IOException | IllegalArgumentException failure) {
+            spec.commandLine().getErr().println("pecia index: " + failure.getMessage());
+
+            return 1;
+        }
     }
 
     private void report(LoadedConfig loaded, List<Path> files) {
@@ -76,7 +90,7 @@ public class IndexCommand implements Callable<Integer> {
         out.println(files.size() + " file(s) would be indexed:");
 
         for (Path file : files) {
-            out.println("  " + file);
+            out.println("  " + FileWalker.portablePath(file));
         }
     }
 }

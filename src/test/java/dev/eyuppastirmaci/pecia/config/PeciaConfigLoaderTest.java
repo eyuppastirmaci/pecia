@@ -20,6 +20,22 @@ class PeciaConfigLoaderTest {
     private final PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
 
     @Test
+    void fallsBackToNearestGitRootWithoutConfig() throws IOException {
+        Files.createDirectory(root.resolve(".git"));
+        Path nested = Files.createDirectories(root.resolve("src/deep"));
+        PeciaConfigLoader.LoadedConfig loaded = loader.load(nested);
+        assertFalse(loaded.fromFile());
+        assertEquals(root, loaded.root());
+    }
+
+    @Test
+    void gitWorktreeMarkerFileAlsoDefinesRoot() throws IOException {
+        Files.writeString(root.resolve(".git"), "gitdir: elsewhere");
+        Path nested = Files.createDirectories(root.resolve("src"));
+        assertEquals(root, loader.load(nested).root());
+    }
+
+    @Test
     void findsConfigInTheStartDirectory() throws IOException {
         Files.writeString(root.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 512\n");
 

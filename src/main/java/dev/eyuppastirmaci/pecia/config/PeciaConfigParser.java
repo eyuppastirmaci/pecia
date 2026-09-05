@@ -17,6 +17,7 @@ public final class PeciaConfigParser {
      *
      * @param toml raw TOML text
      * @return the parsed configuration
+     * @throws NullPointerException if toml is null
      * @throws IllegalArgumentException if the TOML is malformed or a value has the wrong type or an invalid range
      */
     public PeciaConfig parse(String toml) {
@@ -31,6 +32,7 @@ public final class PeciaConfigParser {
         return new PeciaConfig(
                 stringList(result, "index.include", defaults.include()),
                 stringList(result, "index.exclude", defaults.exclude()),
+                intValue(result, "index.max_file_bytes", defaults.maxFileBytes()),
                 intValue(result, "chunk.max_tokens", defaults.maxTokens()),
                 intValue(result, "chunk.overlap_tokens", defaults.overlapTokens()),
                 intValue(result, "embed.concurrency", defaults.embedConcurrency()),

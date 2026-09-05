@@ -18,6 +18,14 @@ class PeciaConfigTest {
     }
 
     @Test
+    void rejectsNonPositiveMaxFileBytes() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> new PeciaConfig(List.of(), List.of(), 0, 256, 32, 2, ".pecia/index.db"));
+
+        assertTrue(e.getMessage().contains("max_file_bytes"));
+    }
+
+    @Test
     void rejectsOverlapNotBelowMaxTokens() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> config(256, 256, 2, ".pecia/index.db"));
@@ -42,6 +50,6 @@ class PeciaConfigTest {
     }
 
     private static PeciaConfig config(int maxTokens, int overlapTokens, int concurrency, String storePath) {
-        return new PeciaConfig(List.of(), List.of(), maxTokens, overlapTokens, concurrency, storePath);
+        return new PeciaConfig(List.of(), List.of(), 1024, maxTokens, overlapTokens, concurrency, storePath);
     }
 }

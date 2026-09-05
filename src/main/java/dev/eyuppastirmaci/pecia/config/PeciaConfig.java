@@ -5,6 +5,7 @@ import java.util.List;
 public record PeciaConfig(
         List<String> include,
         List<String> exclude,
+        int maxFileBytes,
         int maxTokens,
         int overlapTokens,
         int embedConcurrency,
@@ -14,6 +15,11 @@ public record PeciaConfig(
     public PeciaConfig {
         include = List.copyOf(include);
         exclude = List.copyOf(exclude);
+
+        if (maxFileBytes <= 0) {
+
+            throw new IllegalArgumentException("index.max_file_bytes must be positive, got " + maxFileBytes);
+        }
 
         if (maxTokens <= 0) {
             throw new IllegalArgumentException("chunk.max_tokens must be positive, got " + maxTokens);
@@ -38,9 +44,11 @@ public record PeciaConfig(
      * @return the default configuration
      */
     public static PeciaConfig defaults() {
+
         return new PeciaConfig(
-                List.of("**/*.md", "**/*.txt", "**/*.java", "**/*.kt", "**/*.py", "**/*.ts"),
-                List.of("**/target/**", "**/node_modules/**"),
+                DefaultFileRules.includes(),
+                DefaultFileRules.excludes(),
+                5 * 1024 * 1024,
                 256,
                 32,
                 2,

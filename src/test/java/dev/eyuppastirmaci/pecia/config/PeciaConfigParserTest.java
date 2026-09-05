@@ -18,6 +18,7 @@ class PeciaConfigParserTest {
                 [index]
                 include = ["**/*.rs"]
                 exclude = ["**/build/**"]
+                max_file_bytes = 4096
 
                 [chunk]
                 max_tokens = 512
@@ -34,6 +35,7 @@ class PeciaConfigParserTest {
 
         assertEquals(List.of("**/*.rs"), config.include());
         assertEquals(List.of("**/build/**"), config.exclude());
+        assertEquals(4096, config.maxFileBytes());
         assertEquals(512, config.maxTokens());
         assertEquals(64, config.overlapTokens());
         assertEquals(4, config.embedConcurrency());
@@ -52,6 +54,7 @@ class PeciaConfigParserTest {
         assertEquals(512, config.maxTokens());
         assertEquals(PeciaConfig.defaults().overlapTokens(), config.overlapTokens());
         assertEquals(PeciaConfig.defaults().include(), config.include());
+        assertEquals(PeciaConfig.defaults().maxFileBytes(), config.maxFileBytes());
         assertEquals(PeciaConfig.defaults().storePath(), config.storePath());
     }
 

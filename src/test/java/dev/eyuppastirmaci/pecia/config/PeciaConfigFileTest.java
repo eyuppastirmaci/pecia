@@ -19,6 +19,11 @@ class PeciaConfigFileTest {
     private final PeciaConfigFile configFile = new PeciaConfigFile();
 
     @Test
+    void generatedConfigRoundTripsToAllRuntimeDefaults() {
+        assertEquals(PeciaConfig.defaults(), new PeciaConfigParser().parse(configFile.defaultToml()));
+    }
+
+    @Test
     void writesDefaultConfigWhenAbsent() throws IOException {
         boolean created = configFile.writeDefault(dir);
 

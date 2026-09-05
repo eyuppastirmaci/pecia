@@ -11,6 +11,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GlobFilterTest {
 
     @Test
+    void customGlobsAreCaseInsensitiveAndDoNotChangePaths() {
+        GlobFilter filter = new GlobFilter(List.of("Docs/*.{MD,TXT}"), List.of("**/SECRET.*"));
+        assertTrue(filter.matches(Path.of("docs/Guide.md")));
+        assertFalse(filter.matches(Path.of("DOCS/secret.TXT")));
+    }
+
+    @Test
+    void onlyWholeSubtreeExcludesPruneDirectories() {
+        GlobFilter filter = new GlobFilter(List.of("**/*.md"), List.of("**/build/**", "docs/*.txt"));
+        assertTrue(filter.excludesDirectory(Path.of("BUILD")));
+        assertTrue(filter.excludesDirectory(Path.of("sub/build")));
+        assertFalse(filter.excludesDirectory(Path.of("docs")));
+    }
+
+    @Test
     void recursiveGlobMatchesAtEveryDepthIncludingRoot() {
         GlobFilter filter = new GlobFilter(List.of("**/*.md"), List.of());
 

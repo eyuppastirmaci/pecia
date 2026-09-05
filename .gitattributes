@@ -1,0 +1,2 @@
+# Preserve the exact bytes of the checksum-verified upstream vocabulary.
+src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/vocab.txt -text
