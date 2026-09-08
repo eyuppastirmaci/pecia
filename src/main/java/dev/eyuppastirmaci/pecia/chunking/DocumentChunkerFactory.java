@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.chunking;
 
 import dev.eyuppastirmaci.pecia.content.DocumentType;
+import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
 
 import java.util.Objects;
 
@@ -15,6 +16,23 @@ public final class DocumentChunkerFactory {
         this.textChunker = Objects.requireNonNull(textChunker, "textChunker");
         this.markdownChunker = Objects.requireNonNull(markdownChunker, "markdownChunker");
         this.sourceCodeChunker = Objects.requireNonNull(sourceCodeChunker, "sourceCodeChunker");
+    }
+
+    /**
+     * Creates reusable text and Markdown strategies with a shared token policy and general text fallback for source code.
+     *
+     * @param tokenCounter tokenizer used by the built-in strategies
+     * @param maxTokens maximum input tokens including model-added special tokens
+     * @param overlapTokens maximum fallback overlap in content tokens
+     * @return a factory with Markdown-aware routing and a shared text strategy for the other document types
+     * @throws NullPointerException if tokenCounter or its identity is null
+     * @throws IllegalArgumentException if the token budget or overlap is incompatible with the tokenizer
+     */
+    public static DocumentChunkerFactory create(TokenCounter tokenCounter, int maxTokens, int overlapTokens) {
+        DocumentChunker textChunker = new TextChunker(tokenCounter, maxTokens, overlapTokens);
+        DocumentChunker markdownChunker = new MarkdownChunker(tokenCounter, maxTokens, overlapTokens);
+
+        return new DocumentChunkerFactory(textChunker, markdownChunker, textChunker);
     }
 
     /**
