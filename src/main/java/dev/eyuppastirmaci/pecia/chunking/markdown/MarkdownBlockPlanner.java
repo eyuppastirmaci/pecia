@@ -1,4 +1,6 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.markdown;
+
+import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
 
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
 import org.commonmark.node.BlockQuote;
@@ -48,7 +50,7 @@ final class MarkdownBlockPlanner {
     private List<MarkdownBlockGroup> plan(String text, boolean splitContainers) {
         requireNonNull(text, "text");
 
-        if (TextBoundaries.skipWhitespace(text, 0) == text.length()) {
+        if (SourceText.skipWhitespace(text, 0) == text.length()) {
             return List.of();
         }
 
@@ -134,7 +136,7 @@ final class MarkdownBlockPlanner {
             int end = lastSpan.getInputIndex() + lastSpan.getLength();
             String source = text.substring(lineStart(child), end);
 
-            if (TextBoundaries.skipWhitespace(source, 0) < source.length()) {
+            if (SourceText.skipWhitespace(source, 0) < source.length()) {
                 children.add(child);
             }
         }

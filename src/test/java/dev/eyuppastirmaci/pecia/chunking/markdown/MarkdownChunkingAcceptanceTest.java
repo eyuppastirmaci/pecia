@@ -1,4 +1,7 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.markdown;
+
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
@@ -46,11 +49,11 @@ class MarkdownChunkingAcceptanceTest {
                         byte[] bytes = ((bom ? "\uFEFF" : "") + text).getBytes(StandardCharsets.UTF_8);
                         Document document = extract(filename, bytes);
                         DocumentChunkerFactory factory = DocumentChunkerFactory.create(tokenizer, 24, overlap);
-                        List<Chunk> chunks = factory.getChunker(document.type()).chunk(document);
+                        List<Chunk> chunks = factory.getChunker(document).chunk(document);
                         assertEquals(text, document.content());
                         assertEquals(ContentHash.sha256(bytes), document.contentHash());
                         assertEquals(DocumentType.MARKDOWN, document.type());
-                        assertEquals(chunks, factory.getChunker(document.type()).chunk(document));
+                        assertEquals(chunks, factory.getChunker(document).chunk(document));
                         assertTrue(chunks.stream().anyMatch(chunk -> chunk.content().contains(list)));
                         verifyCoverage(document, chunks, 24, overlap);
 
@@ -74,7 +77,7 @@ class MarkdownChunkingAcceptanceTest {
             String text = whitespace + "\n\n# Root\n\n" + "word ".repeat(80) + "\n\n" + whitespace;
             Document document = extract("guide.md", text.getBytes(StandardCharsets.UTF_8));
             List<Chunk> chunks = DocumentChunkerFactory.create(tokenizer, 8, 2)
-                                                     .getChunker(document.type()).chunk(document);
+                                                     .getChunker(document).chunk(document);
             verifyCoverage(document, chunks, 8, 2);
 
             for (Chunk chunk : chunks) {
@@ -89,7 +92,7 @@ class MarkdownChunkingAcceptanceTest {
     void preservesWhitespaceOnlyParagraphsInsideOversizedListItems() throws Exception {
         String text = "# Root\n- " + "first ".repeat(30) + "\n\n  \f\n\n  " + "last ".repeat(30) + "\n";
         Document document = extract("guide.md", text.getBytes(StandardCharsets.UTF_8));
-        List<Chunk> chunks = DocumentChunkerFactory.create(tokenizer, 8, 2).getChunker(document.type()).chunk(document);
+        List<Chunk> chunks = DocumentChunkerFactory.create(tokenizer, 8, 2).getChunker(document).chunk(document);
         verifyCoverage(document, chunks, 8, 2);
 
         for (Chunk chunk : chunks) {
@@ -101,7 +104,7 @@ class MarkdownChunkingAcceptanceTest {
     void preservesResultsAcrossTurkishAndEnglishLocales() throws Exception {
         Document document = extract("İÇERİK.MD", ("# İÇERİK\n\n## İstanbul\n" + "ödeme doğrulama ".repeat(30))
                 .getBytes(StandardCharsets.UTF_8));
-        DocumentChunker chunker = DocumentChunkerFactory.create(tokenizer, 16, 3).getChunker(document.type());
+        DocumentChunker chunker = DocumentChunkerFactory.create(tokenizer, 16, 3).getChunker(document);
         List<Chunk> expected = chunker.chunk(document);
         Locale previous = Locale.getDefault();
 
@@ -124,7 +127,7 @@ class MarkdownChunkingAcceptanceTest {
         for (int index = 0; index < 12; index++) {
             String text = "# Document " + index + "\n## Child\n" + "hello world ".repeat(30);
             Document document = extract("guide" + index + ".md", text.getBytes(StandardCharsets.UTF_8));
-            DocumentChunker chunker = factory.getChunker(document.type());
+            DocumentChunker chunker = factory.getChunker(document);
             expected.add(chunker.chunk(document));
             tasks.add(() -> chunker.chunk(document));
         }

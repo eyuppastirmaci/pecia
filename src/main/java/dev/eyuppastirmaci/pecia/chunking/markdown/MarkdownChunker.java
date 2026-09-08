@@ -1,4 +1,8 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.markdown;
+
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
+import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
+import dev.eyuppastirmaci.pecia.chunking.text.TextChunker;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
@@ -40,14 +44,14 @@ public final class MarkdownChunker implements DocumentChunker {
             return List.of();
         }
 
-        TextBoundaries boundaries = new TextBoundaries(document.content());
+        SourceText boundaries = new SourceText(document.content());
         List<MarkdownSection> sections = sectionParser.parse(document.content());
         List<Chunk> chunks = new ArrayList<>();
         int sectionIndex = 0;
 
         for (MarkdownBlockGroup group : groups) {
             // Leading blank lines can share a group with the first heading, so use the first non-whitespace source character.
-            int contextOffset = TextBoundaries.skipWhitespace(document.content(), group.startOffset());
+            int contextOffset = SourceText.skipWhitespace(document.content(), group.startOffset());
 
             while (sectionIndex + 1 < sections.size() && sections.get(sectionIndex).endOffset() <= contextOffset) {
                 sectionIndex++;
@@ -66,7 +70,7 @@ public final class MarkdownChunker implements DocumentChunker {
     }
 
     /* Translates fragment-local fallback offsets back to the original document without changing its raw-byte hash or source text. */
-    private void appendFallback(Document document, TextBoundaries boundaries, MarkdownBlockGroup group,
+    private void appendFallback(Document document, SourceText boundaries, MarkdownBlockGroup group,
                                 List<String> headingPath, List<Chunk> chunks) {
         String content = document.content().substring(group.startOffset(), group.endOffset());
         Document fragment = new Document(document.sourcePath(), document.type(), content, document.contentHash());
@@ -78,7 +82,7 @@ public final class MarkdownChunker implements DocumentChunker {
         }
     }
 
-    private static void append(Document document, TextBoundaries boundaries, int start, int end,
+    private static void append(Document document, SourceText boundaries, int start, int end,
                                List<String> headingPath, List<Chunk> chunks) {
         // Heading context remains metadata only, leaving the exact source slice and its token budget unchanged.
         ChunkMetadata metadata = new ChunkMetadata(headingPath, Map.of(

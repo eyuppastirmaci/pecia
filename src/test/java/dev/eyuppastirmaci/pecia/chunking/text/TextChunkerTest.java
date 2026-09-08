@@ -1,4 +1,6 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.text;
+
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
@@ -169,7 +171,7 @@ class TextChunkerTest {
 
         for (DocumentType type : List.of(DocumentType.PLAIN_TEXT, DocumentType.STRUCTURED_TEXT)) {
             Document document = document("name: sample\nvalue: another value\n".repeat(4), type);
-            verify(document, factory.getChunker(type).chunk(document), 12, 0);
+            verify(document, factory.getChunker(document).chunk(document), 12, 0);
         }
     }
 

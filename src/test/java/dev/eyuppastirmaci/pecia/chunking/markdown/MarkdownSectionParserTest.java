@@ -1,4 +1,4 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.markdown;
 
 import org.junit.jupiter.api.Test;
 

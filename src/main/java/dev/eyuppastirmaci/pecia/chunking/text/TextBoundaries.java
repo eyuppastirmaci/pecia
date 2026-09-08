@@ -1,45 +1,40 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.text;
+
+import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
 
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
+import static dev.eyuppastirmaci.pecia.chunking.internal.SourceText.isLineBreak;
+import static dev.eyuppastirmaci.pecia.chunking.internal.SourceText.isWhitespace;
+import static dev.eyuppastirmaci.pecia.chunking.internal.SourceText.nextOffset;
+
 final class TextBoundaries {
 
-    private final int[] wordEnds;
+    private final SourceText source;
     private final int[] paragraphEnds;
     private final int[] sentenceEnds;
     private final int[] lineEnds;
-    private final int[] lineStarts;
 
     TextBoundaries(String text) {
-        IntStream.Builder words = IntStream.builder();
+        source = new SourceText(text);
         IntStream.Builder paragraphs = IntStream.builder();
         IntStream.Builder sentences = IntStream.builder();
         IntStream.Builder lines = IntStream.builder();
-        IntStream.Builder starts = IntStream.builder().add(0);
-        int offset = 0;
 
-        while (offset < text.length()) {
-            int next = nextOffset(text, offset);
+        for (int index = 0; index < source.wordCount(); index++) {
+            int end = source.wordEnd(index);
+            int wordEnd = end;
 
-            if (isLineBreak(text.charAt(offset))) {
-                starts.add(next);
+            // Separate the word from its preserved whitespace suffix before applying prose-only boundary preferences.
+            while (wordEnd > 0 && isWhitespace(text.codePointBefore(wordEnd))) {
+                wordEnd -= Character.charCount(text.codePointBefore(wordEnd));
             }
 
-            offset = next;
-        }
-
-        offset = skipWhitespace(text, 0);
-
-        while (offset < text.length()) {
-            while (offset < text.length() && !isWhitespace(text.codePointAt(offset))) {
-                offset = nextOffset(text, offset);
-            }
-
-            int wordEnd = offset;
+            int offset = wordEnd;
             int lineBreaks = 0;
 
-            while (offset < text.length() && isWhitespace(text.codePointAt(offset))) {
+            while (offset < end) {
                 if (isLineBreak(text.charAt(offset))) {
                     lineBreaks++;
                 }
@@ -47,40 +42,34 @@ final class TextBoundaries {
                 offset = nextOffset(text, offset);
             }
 
-            words.add(offset);
-
             if (lineBreaks >= 2) {
-                paragraphs.add(offset);
+                paragraphs.add(end);
             }
 
             if (endsSentence(text, wordEnd)) {
-                sentences.add(offset);
+                sentences.add(end);
             }
 
             if (lineBreaks > 0) {
-                lines.add(offset);
+                lines.add(end);
             }
         }
 
-        wordEnds = words.build().toArray();
         paragraphEnds = paragraphs.build().toArray();
         sentenceEnds = sentences.build().toArray();
         lineEnds = lines.build().toArray();
-        lineStarts = starts.build().toArray();
     }
 
     int wordCount() {
-        return wordEnds.length;
+        return source.wordCount();
     }
 
     int wordEnd(int index) {
-        return wordEnds[index];
+        return source.wordEnd(index);
     }
 
     int firstWordAfter(int offset) {
-        int index = Arrays.binarySearch(wordEnds, offset);
-
-        return index >= 0 ? index + 1 : -index - 1;
+        return source.firstWordAfter(offset);
     }
 
     /* Prefers the latest complete paragraph, then sentence, then line without sacrificing new source coverage. */
@@ -97,34 +86,7 @@ final class TextBoundaries {
     }
 
     int lineAt(int offset) {
-        int index = Arrays.binarySearch(lineStarts, offset);
-
-        return index >= 0 ? index + 1 : -index - 1;
-    }
-
-    /* Advances by one Unicode code point or one complete CRLF sequence without altering the source. */
-    static int nextOffset(String text, int offset) {
-        if (text.charAt(offset) == '\r' && offset + 1 < text.length() && text.charAt(offset + 1) == '\n') {
-            return offset + 2;
-        }
-
-        return offset + Character.charCount(text.codePointAt(offset));
-    }
-
-    static int skipWhitespace(String text, int offset) {
-        while (offset < text.length() && isWhitespace(text.codePointAt(offset))) {
-            offset = nextOffset(text, offset);
-        }
-
-        return offset;
-    }
-
-    private static boolean isWhitespace(int codePoint) {
-        return Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint);
-    }
-
-    private static boolean isLineBreak(char character) {
-        return character == '\r' || character == '\n';
+        return source.lineAt(offset);
     }
 
     /* Recognizes simple sentence-ending punctuation, allowing closing quotes and brackets after it. */

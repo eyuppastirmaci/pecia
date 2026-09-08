@@ -1,4 +1,6 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.markdown;
+
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;

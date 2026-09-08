@@ -1,4 +1,7 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.text;
+
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
+import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
@@ -49,7 +52,7 @@ public final class TextChunker implements DocumentChunker {
         requireNonNull(document, "document");
         String text = document.content();
 
-        if (TextBoundaries.skipWhitespace(text, 0) == text.length()) {
+        if (SourceText.skipWhitespace(text, 0) == text.length()) {
             return List.of();
         }
 
@@ -69,7 +72,7 @@ public final class TextChunker implements DocumentChunker {
 
             String content = text.substring(start, end);
 
-            if (end <= coveredEnd || TextBoundaries.skipWhitespace(content, 0) == content.length()) {
+            if (end <= coveredEnd || SourceText.skipWhitespace(content, 0) == content.length()) {
                 throw new IllegalArgumentException("Token budget cannot fit a source character at offset " + start);
             }
 
@@ -148,11 +151,11 @@ public final class TextChunker implements DocumentChunker {
 
     /* Scans safe character boundaries instead of assuming that token counts are monotonic for longer prefixes. */
     private int splitOversized(String text, int start, int limit) {
-        int safeEnd = TextBoundaries.skipWhitespace(text, start);
+        int safeEnd = SourceText.skipWhitespace(text, start);
         int offset = safeEnd;
 
         while (offset < limit) {
-            int next = TextBoundaries.nextOffset(text, offset);
+            int next = SourceText.nextOffset(text, offset);
 
             if (!fits(text, start, next)) {
                 break;
@@ -162,7 +165,7 @@ public final class TextChunker implements DocumentChunker {
             offset = next;
 
             // Preserve a following whitespace run in one check instead of repeatedly scanning large blank regions.
-            int whitespaceEnd = TextBoundaries.skipWhitespace(text, offset);
+            int whitespaceEnd = SourceText.skipWhitespace(text, offset);
 
             if (whitespaceEnd > offset && fits(text, start, whitespaceEnd)) {
                 safeEnd = whitespaceEnd;

@@ -1,5 +1,9 @@
 package dev.eyuppastirmaci.pecia.chunking;
 
+import dev.eyuppastirmaci.pecia.chunking.markdown.MarkdownChunker;
+import dev.eyuppastirmaci.pecia.chunking.source.SourceCodeChunker;
+import dev.eyuppastirmaci.pecia.chunking.text.TextChunker;
+
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
@@ -10,10 +14,14 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -57,13 +65,16 @@ class DocumentChunkerFactoryTest {
         DocumentChunkerFactory factory = DocumentChunkerFactory.create(MiniLmTokenizer.bundled(), 256, 32);
         DocumentChunker markdown = factory.getChunker(DocumentType.MARKDOWN);
         DocumentChunker text = factory.getChunker(DocumentType.PLAIN_TEXT);
+        DocumentChunker source = factory.getChunker(DocumentType.SOURCE_CODE);
 
         assertInstanceOf(MarkdownChunker.class, markdown);
         assertInstanceOf(TextChunker.class, text);
+        assertInstanceOf(SourceCodeChunker.class, source);
         assertSame(markdown, factory.getChunker(DocumentType.MARKDOWN));
         assertSame(text, factory.getChunker(DocumentType.STRUCTURED_TEXT));
-        assertSame(text, factory.getChunker(DocumentType.SOURCE_CODE));
-        assertThrows(NullPointerException.class, () -> factory.getChunker(null));
+        assertSame(source, factory.getChunker(DocumentType.SOURCE_CODE));
+        assertNotSame(text, source);
+        assertThrows(NullPointerException.class, () -> factory.getChunker((DocumentType) null));
     }
 
     @Test
@@ -76,7 +87,7 @@ class DocumentChunkerFactoryTest {
             Path path = Path.of(filename);
             DocumentType type = detector.detect(path).orElseThrow();
             Document document = document(path, type, text);
-            DocumentChunker chunker = factory.getChunker(document.type());
+            DocumentChunker chunker = factory.getChunker(document);
             List<Chunk> chunks = chunker.chunk(document);
 
             assertEquals(new MarkdownChunker(MiniLmTokenizer.bundled(), 256, 0).chunk(document), chunks);
@@ -93,25 +104,32 @@ class DocumentChunkerFactoryTest {
 
         for (DocumentType type : List.of(DocumentType.PLAIN_TEXT, DocumentType.STRUCTURED_TEXT, DocumentType.SOURCE_CODE)) {
             Document document = document(Path.of("example.txt"), type, text);
-            List<Chunk> chunks = factory.getChunker(type).chunk(document);
+            List<Chunk> chunks = factory.getChunker(document).chunk(document);
 
-            assertEquals(new TextChunker(tokenizer, 256, 0).chunk(document), chunks);
+            DocumentChunker direct = type == DocumentType.SOURCE_CODE
+                    ? new SourceCodeChunker(tokenizer, 256, 0) : new TextChunker(tokenizer, 256, 0);
+            assertEquals(direct.chunk(document), chunks);
             assertEquals(1, chunks.size());
             assertEquals(List.of(), chunks.getFirst().metadata().headingPath());
         }
     }
 
     @Test
-    void passesTheSameBudgetAndOverlapToBothBuiltInStrategies() {
+    void passesTheSameBudgetAndOverlapToAllBuiltInStrategies() {
         MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
         DocumentChunkerFactory factory = DocumentChunkerFactory.create(tokenizer, 10, 3);
         String text = "one two three four five six seven eight ".repeat(20);
 
-        for (DocumentType type : List.of(DocumentType.MARKDOWN, DocumentType.PLAIN_TEXT)) {
+        for (DocumentType type : DocumentType.values()) {
             Document document = document(Path.of("example.md"), type, text);
-            List<Chunk> chunks = factory.getChunker(type).chunk(document);
-            DocumentChunker direct = type == DocumentType.MARKDOWN
-                    ? new MarkdownChunker(tokenizer, 10, 3) : new TextChunker(tokenizer, 10, 3);
+            List<Chunk> chunks = factory.getChunker(document).chunk(document);
+
+            DocumentChunker direct = switch (type) {
+                case MARKDOWN -> new MarkdownChunker(tokenizer, 10, 3);
+                case SOURCE_CODE -> new SourceCodeChunker(tokenizer, 10, 3);
+                case PLAIN_TEXT, STRUCTURED_TEXT -> new TextChunker(tokenizer, 10, 3);
+            };
+
             assertEquals(direct.chunk(document), chunks);
             assertTrue(chunks.size() > 1);
             int previousEnd = 0;
@@ -127,7 +145,44 @@ class DocumentChunkerFactoryTest {
             }
 
             assertTrue(hasOverlap);
+            assertEquals(text.length(), previousEnd);
         }
+    }
+
+    @Test
+    void routesEveryDeclaredSourceFilenameToTheSharedSourceCodeStrategy() {
+        DocumentChunkerFactory factory = DocumentChunkerFactory.create(MiniLmTokenizer.bundled(), 6, 0);
+        DocumentChunker source = factory.getChunker(DocumentType.SOURCE_CODE);
+        FileTypeDetector detector = new FileTypeDetector();
+        List<String> names = new ArrayList<>(DocumentType.SOURCE_CODE.basenames());
+
+        for (String extension : DocumentType.SOURCE_CODE.extensions()) {
+            names.add("example." + extension);
+        }
+
+        for (String name : names) {
+            for (String filename : List.of(name, name.toUpperCase(Locale.ROOT))) {
+                Path path = Path.of("src", filename);
+                DocumentType type = detector.detect(path).orElseThrow();
+                Document document = document(path, type, "first\n    nested\nend\nlast\nextra");
+                assertEquals(DocumentType.SOURCE_CODE, type);
+                assertSame(source, factory.getChunker(document));
+                assertEquals("first\n    nested\n", factory.getChunker(document).chunk(document).getFirst().content());
+            }
+        }
+    }
+
+    @Test
+    void executesSourceBoundariesInsteadOfThePreviousGeneralTextFallback() {
+        MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
+        DocumentChunkerFactory factory = DocumentChunkerFactory.create(tokenizer, 6, 0);
+        Document document = document(Path.of("src", "Example.java"), DocumentType.SOURCE_CODE,
+                "first\n    nested\nend\nlast\nextra");
+        List<Chunk> chunks = factory.getChunker(document).chunk(document);
+
+        assertEquals(new SourceCodeChunker(tokenizer, 6, 0).chunk(document), chunks);
+        assertNotEquals(new TextChunker(tokenizer, 6, 0).chunk(document), chunks);
+        assertEquals("first\n    nested\n", chunks.getFirst().content());
     }
 
     @Test
@@ -146,7 +201,7 @@ class DocumentChunkerFactoryTest {
         DocumentChunkerFactory factory = new DocumentChunkerFactory(
                 textChunker, markdownChunker, sourceCodeChunker);
 
-        assertThrows(NullPointerException.class, () -> factory.getChunker(null));
+        assertThrows(NullPointerException.class, () -> factory.getChunker((DocumentType) null));
     }
 
     private static Document document(Path path, DocumentType type, String text) {

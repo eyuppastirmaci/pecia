@@ -1,4 +1,4 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.markdown;
 
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import org.junit.jupiter.api.Test;

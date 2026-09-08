@@ -1,4 +1,4 @@
-package dev.eyuppastirmaci.pecia.chunking;
+package dev.eyuppastirmaci.pecia.chunking.markdown;
 
 record MarkdownBlockGroup(int startOffset, int endOffset, boolean requiresSplit) {
 

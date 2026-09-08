@@ -13,7 +13,6 @@ import java.util.Set;
 import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.NOT_REGULAR_FILE;
 import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.READ_FAILED;
 import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.TOO_LARGE;
-import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.FILE_CHANGED;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
