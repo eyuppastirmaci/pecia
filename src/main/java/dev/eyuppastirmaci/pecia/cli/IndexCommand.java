@@ -1,10 +1,10 @@
 package dev.eyuppastirmaci.pecia.cli;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
-import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
-import dev.eyuppastirmaci.pecia.index.GlobFilter;
+import dev.eyuppastirmaci.pecia.index.IndexPreview;
+import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.index.WalkResult;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -33,10 +33,10 @@ public class IndexCommand implements Callable<Integer> {
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
-    private final PeciaConfigLoader configLoader;
+    private final IndexService indexService;
 
-    public IndexCommand(PeciaConfigLoader configLoader) {
-        this.configLoader = configLoader;
+    public IndexCommand(IndexService indexService) {
+        this.indexService = indexService;
     }
 
     /**
@@ -46,8 +46,6 @@ public class IndexCommand implements Callable<Integer> {
      */
     @Override
     public Integer call() {
-        Path target = path.toAbsolutePath().normalize();
-
         if (!dryRun) {
             spec.commandLine().getErr().println("pecia index: only --dry-run is implemented yet");
 
@@ -55,10 +53,9 @@ public class IndexCommand implements Callable<Integer> {
         }
 
         try {
-            LoadedConfig loaded = configLoader.load(target);
-            FileWalker walker = new FileWalker(new GlobFilter(loaded.config().include(), loaded.config().exclude()));
-            WalkResult result = walker.scan(target, loaded.root());
-            report(loaded, result.files());
+            IndexPreview preview = indexService.preview(path);
+            WalkResult result = preview.walkResult();
+            report(preview.loadedConfig(), result.files());
 
             for (WalkResult.Issue issue : result.issues()) {
                 spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.reason());

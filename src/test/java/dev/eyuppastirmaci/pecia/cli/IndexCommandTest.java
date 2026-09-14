@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.cli;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.index.IndexService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -52,6 +53,18 @@ class IndexCommandTest {
         assertEquals(1, run(root.toString(), "--dry-run"));
         assertTrue(err.toString().contains("pecia index:"));
         assertFalse(err.toString().contains("\tat "));
+    }
+
+    @Test
+    void malformedConfigReturnsConciseError() throws IOException {
+        Files.writeString(root.resolve(".pecia.toml"), "[index\ninclude =");
+
+        int exitCode = run(root.toString(), "--dry-run");
+
+        assertEquals(1, exitCode);
+        assertTrue(err.toString().contains("pecia index: Invalid .pecia.toml:"));
+        assertFalse(err.toString().contains("\tat "));
+        assertEquals("", out.toString());
     }
 
     @Test
@@ -121,17 +134,20 @@ class IndexCommandTest {
     }
 
     @Test
-    void realIndexingIsStillNotImplemented() {
+    void realIndexingIsStillNotImplemented() throws IOException {
+        Files.writeString(root.resolve(".pecia.toml"), "[index\ninclude =");
+
         int exitCode = run(root.toString());
 
         assertEquals(1, exitCode);
-        assertTrue(err.toString().contains("only --dry-run"));
+        assertEquals("pecia index: only --dry-run is implemented yet" + System.lineSeparator(), err.toString());
+        assertEquals("", out.toString());
     }
 
     private int run(String... args) {
         PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
 
-        CommandLine commandLine = new CommandLine(new IndexCommand(loader));
+        CommandLine commandLine = new CommandLine(new IndexCommand(new IndexService(loader)));
         commandLine.setOut(new PrintWriter(out));
         commandLine.setErr(new PrintWriter(err));
 
