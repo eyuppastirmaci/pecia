@@ -1,0 +1,15 @@
+source_path = "golden/source/turkish-unicode.java"
+document_type = "SOURCE_CODE"
+max_tokens = 64
+overlap_tokens = 0
+input_sha256 = "95412f093431bc27c8e6c0252481bda2774b30a2af1b9a66b006e98bef67d7df"
+
+[[chunks]]
+index = 0
+source_path = "golden/source/turkish-unicode.java"
+document_type = "SOURCE_CODE"
+content = "// İstanbul 😀 é\n"
+first_line = 1
+last_line = 1
+heading_path = []
+attributes = { startOffset = "0", endOffset = "18" }

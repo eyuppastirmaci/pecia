@@ -1,2 +1,7 @@
 # Preserve the exact bytes of the checksum-verified upstream vocabulary.
 pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/vocab.txt -text
+
+# Golden inputs and expectations must retain their reviewed bytes, including CRLF and missing final newlines.
+pecia-core/src/test/resources/chunking/golden/** -text
+# Whitespace is intentional test data in inputs, including blank-only files and CRLF terminators.
+pecia-core/src/test/resources/chunking/golden/**/*.input whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab

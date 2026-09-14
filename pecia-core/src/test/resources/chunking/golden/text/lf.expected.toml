@@ -1,0 +1,25 @@
+source_path = "golden/text/lf.txt"
+document_type = "PLAIN_TEXT"
+max_tokens = 6
+overlap_tokens = 0
+input_sha256 = "8f28c3ee8c8db835c721883cf98d246fa15367d74db241cf90916c2fc4460470"
+
+[[chunks]]
+index = 0
+source_path = "golden/text/lf.txt"
+document_type = "PLAIN_TEXT"
+content = "one two\nthree four\n"
+first_line = 1
+last_line = 2
+heading_path = []
+attributes = { startOffset = "0", endOffset = "19" }
+
+[[chunks]]
+index = 1
+source_path = "golden/text/lf.txt"
+document_type = "PLAIN_TEXT"
+content = "five six"
+first_line = 3
+last_line = 3
+heading_path = []
+attributes = { startOffset = "19", endOffset = "27" }

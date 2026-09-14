@@ -1,0 +1,25 @@
+source_path = "golden/markdown/headings-lf.md"
+document_type = "MARKDOWN"
+max_tokens = 64
+overlap_tokens = 0
+input_sha256 = "a7a98b4f1cdfd956f675361444b1247b3a1920c44dffc56b510e02d6437b5301"
+
+[[chunks]]
+index = 0
+source_path = "golden/markdown/headings-lf.md"
+document_type = "MARKDOWN"
+content = "# Root\nintro\n"
+first_line = 1
+last_line = 2
+heading_path = ["Root"]
+attributes = { startOffset = "0", endOffset = "13" }
+
+[[chunks]]
+index = 1
+source_path = "golden/markdown/headings-lf.md"
+document_type = "MARKDOWN"
+content = "## Child\n- one\n- two"
+first_line = 3
+last_line = 5
+heading_path = ["Root","Child"]
+attributes = { startOffset = "13", endOffset = "33" }

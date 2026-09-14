@@ -1,0 +1,6 @@
+source_path = "golden/markdown/whitespace.md"
+document_type = "MARKDOWN"
+max_tokens = 32
+overlap_tokens = 0
+input_sha256 = "c338f414816bab2d14508dfd54ce151b0a8784f45ec677aa19f5e146436a71f2"
+chunks = []

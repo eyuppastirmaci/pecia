@@ -1,0 +1,45 @@
+source_path = "golden/markdown/oversized-fence.md"
+document_type = "MARKDOWN"
+max_tokens = 6
+overlap_tokens = 0
+input_sha256 = "a1b8ff95e8163ac2fb40fecdb558244938d1190f9b2ecfdcc0daac4d3f56eaeb"
+
+[[chunks]]
+index = 0
+source_path = "golden/markdown/oversized-fence.md"
+document_type = "MARKDOWN"
+content = "```\n"
+first_line = 1
+last_line = 1
+heading_path = []
+attributes = { startOffset = "0", endOffset = "4" }
+
+[[chunks]]
+index = 1
+source_path = "golden/markdown/oversized-fence.md"
+document_type = "MARKDOWN"
+content = "one two three four "
+first_line = 2
+last_line = 2
+heading_path = []
+attributes = { startOffset = "4", endOffset = "23" }
+
+[[chunks]]
+index = 2
+source_path = "golden/markdown/oversized-fence.md"
+document_type = "MARKDOWN"
+content = "five six seven eight\n"
+first_line = 2
+last_line = 2
+heading_path = []
+attributes = { startOffset = "23", endOffset = "44" }
+
+[[chunks]]
+index = 3
+source_path = "golden/markdown/oversized-fence.md"
+document_type = "MARKDOWN"
+content = "```"
+first_line = 3
+last_line = 3
+heading_path = []
+attributes = { startOffset = "44", endOffset = "47" }

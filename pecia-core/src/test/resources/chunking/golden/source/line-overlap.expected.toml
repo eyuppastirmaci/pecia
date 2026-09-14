@@ -1,0 +1,25 @@
+source_path = "golden/source/line-overlap.java"
+document_type = "SOURCE_CODE"
+max_tokens = 5
+overlap_tokens = 1
+input_sha256 = "42064da518ab63d9fbf594e39f6147ee429d6c1637b0855b4894f7a6d68d2df1"
+
+[[chunks]]
+index = 0
+source_path = "golden/source/line-overlap.java"
+document_type = "SOURCE_CODE"
+content = "one\ntwo\nthree\n"
+first_line = 1
+last_line = 3
+heading_path = []
+attributes = { startOffset = "0", endOffset = "14" }
+
+[[chunks]]
+index = 1
+source_path = "golden/source/line-overlap.java"
+document_type = "SOURCE_CODE"
+content = "three\nfour\nfive"
+first_line = 3
+last_line = 5
+heading_path = []
+attributes = { startOffset = "8", endOffset = "23" }

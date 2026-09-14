@@ -1,18 +1,17 @@
 package dev.eyuppastirmaci.pecia.chunking.source;
 
 import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
+import dev.eyuppastirmaci.pecia.chunking.internal.ChunkingBudget;
+import dev.eyuppastirmaci.pecia.chunking.internal.SourceChunkFactory;
 import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
-import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.Document;
-import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
 
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
-import java.util.Map;
 import java.util.function.IntUnaryOperator;
 
 import static java.util.Objects.requireNonNull;
@@ -29,19 +28,7 @@ public final class SourceCodeChunker implements DocumentChunker {
 
     public SourceCodeChunker(TokenCounter tokenCounter, int maxTokens, int overlapTokens) {
         this.tokenCounter = requireNonNull(tokenCounter, "tokenCounter");
-        var identity = tokenCounter.identity();
-
-        if (maxTokens <= identity.specialTokenCount() || maxTokens > identity.maxInputTokens()) {
-            throw new IllegalArgumentException("maxTokens must be greater than " + identity.specialTokenCount()
-                    + " and at most " + identity.maxInputTokens() + ", including special tokens");
-        }
-
-        contentBudget = maxTokens - identity.specialTokenCount();
-
-        if (overlapTokens < 0 || overlapTokens >= contentBudget) {
-            throw new IllegalArgumentException("overlapTokens must be non-negative and less than " + contentBudget);
-        }
-
+        this.contentBudget = ChunkingBudget.validate(tokenCounter, maxTokens, overlapTokens);
         this.overlapTokens = overlapTokens;
     }
 
@@ -85,20 +72,8 @@ public final class SourceCodeChunker implements DocumentChunker {
                 end = text.length();
             }
 
-            String content = text.substring(start, end);
-
-            if (end <= coveredEnd || SourceText.skipWhitespace(content, 0) == content.length()) {
-                throw new IllegalArgumentException("Token budget cannot fit a source character at offset " + start);
-            }
-
-            ChunkMetadata metadata = new ChunkMetadata(List.of(), Map.of(
-                    "startOffset", Integer.toString(start),
-                    "endOffset", Integer.toString(end)));
-            // The exclusive end is not part of the slice, so its last character determines the inclusive final line.
-            LineRange location = new LineRange(boundaries.firstLineAfter(start) + 1,
-                    boundaries.firstLineAfter(end - 1) + 1);
-            chunks.add(new Chunk(document.sourcePath(), document.type(), chunks.size(),
-                    content, location, metadata));
+            chunks.add(SourceChunkFactory.create(document, chunks.size(), start, end, coveredEnd,
+                    offset -> boundaries.firstLineAfter(offset) + 1));
             coveredEnd = end;
 
             if (end < text.length()) {

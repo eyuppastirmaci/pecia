@@ -1,0 +1,15 @@
+source_path = "golden/markdown/turkish-unicode.md"
+document_type = "MARKDOWN"
+max_tokens = 64
+overlap_tokens = 0
+input_sha256 = "d5c6adf9d01cc46174d9f43401eaf87f8d2265c85ffa578aab691f2314aa5871"
+
+[[chunks]]
+index = 0
+source_path = "golden/markdown/turkish-unicode.md"
+document_type = "MARKDOWN"
+content = "# Başlık 😀\nİstanbul, ıslak çığ.\n"
+first_line = 1
+last_line = 2
+heading_path = ["Başlık 😀"]
+attributes = { startOffset = "0", endOffset = "33" }

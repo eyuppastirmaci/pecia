@@ -1,0 +1,35 @@
+source_path = "golden/markdown/oversized-overlap.md"
+document_type = "MARKDOWN"
+max_tokens = 6
+overlap_tokens = 2
+input_sha256 = "62d51a1fd36f8eb32446ed41d6741ba8dba6532cdff86ab08b6d6c0c96deb6d5"
+
+[[chunks]]
+index = 0
+source_path = "golden/markdown/oversized-overlap.md"
+document_type = "MARKDOWN"
+content = "one two three four "
+first_line = 1
+last_line = 1
+heading_path = []
+attributes = { startOffset = "0", endOffset = "19" }
+
+[[chunks]]
+index = 1
+source_path = "golden/markdown/oversized-overlap.md"
+document_type = "MARKDOWN"
+content = "three four five six "
+first_line = 1
+last_line = 1
+heading_path = []
+attributes = { startOffset = "8", endOffset = "28" }
+
+[[chunks]]
+index = 2
+source_path = "golden/markdown/oversized-overlap.md"
+document_type = "MARKDOWN"
+content = "five six seven eight"
+first_line = 1
+last_line = 1
+heading_path = []
+attributes = { startOffset = "19", endOffset = "39" }

@@ -1,0 +1,10 @@
+cases = ["text/empty","text/whitespace","markdown/empty","markdown/whitespace","source/empty","source/whitespace","text/turkish-unicode","source/turkish-unicode","markdown/turkish-unicode","text/lf","text/crlf","source/lf","source/crlf","text/oversized-overlap","source/oversized-overlap","markdown/oversized-overlap","text/paragraphs","source/line-overlap","source/dedent","markdown/headings-lf","markdown/headings-crlf","markdown/fenced-code","markdown/oversized-fence"]
+
+[tokenizer]
+model_id = "sentence-transformers/all-MiniLM-L6-v2"
+revision = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+algorithm = "bert-uncased-wordpiece-v1"
+vocabulary_sha256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+vocabulary_size = 30522
+max_input_tokens = 256
+special_token_count = 2

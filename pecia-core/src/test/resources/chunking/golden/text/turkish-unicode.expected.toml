@@ -1,0 +1,15 @@
+source_path = "golden/text/turkish-unicode.txt"
+document_type = "PLAIN_TEXT"
+max_tokens = 64
+overlap_tokens = 0
+input_sha256 = "099825484d84e6b28a64d0d54fcfb61537db5888f0e27d9e06e7757bd302f202"
+
+[[chunks]]
+index = 0
+source_path = "golden/text/turkish-unicode.txt"
+document_type = "PLAIN_TEXT"
+content = "İstanbul, ıslak çığ; 😀 é.\n"
+first_line = 1
+last_line = 1
+heading_path = []
+attributes = { startOffset = "0", endOffset = "28" }
