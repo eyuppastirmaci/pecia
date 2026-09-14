@@ -119,6 +119,7 @@ class DomainModelTest {
     void metadataRejectsInvalidEntries() {
         assertThrows(NullPointerException.class, () -> new ChunkMetadata(null, Map.of()));
         assertThrows(NullPointerException.class, () -> new ChunkMetadata(List.of(), null));
+        assertThrows(NullPointerException.class, () -> new ChunkMetadata(List.of(" "), null));
         assertThrows(IllegalArgumentException.class, () -> new ChunkMetadata(List.of(" "), Map.of()));
         assertThrows(IllegalArgumentException.class, () -> new ChunkMetadata(List.of(), Map.of(" ", "value")));
 

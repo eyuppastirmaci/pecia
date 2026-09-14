@@ -25,6 +25,16 @@ class TextDocumentExtractorTest {
     }
 
     @Test
+    void rejectsNullTypesRequestsAndContent() {
+        ExtractionRequest request = request(DocumentType.PLAIN_TEXT);
+        FileContent content = content(new byte[0]);
+
+        assertThrows(NullPointerException.class, () -> extractor.supports(null));
+        assertThrows(NullPointerException.class, () -> extractor.extract(null, content));
+        assertThrows(NullPointerException.class, () -> extractor.extract(request, null));
+    }
+
+    @Test
     void extractsUtf8AndPreservesUnicodeAndLineEndings() throws Exception {
         String text = "Pecia\r\nTürkçe içerik\nこんにちは";
         ExtractionRequest request = request(DocumentType.PLAIN_TEXT);

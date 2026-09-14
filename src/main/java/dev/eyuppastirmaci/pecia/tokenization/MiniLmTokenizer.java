@@ -14,7 +14,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 /** Offline uncased BERT WordPiece tokenizer pinned to all-MiniLM-L6-v2. */
@@ -84,11 +83,9 @@ public final class MiniLmTokenizer implements TokenCounter {
 
     /* Applies BERT basic tokenization before greedily decomposing each token with the pinned vocabulary. */
     List<String> tokenize(String text) {
-        Objects.requireNonNull(text, "text");
         List<String> pieces = new ArrayList<>();
 
         for (String segment : splitSpecialTokens(text)) {
-
             if (SPECIAL_TOKENS.contains(segment)) {
                 pieces.add(segment);
 

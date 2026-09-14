@@ -14,8 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static java.util.Objects.requireNonNull;
-
 public final class MarkdownChunker implements DocumentChunker {
 
     private final MarkdownBlockPlanner planner;
@@ -37,7 +35,6 @@ public final class MarkdownChunker implements DocumentChunker {
      */
     @Override
     public List<Chunk> chunk(Document document) {
-        requireNonNull(document, "document");
         List<MarkdownBlockGroup> groups = planner.planWithContainerSplitting(document.content());
 
         if (groups.isEmpty()) {

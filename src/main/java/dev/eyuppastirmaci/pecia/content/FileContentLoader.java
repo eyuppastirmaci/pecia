@@ -135,7 +135,6 @@ public final class FileContentLoader {
 
     /* Compares identity and metadata snapshots with the observed byte count to detect unstable reads. */
     static boolean changedDuringRead(FileState before, FileState after, int bytesRead) {
-        Objects.requireNonNull(before, "before");
         Objects.requireNonNull(after, "after");
 
         return !before.equals(after) || bytesRead != before.size();

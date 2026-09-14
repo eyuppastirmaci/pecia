@@ -24,10 +24,7 @@ public final class DocumentExtractionService {
      * @throws ExtractionException if the type is unsupported or the source cannot be loaded or interpreted
      */
     public Document extract(ExtractionRequest request) throws ExtractionException {
-        Objects.requireNonNull(request, "request");
-
         if (!extractor.supports(request.type())) {
-
             throw new ExtractionException(UNSUPPORTED_TYPE, request.file(),
                     "No extractor supports document type " + request.type() + ": " + request.file());
         }

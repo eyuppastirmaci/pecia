@@ -12,26 +12,20 @@ public record ChunkMetadata(List<String> headingPath, Map<String, String> attrib
     private static final ChunkMetadata EMPTY = new ChunkMetadata(List.of(), Map.of());
 
     public ChunkMetadata {
-        Objects.requireNonNull(headingPath, "headingPath");
         Objects.requireNonNull(attributes, "attributes");
 
         for (String heading : headingPath) {
-
             if (heading == null || heading.isBlank()) {
-
                 throw new IllegalArgumentException("headingPath must contain only non-blank headings");
             }
         }
 
         for (Map.Entry<String, String> attribute : attributes.entrySet()) {
-
             if (attribute.getKey() == null || attribute.getKey().isBlank()) {
-
                 throw new IllegalArgumentException("attribute names must not be blank");
             }
 
             if (attribute.getValue() == null) {
-
                 throw new IllegalArgumentException("attribute values must not be null: " + attribute.getKey());
             }
         }

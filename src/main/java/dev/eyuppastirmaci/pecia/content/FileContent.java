@@ -12,11 +12,9 @@ public final class FileContent {
     private final ContentHash contentHash;
 
     public FileContent(Path file, byte[] bytes) {
-        Objects.requireNonNull(file, "file");
         Objects.requireNonNull(bytes, "bytes");
 
         if (!file.isAbsolute() || !file.normalize().equals(file)) {
-
             throw new IllegalArgumentException("file must be an absolute, normalized path: " + file);
         }
 

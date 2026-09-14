@@ -40,11 +40,7 @@ public final class TextDocumentExtractor implements DocumentExtractor {
      */
     @Override
     public Document extract(ExtractionRequest request, FileContent content) throws ExtractionException {
-        Objects.requireNonNull(request, "request");
-        Objects.requireNonNull(content, "content");
-
         if (!request.file().equals(content.file())) {
-
             throw new IllegalArgumentException("request and loaded content must refer to the same file");
         }
 
@@ -55,7 +51,6 @@ public final class TextDocumentExtractor implements DocumentExtractor {
         }
 
         if (looksBinary(text)) {
-
             throw new ExtractionException(BINARY_CONTENT, request.file(),
                     "File contains binary control characters: " + request.file());
         }

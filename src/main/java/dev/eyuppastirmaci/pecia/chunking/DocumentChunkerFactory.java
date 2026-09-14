@@ -75,8 +75,6 @@ public final class DocumentChunkerFactory {
      * @throws NullPointerException if document is null
      */
     public DocumentChunker getChunker(Document document) {
-        Objects.requireNonNull(document, "document");
-
         if (document.type() == DocumentType.SOURCE_CODE) {
             String filename = document.sourcePath().getFileName().toString().toLowerCase(Locale.ROOT);
             int dot = filename.lastIndexOf('.');
@@ -97,8 +95,6 @@ public final class DocumentChunkerFactory {
      * @throws NullPointerException if type is null
      */
     public DocumentChunker getChunker(DocumentType type) {
-        Objects.requireNonNull(type, "type");
-
         return switch (type) {
             case PLAIN_TEXT, STRUCTURED_TEXT -> textChunker;
             case MARKDOWN -> markdownChunker;
@@ -108,11 +104,10 @@ public final class DocumentChunkerFactory {
 
     /* Canonicalizes extension keys into an immutable registry and rejects ambiguous aliases instead of silently overwriting them. */
     private static Map<String, DocumentChunker> normalizeExtensions(Map<String, DocumentChunker> extensions) {
-        Objects.requireNonNull(extensions, "sourceChunkersByExtension");
         Map<String, DocumentChunker> normalized = new HashMap<>();
 
         for (Map.Entry<String, DocumentChunker> entry : extensions.entrySet()) {
-            String extension = Objects.requireNonNull(entry.getKey(), "source extension").toLowerCase(Locale.ROOT);
+            String extension = entry.getKey().toLowerCase(Locale.ROOT);
             DocumentChunker chunker = Objects.requireNonNull(entry.getValue(), "source extension strategy");
 
             if (extension.startsWith(".")) {

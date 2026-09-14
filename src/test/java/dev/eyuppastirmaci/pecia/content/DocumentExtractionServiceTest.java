@@ -58,7 +58,10 @@ class DocumentExtractionServiceTest {
     @Test
     void validatesRequestsBeforeFilesystemWork() throws IOException {
         Path file = Files.writeString(root.resolve("notes.txt"), "content");
+        DocumentExtractionService service = new DocumentExtractionService(
+                new FileContentLoader(1024), new TextDocumentExtractor());
 
+        assertThrows(NullPointerException.class, () -> service.extract(null));
         assertThrows(IllegalArgumentException.class,
                 () -> new ExtractionRequest(Path.of("relative.txt"), Path.of("notes.txt"), DocumentType.PLAIN_TEXT));
         assertThrows(IllegalArgumentException.class,

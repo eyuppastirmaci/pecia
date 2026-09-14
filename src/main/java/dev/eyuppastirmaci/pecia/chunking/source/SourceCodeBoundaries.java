@@ -17,7 +17,6 @@ final class SourceCodeBoundaries {
     private final int[] dedentStarts;
 
     SourceCodeBoundaries(String text) {
-        Objects.requireNonNull(text, "text");
         textLength = text.length();
         IntStream.Builder lines = IntStream.builder();
         IntStream.Builder blanks = IntStream.builder();

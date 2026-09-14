@@ -29,7 +29,7 @@ public final class SourceCodeChunker implements DocumentChunker {
 
     public SourceCodeChunker(TokenCounter tokenCounter, int maxTokens, int overlapTokens) {
         this.tokenCounter = requireNonNull(tokenCounter, "tokenCounter");
-        var identity = requireNonNull(tokenCounter.identity(), "tokenizer identity");
+        var identity = tokenCounter.identity();
 
         if (maxTokens <= identity.specialTokenCount() || maxTokens > identity.maxInputTokens()) {
             throw new IllegalArgumentException("maxTokens must be greater than " + identity.specialTokenCount()
@@ -57,7 +57,6 @@ public final class SourceCodeChunker implements DocumentChunker {
      */
     @Override
     public List<Chunk> chunk(Document document) {
-        requireNonNull(document, "document");
         String text = document.content();
 
         if (SourceText.skipWhitespace(text, 0) == text.length()) {

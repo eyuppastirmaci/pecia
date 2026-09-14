@@ -1,7 +1,5 @@
 package dev.eyuppastirmaci.pecia.tokenization;
 
-import java.util.Objects;
-
 /**
  * Versioned tokenizer properties that determine chunk and embedding compatibility.
  *
@@ -67,10 +65,7 @@ public record TokenizerIdentity(
     }
 
     private static String requireText(String value, String name) {
-        Objects.requireNonNull(value, name);
-
         if (value.isBlank()) {
-
             throw new IllegalArgumentException(name + " must not be blank");
         }
 

@@ -4,7 +4,6 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -31,7 +30,6 @@ public final class FileTypeDetector {
      * @throws IllegalArgumentException if the path has no meaningful filename
      */
     public Optional<DocumentType> detect(Path path) {
-        Objects.requireNonNull(path, "path");
         Path filename = path.getFileName();
 
         if (filename == null || filename.toString().isEmpty()

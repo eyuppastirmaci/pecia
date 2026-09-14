@@ -11,10 +11,7 @@ public record ContentHash(String value) {
     private static final int HEX_LENGTH = 64;
 
     public ContentHash {
-        Objects.requireNonNull(value, "value");
-
         if (value.length() != HEX_LENGTH || !value.matches("[0-9a-f]{64}")) {
-
             throw new IllegalArgumentException("value must be a lowercase 64-character SHA-256 digest");
         }
     }

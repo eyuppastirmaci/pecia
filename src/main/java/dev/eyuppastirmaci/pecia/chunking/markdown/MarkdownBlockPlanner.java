@@ -26,7 +26,7 @@ final class MarkdownBlockPlanner {
 
     MarkdownBlockPlanner(TokenCounter tokenCounter, int maxTokens) {
         this.tokenCounter = requireNonNull(tokenCounter, "tokenCounter");
-        var identity = requireNonNull(tokenCounter.identity(), "tokenizer identity");
+        var identity = tokenCounter.identity();
 
         if (maxTokens <= identity.specialTokenCount() || maxTokens > identity.maxInputTokens()) {
             throw new IllegalArgumentException("maxTokens must be greater than " + identity.specialTokenCount()
@@ -48,8 +48,6 @@ final class MarkdownBlockPlanner {
 
     /* Counts exact source slices while optionally refining containers without reparsing fragments outside their original context. */
     private List<MarkdownBlockGroup> plan(String text, boolean splitContainers) {
-        requireNonNull(text, "text");
-
         if (SourceText.skipWhitespace(text, 0) == text.length()) {
             return List.of();
         }

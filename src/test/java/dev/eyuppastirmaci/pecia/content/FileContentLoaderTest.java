@@ -82,6 +82,13 @@ class FileContentLoaderTest {
     }
 
     @Test
+    void fileContentRejectsNullInputsBeforeInvalidPaths() {
+        assertThrows(NullPointerException.class, () -> new FileContent(null, new byte[0]));
+        assertThrows(NullPointerException.class, () -> new FileContent(root.resolve("notes.txt"), null));
+        assertThrows(NullPointerException.class, () -> new FileContent(Path.of("relative.txt"), null));
+    }
+
+    @Test
     void metadataOnlyChangesDoNotChangeTheContentHash() throws Exception {
         Path file = Files.writeString(root.resolve("stable.txt"), "same bytes");
         FileContentLoader loader = new FileContentLoader(64);
@@ -111,6 +118,14 @@ class FileContentLoaderTest {
                 new FileContentLoader.FileState(10, time, "replacement"), 10));
         assertTrue(FileContentLoader.changedDuringRead(original,
                 new FileContentLoader.FileState(10, time, "key"), 9));
+    }
+
+    @Test
+    void rejectsMissingSnapshotsInsteadOfTreatingThemAsFileChanges() {
+        FileContentLoader.FileState state = new FileContentLoader.FileState(10, FileTime.fromMillis(1_000), "key");
+
+        assertThrows(NullPointerException.class, () -> FileContentLoader.changedDuringRead(null, state, 10));
+        assertThrows(NullPointerException.class, () -> FileContentLoader.changedDuringRead(state, null, 10));
     }
 
     @Test
