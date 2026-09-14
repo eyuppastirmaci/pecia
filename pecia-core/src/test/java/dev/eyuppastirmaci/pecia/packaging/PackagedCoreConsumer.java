@@ -15,17 +15,21 @@ import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import org.commonmark.parser.Parser;
 import org.eclipse.jgit.ignore.FastIgnoreRule;
 import org.tomlj.Toml;
+import org.sqlite.JDBC;
 
 import java.net.JarURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.util.List;
+import java.util.Properties;
 
 public final class PackagedCoreConsumer {
 
@@ -98,6 +102,122 @@ public final class PackagedCoreConsumer {
         check(!Files.exists(root.resolve(".pecia")) && !Files.exists(docs.resolve(".pecia")),
                 "The shared engine must not create an index during these operations");
         check(!Files.exists(docs.resolve(".pecia.toml")), "Preview must not create a config in its target");
+
+        Path database = root.resolve(".pecia/index.db");
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            check(Files.size(database) > 0, "Packaged SQLite must initialize a file database");
+            var storedFile = storage.replaceFile(document, chunks);
+            check(storage.replaceFile(document, chunks).id() == storedFile.id(),
+                    "Packaged replacement must retain the file ID across repeated indexing");
+        }
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            check(Files.isRegularFile(database), "Packaged SQLite must reopen the initialized database");
+            var stored = storage.files().findByPath(document.sourcePath()).orElseThrow();
+            check(stored.contentHash().equals(document.contentHash()) && stored.documentType() == document.type(),
+                    "Packaged file repository must preserve the manifest across reopening");
+            check(storage.chunks().findByFileId(stored.id()).stream().map(value -> value.chunk()).toList().equals(chunks),
+                    "Packaged chunk repository must preserve exact chunks and metadata across reopening");
+        }
+
+        verifyStorageRecovery(root, database, document, chunks, factory);
+        verifyStorageFamilies(root, extraction, factory);
+    }
+
+    /* Exercises rollback and recovery through the public packaged API with a real SQLite write failure. */
+    private static void verifyStorageRecovery(Path root, Path database, Document document, List<Chunk> chunks,
+                                              DocumentChunkerFactory factory) throws Exception {
+        try (var connection = JDBC.createConnection("jdbc:sqlite:" + database.toUri().toASCIIString(), new Properties());
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    CREATE TRIGGER fail_packaged_write BEFORE INSERT ON chunk_attributes
+                    BEGIN SELECT RAISE(ABORT, 'packaged write failure'); END;
+                    """);
+        }
+
+        String text = "# Güncel 😀\r\nYeni içerik, é ve ı.\r\n";
+        Document replacement = new Document(document.sourcePath(), DocumentType.MARKDOWN, text,
+                ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
+        List<Chunk> updated = factory.getChunker(replacement).chunk(replacement);
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            var before = storage.files().findByPath(document.sourcePath()).orElseThrow();
+            var beforeChunks = storage.chunks().findByFileId(before.id());
+
+            try {
+                storage.replaceFile(replacement, updated);
+                throw new AssertionError("The injected packaged write failure must abort replacement");
+            } catch (SQLException expected) {
+                check(expected.getMessage().contains("packaged write failure"), "Expected the injected SQLite failure");
+            }
+
+            check(storage.files().findByPath(document.sourcePath()).orElseThrow().equals(before),
+                    "Failed replacement must restore the complete manifest");
+            check(storage.chunks().findByFileId(before.id()).equals(beforeChunks),
+                    "Failed replacement must preserve chunk IDs and every metadata value");
+        }
+
+        try (var connection = JDBC.createConnection("jdbc:sqlite:" + database.toUri().toASCIIString(), new Properties());
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("DROP TRIGGER fail_packaged_write");
+        }
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            var before = storage.files().findByPath(document.sourcePath()).orElseThrow();
+            check(before.contentHash().equals(document.contentHash()), "Rollback must survive database reopening");
+            check(storage.chunks().findByFileId(before.id()).stream().map(value -> value.chunk()).toList().equals(chunks),
+                    "Original chunk content must survive rollback and reopening");
+            var saved = storage.replaceFile(replacement, updated);
+            check(saved.id() == before.id(), "Retry must preserve the file ID");
+            check(saved.contentHash().equals(replacement.contentHash()), "Retry must update the raw-byte hash");
+            check(storage.chunks().findByFileId(saved.id()).stream().map(value -> value.chunk()).toList().equals(updated),
+                    "Retry must persist the replacement chunks");
+            check(storage.files().delete(saved.id()), "Deleting the manifest must succeed");
+            check(storage.chunks().findByFileId(saved.id()).isEmpty(), "Deleting the file must delete its chunks");
+        }
+
+        try (var connection = JDBC.createConnection("jdbc:sqlite:" + database.toUri().toASCIIString(), new Properties());
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery("""
+                     SELECT (SELECT count(*) FROM files) + (SELECT count(*) FROM chunks)
+                          + (SELECT count(*) FROM chunk_headings) + (SELECT count(*) FROM chunk_attributes)
+                     """)) {
+            check(rows.next() && rows.getInt(1) == 0, "Packaged cascade deletion must leave no orphan metadata");
+        }
+    }
+
+    /* Runs extraction, real chunking and persistence for every text family without any embedding runtime. */
+    private static void verifyStorageFamilies(Path root, DocumentExtractionService extraction,
+                                              DocumentChunkerFactory factory) throws Exception {
+        Path database = root.resolve(".pecia/families.db");
+
+        for (DocumentType type : DocumentType.values()) {
+            Path relative = Path.of("docs", type.name() + ".txt");
+            Path source = Files.writeString(root.resolve(relative), "\uFEFF# Başlık 😀\r\nİstanbul é\r\nson");
+            Document document = extraction.extract(new ExtractionRequest(source, relative, type));
+            List<Chunk> expected = factory.getChunker(document).chunk(document);
+            check(!expected.isEmpty(), "Each family fixture must produce chunks");
+
+            try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+                storage.replaceFile(document, expected);
+            }
+
+            try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+                var saved = storage.files().findByPath(relative).orElseThrow();
+                check(saved.contentHash().equals(ContentHash.sha256(Files.readAllBytes(source))),
+                        "Stored hash must include raw BOM and CRLF bytes");
+                check(storage.chunks().findByFileId(saved.id()).stream().map(value -> value.chunk()).toList().equals(expected),
+                        "Stored family chunks must preserve exact extraction/chunking output: " + type);
+                Document empty = new Document(relative, type, "", ContentHash.sha256(new byte[0]));
+                check(storage.replaceFile(empty, List.of()).id() == saved.id(), "Empty replacement must retain file identity");
+            }
+
+            try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+                var saved = storage.files().findByPath(relative).orElseThrow();
+                check(storage.chunks().findByFileId(saved.id()).isEmpty(), "Empty replacement must survive reopening");
+            }
+        }
     }
 
     /* Checks both code sources and resource URLs so development outputs cannot mask an incomplete distribution. */
@@ -105,12 +225,12 @@ public final class PackagedCoreConsumer {
         for (Class<?> type : List.of(IndexService.class, IndexPreview.class, PeciaConfigLoader.class,
                 PeciaConfigParser.class, DocumentExtractionService.class, Document.class, FileContentLoader.class,
                 TextDocumentExtractor.class, FileTypeDetector.class, MiniLmTokenizer.class,
-                DocumentChunkerFactory.class, MarkdownChunker.class, Chunk.class)) {
+                DocumentChunkerFactory.class, MarkdownChunker.class, Chunk.class, SqliteStorage.class)) {
             Path origin = Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
             check(Files.isSameFile(coreJar, origin), type.getName() + " must load from the packaged core JAR: " + origin);
         }
 
-        for (Class<?> type : List.of(Parser.class, FastIgnoreRule.class, Toml.class)) {
+        for (Class<?> type : List.of(Parser.class, FastIgnoreRule.class, Toml.class, JDBC.class)) {
             Path origin = Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
             check(origin.toString().endsWith(".jar") && Files.isSameFile(runtimeDirectory, origin.getParent()),
                     type.getName() + " must load from a packaged runtime dependency: " + origin);
@@ -119,7 +239,8 @@ public final class PackagedCoreConsumer {
         String tokenizerResources = "/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/";
 
         for (String name : List.of(tokenizerResources + "vocab.txt", tokenizerResources + "NOTICE.txt",
-                tokenizerResources + "LICENSE.txt", "/META-INF/licenses/commonmark-LICENSE.txt")) {
+                tokenizerResources + "LICENSE.txt", "/META-INF/licenses/commonmark-LICENSE.txt",
+                "/db/migration/V1__create_initial_schema.sql")) {
             URL resource = MiniLmTokenizer.class.getResource(name);
             check(resource != null && resource.getProtocol().equals("jar"), "Resource must load from a JAR: " + name);
             JarURLConnection connection = (JarURLConnection) resource.openConnection();

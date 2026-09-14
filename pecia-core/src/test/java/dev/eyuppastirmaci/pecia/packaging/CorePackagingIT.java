@@ -97,7 +97,7 @@ class CorePackagingIT {
             assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/index/IndexService.class"));
             List<String> forbiddenPrefixes = List.of("dev/eyuppastirmaci/pecia/cli/",
                     "dev/eyuppastirmaci/pecia/Bootstrap", "picocli/", "javafx/", "org/commonmark/",
-                    "org/eclipse/jgit/", "org/tomlj/", "org/slf4j/");
+                    "org/eclipse/jgit/", "org/tomlj/", "org/slf4j/", "org/sqlite/");
 
             try (var entries = jar.stream()) {
                 assertFalse(entries.anyMatch(entry -> forbiddenPrefixes.stream().anyMatch(entry.getName()::startsWith)),

@@ -2,12 +2,19 @@ package dev.eyuppastirmaci.pecia.content;
 
 import java.nio.file.Path;
 
-final class ContentPath {
+public final class ContentPath {
 
     private ContentPath() { }
 
-    /* Validates that a source path is normalized, project-relative, and cannot escape its project root. */
-    static Path requireProjectRelative(Path path) {
+    /**
+     * Validates a normalized source path within its project root.
+     *
+     * @param path the project-relative source path
+     * @return the validated path
+     * @throws NullPointerException if path is null
+     * @throws IllegalArgumentException if path is empty, absolute, unnormalized, or escapes the root
+     */
+    public static Path requireProjectRelative(Path path) {
         if (path.toString().isBlank() || path.getFileName() == null) {
             throw new IllegalArgumentException("sourcePath must identify a file");
         }
