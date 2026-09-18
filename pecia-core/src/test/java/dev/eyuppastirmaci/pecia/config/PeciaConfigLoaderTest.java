@@ -20,6 +20,19 @@ class PeciaConfigLoaderTest {
     private final PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
 
     @Test
+    void rejectsMissingParserDuringConstruction() {
+        assertThrows(NullPointerException.class, () -> new PeciaConfigLoader(null));
+    }
+
+    @Test
+    void loadedConfigRequiresConfigurationAndRoot() {
+        assertThrows(NullPointerException.class,
+                () -> new PeciaConfigLoader.LoadedConfig(null, root, false));
+        assertThrows(NullPointerException.class,
+                () -> new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), null, false));
+    }
+
+    @Test
     void fallsBackToNearestGitRootWithoutConfig() throws IOException {
         Files.createDirectory(root.resolve(".git"));
         Path nested = Files.createDirectories(root.resolve("src/deep"));

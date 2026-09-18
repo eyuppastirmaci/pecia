@@ -5,6 +5,7 @@ import picocli.CommandLine.Command;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -17,7 +18,7 @@ public class InitCommand implements Callable<Integer> {
     private final PeciaConfigFile configFile;
 
     public InitCommand(PeciaConfigFile configFile) {
-        this.configFile = configFile;
+        this.configFile = Objects.requireNonNull(configFile, "configFile");
     }
 
     /**

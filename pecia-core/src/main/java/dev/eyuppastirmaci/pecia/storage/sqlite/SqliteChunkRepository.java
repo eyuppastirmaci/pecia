@@ -9,10 +9,7 @@ import dev.eyuppastirmaci.pecia.storage.sqlite.mapper.StoredChunkRowMapper;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 
 public final class SqliteChunkRepository {
     private final SqliteStorage storage;
@@ -83,7 +80,7 @@ public final class SqliteChunkRepository {
         requireId(fileId);
 
         return storage.inScope(() -> {
-            var mapper = new StoredChunkRowMapper(readMetadata(fileId));
+            var mapper = new StoredChunkRowMapper(new SqliteChunkMetadataReader(connection).readForFile(fileId));
             List<StoredChunk> chunks = new ArrayList<>();
 
             try (var query = connection.prepareStatement("""
@@ -139,58 +136,6 @@ public final class SqliteChunkRepository {
                 attribute.executeUpdate();
             }
         }
-    }
-
-    /* Loads metadata with two file-scoped queries instead of issuing queries for individual chunk rows. */
-    private Map<Long, ChunkMetadata> readMetadata(long fileId) throws SQLException {
-        Map<Long, List<String>> headings = new HashMap<>();
-        Map<Long, Map<String, String>> attributes = new HashMap<>();
-
-        try (var query = connection.prepareStatement("""
-                SELECT h.chunk_id, h.position, h.heading FROM chunk_headings h
-                JOIN chunks c ON c.id = h.chunk_id WHERE c.file_id = ? ORDER BY h.chunk_id, h.position
-                """)) {
-            query.setLong(1, fileId);
-
-            try (var rows = query.executeQuery()) {
-                while (rows.next()) {
-                    var path = headings.computeIfAbsent(rows.getLong(1), ignored -> new ArrayList<>());
-
-                    if (rows.getInt(2) != path.size()) {
-                        throw new SQLException("Non-contiguous stored heading positions");
-                    }
-
-                    path.add(rows.getString(3));
-                }
-            }
-        }
-
-        try (var query = connection.prepareStatement("""
-                SELECT a.chunk_id, a.name, a.value FROM chunk_attributes a
-                JOIN chunks c ON c.id = a.chunk_id WHERE c.file_id = ?
-                """)) {
-            query.setLong(1, fileId);
-
-            try (var rows = query.executeQuery()) {
-                while (rows.next()) {
-                    attributes.computeIfAbsent(rows.getLong(1), ignored -> new HashMap<>()).put(rows.getString(2), rows.getString(3));
-                }
-            }
-        }
-
-        var ids = new HashSet<>(headings.keySet());
-        ids.addAll(attributes.keySet());
-        Map<Long, ChunkMetadata> result = new HashMap<>();
-
-        try {
-            for (long id : ids) {
-                result.put(id, new ChunkMetadata(headings.getOrDefault(id, List.of()), attributes.getOrDefault(id, Map.of())));
-            }
-        } catch (IllegalArgumentException | NullPointerException invalid) {
-            throw new SQLException("Invalid stored chunk metadata", invalid);
-        }
-
-        return result;
     }
 
     private static void requireId(long id) {

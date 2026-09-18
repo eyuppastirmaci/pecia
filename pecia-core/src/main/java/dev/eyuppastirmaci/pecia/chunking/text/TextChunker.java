@@ -12,8 +12,6 @@ import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
 import java.util.ArrayList;
 import java.util.List;
 
-import static java.util.Objects.requireNonNull;
-
 public final class TextChunker implements DocumentChunker {
 
     private final TokenCounter tokenCounter;
@@ -21,8 +19,8 @@ public final class TextChunker implements DocumentChunker {
     private final int overlapTokens;
 
     public TextChunker(TokenCounter tokenCounter, int maxTokens, int overlapTokens) {
-        this.tokenCounter = requireNonNull(tokenCounter, "tokenCounter");
         this.contentBudget = ChunkingBudget.validate(tokenCounter, maxTokens, overlapTokens);
+        this.tokenCounter = tokenCounter;
         this.overlapTokens = overlapTokens;
     }
 

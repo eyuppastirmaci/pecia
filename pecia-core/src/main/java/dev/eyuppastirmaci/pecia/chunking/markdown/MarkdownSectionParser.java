@@ -14,15 +14,12 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
-import static java.util.Objects.requireNonNull;
-
 final class MarkdownSectionParser {
 
     private final Parser parser = Parser.builder().includeSourceSpans(IncludeSourceSpans.BLOCKS).build();
 
     /* Partitions the unchanged source at document-level headings, carrying the active hierarchy into each section. */
     List<MarkdownSection> parse(String text) {
-        requireNonNull(text, "text");
         Node document = parser.parse(text);
         List<MarkdownSection> sections = new ArrayList<>();
         String[] titles = new String[6];

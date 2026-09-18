@@ -124,9 +124,11 @@ public final class SqliteFileRepository {
      * @throws NullPointerException if file is null
      */
     public boolean update(StoredFile file) throws SQLException {
+        String path = SqlitePath.encode(file.sourcePath());
+
         try (var statement = connection.prepareStatement(
                 "UPDATE files SET source_path = ?, document_type = ?, content_hash = ? WHERE id = ?")) {
-            statement.setString(1, SqlitePath.encode(file.sourcePath()));
+            statement.setString(1, path);
             statement.setString(2, file.documentType().name());
             statement.setString(3, file.contentHash().value());
             statement.setLong(4, file.id());

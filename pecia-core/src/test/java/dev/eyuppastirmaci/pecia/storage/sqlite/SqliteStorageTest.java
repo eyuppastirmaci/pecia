@@ -23,6 +23,15 @@ class SqliteStorageTest {
     Path root;
 
     @Test
+    void rejectsNullPathsBeforeFilesystemAccessOrDatabaseCreation() {
+        Path database = root.resolve("not-created/index.db");
+
+        assertThrows(NullPointerException.class, () -> SqliteStorage.open(null, root.resolve("missing-root")));
+        assertThrows(NullPointerException.class, () -> SqliteStorage.open(database, null));
+        assertFalse(Files.exists(database.getParent()));
+    }
+
+    @Test
     void initializesReopensAndClosesAFileDatabaseWithoutLosingData() throws Exception {
         Path database = root.resolve(".pecia/İndex #%.db");
         Connection owned;

@@ -3,6 +3,7 @@ package dev.eyuppastirmaci.pecia.storage.sqlite;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.LineRange;
+import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import org.sqlite.JDBC;
 import org.sqlite.SQLiteConfig;
@@ -34,13 +35,13 @@ public final class SqliteStorage implements AutoCloseable {
      * @throws NullPointerException if either path is null
      */
     public static SqliteStorage open(Path databasePath, Path projectRoot) throws IOException, SQLException {
+        Path database = databasePath.toAbsolutePath().normalize();
         Path root = projectRoot.toRealPath();
 
         if (!Files.isDirectory(root)) {
             throw new IOException("Project root must be a directory: " + root);
         }
 
-        Path database = databasePath.toAbsolutePath().normalize();
         Files.createDirectories(database.getParent());
         SQLiteConfig config = new SQLiteConfig();
         config.enforceForeignKeys(true);
@@ -83,6 +84,30 @@ public final class SqliteStorage implements AutoCloseable {
      */
     public SqliteChunkRepository chunks() {
         return new SqliteChunkRepository(this);
+    }
+
+    /**
+     * Returns a read-only lexical search service usable for this storage's lifetime.
+     * Repeated searches see committed replacements; this service never closes the connection,
+     * rebuilds the index or commits the caller's transaction. Serialize access to this storage.
+     * Opening storage itself may still create or migrate an index.
+     *
+     * <p>For an already opened storage, prepare a corpus and query it:
+     * <pre>{@code
+     * var path = Path.of("src/Auth.java");
+     * var text = "JWT_SECRET authentication middleware";
+     * var document = new Document(path, DocumentType.SOURCE_CODE, text,
+     *         ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
+     * var chunk = new Chunk(path, document.type(), 0, text,
+     *         new LineRange(1, 1), ChunkMetadata.empty());
+     * storage.replaceFile(document, List.of(chunk));
+     * var hits = storage.lexicalSearch().search(new SearchRequest("JWT_SECRET"));
+     * }</pre>
+     *
+     * @return a search service borrowing the existing connection
+     */
+    public LexicalSearch lexicalSearch() {
+        return new SqliteLexicalSearch(new SqliteLexicalRetriever(this));
     }
 
     /**

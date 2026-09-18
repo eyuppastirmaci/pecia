@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -36,7 +37,7 @@ public class IndexCommand implements Callable<Integer> {
     private final IndexService indexService;
 
     public IndexCommand(IndexService indexService) {
-        this.indexService = indexService;
+        this.indexService = Objects.requireNonNull(indexService, "indexService");
     }
 
     /**

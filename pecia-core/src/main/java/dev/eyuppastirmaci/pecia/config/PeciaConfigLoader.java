@@ -3,13 +3,14 @@ package dev.eyuppastirmaci.pecia.config;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 
 public final class PeciaConfigLoader {
 
     private final PeciaConfigParser parser;
 
     public PeciaConfigLoader(PeciaConfigParser parser) {
-        this.parser = parser;
+        this.parser = Objects.requireNonNull(parser, "parser");
     }
 
     /**
@@ -45,5 +46,9 @@ public final class PeciaConfigLoader {
     }
 
     public record LoadedConfig(PeciaConfig config, Path root, boolean fromFile) {
+        public LoadedConfig {
+            Objects.requireNonNull(config, "config");
+            Objects.requireNonNull(root, "root");
+        }
     }
 }

@@ -121,12 +121,6 @@ public final class FileContentLoader {
     }
 
     private static void requireAbsoluteNormalized(Path file) {
-
-        if (file == null) {
-
-            throw new NullPointerException("file");
-        }
-
         if (!file.isAbsolute() || !file.normalize().equals(file)) {
 
             throw new IllegalArgumentException("file must be an absolute, normalized path: " + file);

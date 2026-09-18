@@ -16,8 +16,6 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 
-import static java.util.Objects.requireNonNull;
-
 final class MarkdownBlockPlanner {
 
     private final Parser parser = Parser.builder().includeSourceSpans(IncludeSourceSpans.BLOCKS).build();
@@ -25,8 +23,8 @@ final class MarkdownBlockPlanner {
     private final int contentBudget;
 
     MarkdownBlockPlanner(TokenCounter tokenCounter, int maxTokens) {
-        this.tokenCounter = requireNonNull(tokenCounter, "tokenCounter");
         var identity = tokenCounter.identity();
+        this.tokenCounter = tokenCounter;
 
         if (maxTokens <= identity.specialTokenCount() || maxTokens > identity.maxInputTokens()) {
             throw new IllegalArgumentException("maxTokens must be greater than " + identity.specialTokenCount()

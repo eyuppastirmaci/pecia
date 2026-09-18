@@ -9,11 +9,28 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class FileWalkerTest {
 
     @TempDir
     Path root;
+
+    @Test
+    void rejectsMissingFilterDuringConstruction() {
+        assertThrows(NullPointerException.class, () -> new FileWalker(null));
+    }
+
+    @Test
+    void scanIssueRequiresAPathButAllowsAnExceptionWithoutAMessage() {
+        assertThrows(NullPointerException.class, () -> new WalkResult.Issue(null, "read failed"));
+
+        var issue = new WalkResult.Issue(root, new IOException().getMessage());
+
+        assertEquals(root, issue.path());
+        assertNull(issue.reason());
+    }
 
     @Test
     void walksRecursivelyAndReturnsSortedRelativePaths() throws IOException {

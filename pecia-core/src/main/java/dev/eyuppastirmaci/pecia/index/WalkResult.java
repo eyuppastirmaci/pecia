@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.index;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 
 /** Issues make a scan incomplete; missing paths must not then be treated as deletions. */
 public record WalkResult(List<Path> files, List<Issue> issues) {
@@ -20,5 +21,9 @@ public record WalkResult(List<Path> files, List<Issue> issues) {
         return issues.isEmpty();
     }
 
-    public record Issue(Path path, String reason) { }
+    public record Issue(Path path, String reason) {
+        public Issue {
+            Objects.requireNonNull(path, "path");
+        }
+    }
 }

@@ -278,6 +278,19 @@ class SqliteFileRepositoryTest {
     }
 
     @Test
+    void rejectsNullUpdateBeforeAccessingTheConnection() throws Exception {
+        SqliteFileRepository repository;
+
+        try (var storage = SqliteStorage.open(root.resolve("index.db"), root)) {
+            repository = storage.files();
+        }
+
+        assertThrows(NullPointerException.class, () -> repository.update(null));
+        assertThrows(SQLException.class,
+                () -> repository.update(new StoredFile(1, Path.of("notes.txt"), DocumentType.PLAIN_TEXT, HASH)));
+    }
+
+    @Test
     void retainedRepositoryCannotOperateAfterStorageCloses() throws Exception {
         SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root);
         var repository = storage.files();

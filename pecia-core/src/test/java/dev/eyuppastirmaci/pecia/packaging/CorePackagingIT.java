@@ -45,6 +45,11 @@ class CorePackagingIT {
         runConsumer("verifyV1Migration");
     }
 
+    @Test
+    void searchesUsingOnlyThePublicApiInThePackagedCore() throws Exception {
+        runConsumer("verifyLexicalSearch");
+    }
+
     private void runConsumer(String method) throws Exception {
         Path coreJar = requiredPath("pecia.it.jar");
         Path runtimeDirectory = requiredPath("pecia.it.runtimeDirectory");

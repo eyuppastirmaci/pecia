@@ -14,8 +14,6 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.function.IntUnaryOperator;
 
-import static java.util.Objects.requireNonNull;
-
 public final class SourceCodeChunker implements DocumentChunker {
 
     private final TokenCounter tokenCounter;
@@ -27,8 +25,8 @@ public final class SourceCodeChunker implements DocumentChunker {
     }
 
     public SourceCodeChunker(TokenCounter tokenCounter, int maxTokens, int overlapTokens) {
-        this.tokenCounter = requireNonNull(tokenCounter, "tokenCounter");
         this.contentBudget = ChunkingBudget.validate(tokenCounter, maxTokens, overlapTokens);
+        this.tokenCounter = tokenCounter;
         this.overlapTokens = overlapTokens;
     }
 

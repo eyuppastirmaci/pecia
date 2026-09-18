@@ -5,13 +5,14 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Objects;
 
 public final class IndexService {
 
     private final PeciaConfigLoader configLoader;
 
     public IndexService(PeciaConfigLoader configLoader) {
-        this.configLoader = configLoader;
+        this.configLoader = Objects.requireNonNull(configLoader, "configLoader");
     }
 
     /**
@@ -19,7 +20,7 @@ public final class IndexService {
      *
      * @param target directory whose descendants are scanned
      * @return the normalized absolute target, loaded configuration, and target-relative files with recoverable scan issues
-     * @throws NullPointerException if target or the configuration loader is null
+     * @throws NullPointerException if target is null
      * @throws IOException if configuration cannot be read, the target is invalid, or traversal cannot start
      * @throws IllegalArgumentException if configuration or glob patterns are invalid
      */

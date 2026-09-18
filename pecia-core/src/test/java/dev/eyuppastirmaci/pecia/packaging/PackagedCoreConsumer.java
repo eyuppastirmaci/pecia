@@ -17,6 +17,11 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.search.LexicalSearch;
+import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.search.SearchHit;
+import dev.eyuppastirmaci.pecia.search.SearchScore;
+import dev.eyuppastirmaci.pecia.search.SearchException;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
@@ -415,12 +420,51 @@ public final class PackagedCoreConsumer {
 
     private record FtsRow(long id, String content, String headings, String sourcePath) { }
 
+    public static void verifyLexicalSearch(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Path database = root.resolve("lexical.db");
+        String content = "JWT_SECRET authentication middleware café İstanbul";
+        var metadata = new ChunkMetadata(List.of("Guide", "Authentication"), Map.of("language", "java"));
+        var lines = new LineRange(118, 161);
+        try (var storage = SqliteStorage.open(database, root)) {
+            // Equal-length paths/content/metadata make the binary path tie-break observable.
+            for (String name : List.of("z.java", "a.java")) {
+                var path = Path.of(name);
+                var document = new Document(path, DocumentType.SOURCE_CODE, content,
+                        ContentHash.sha256(content.getBytes(StandardCharsets.UTF_8)));
+                storage.replaceFile(document, List.of(new Chunk(path, document.type(), 0, content, lines, metadata)));
+            }
+            var search = storage.lexicalSearch();
+            var hits = search.search(new SearchRequest("JWT_SECRET"));
+            check(hits.stream().map(SearchHit::sourcePath).toList().equals(List.of(Path.of("a.java"), Path.of("z.java"))),
+                    "Packaged API must preserve deterministic rank ties");
+            for (var hit : hits) {
+                check(hit.chunkId() > 0 && hit.chunkIndex() == 0, "Packaged hit identity must come from storage");
+                check(hit.sourceLocation().equals(lines), "Packaged hit must keep the full source line range");
+                check(hit.metadata().equals(metadata), "Packaged hit must preserve ordered headings and attributes");
+                check(hit.snippet().equals(content), "Packaged hit must expose a plain content snippet");
+                check(hit.documentType() == DocumentType.SOURCE_CODE, "Packaged hit must retain source type");
+                check(hit.score().kind() == SearchScore.Kind.SQLITE_BM25, "Packaged score must identify BM25");
+            }
+            check(hits.equals(search.search(new SearchRequest("JWT_SECRET"))), "Repeated searches must be stable");
+            check(hits.subList(0, 1).equals(search.search(new SearchRequest("JWT_SECRET", 1))), "Limit must preserve rank");
+            check(search.search(new SearchRequest("café İstanbul")).size() == 2, "Unicode queries must work from the JAR");
+            check(search.search(new SearchRequest("!!!")).isEmpty(), "Punctuation-only queries must be empty");
+            check(search.search(new SearchRequest("missing")).isEmpty(), "No match must be a successful empty result");
+        }
+        try (var reopened = SqliteStorage.open(database, root)) {
+            check(reopened.lexicalSearch().search(new SearchRequest("JWT_SECRET")).size() == 2,
+                    "Public search must work after reopening persisted storage");
+        }
+    }
+
     /* Checks both code sources and resource URLs so development outputs cannot mask an incomplete distribution. */
     private static void verifyArchiveOrigins(Path coreJar, Path runtimeDirectory) throws Exception {
         for (Class<?> type : List.of(IndexService.class, IndexPreview.class, PeciaConfigLoader.class,
                 PeciaConfigParser.class, DocumentExtractionService.class, Document.class, FileContentLoader.class,
                 TextDocumentExtractor.class, FileTypeDetector.class, MiniLmTokenizer.class,
-                DocumentChunkerFactory.class, MarkdownChunker.class, Chunk.class, SqliteStorage.class)) {
+                DocumentChunkerFactory.class, MarkdownChunker.class, Chunk.class, SqliteStorage.class,
+                LexicalSearch.class, SearchRequest.class, SearchHit.class, SearchScore.class, SearchException.class)) {
             Path origin = Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
             check(Files.isSameFile(coreJar, origin), type.getName() + " must load from the packaged core JAR: " + origin);
         }

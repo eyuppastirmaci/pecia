@@ -25,6 +25,21 @@ class IndexServiceTest {
     private final IndexService service = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
 
     @Test
+    void rejectsMissingConfigurationLoaderDuringConstruction() {
+        assertThrows(NullPointerException.class, () -> new IndexService(null));
+    }
+
+    @Test
+    void previewRequiresTargetConfigurationAndScanResult() {
+        var loaded = new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), root, false);
+        var walked = new WalkResult(List.of(), List.of());
+
+        assertThrows(NullPointerException.class, () -> new IndexPreview(null, loaded, walked));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, null, walked));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, loaded, null));
+    }
+
+    @Test
     void normalizesTargetAndReturnsDefaultsWithoutWritingFiles() throws IOException {
         Files.writeString(root.resolve("notes.md"), "notes");
         Files.writeString(root.resolve("data.bin"), "data");
