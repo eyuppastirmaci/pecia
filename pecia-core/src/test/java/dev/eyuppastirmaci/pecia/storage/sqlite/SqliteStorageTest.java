@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -28,9 +29,18 @@ class SqliteStorageTest {
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             owned = storage.connection();
-            assertEquals(1, scalar(owned, "PRAGMA user_version"));
+            assertEquals(2, scalar(owned, "PRAGMA user_version"));
+            assertEquals(2, scalar(owned, "SELECT index_format_version FROM index_metadata"));
             assertEquals(1, scalar(owned, "PRAGMA foreign_keys"));
-            assertEquals(5, scalar(owned, "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name NOT GLOB 'sqlite_*'"));
+            for (String table : List.of("files", "chunks", "chunk_headings", "chunk_attributes", "index_metadata", "chunks_fts")) {
+                try (var query = owned.prepareStatement("SELECT type FROM sqlite_schema WHERE name = ?")) {
+                    query.setString(1, table);
+                    try (var row = query.executeQuery()) {
+                        assertTrue(row.next(), "Missing named table: " + table);
+                        assertEquals("table", row.getString(1), table);
+                    }
+                }
+            }
             insertFile(owned);
         }
 
@@ -64,7 +74,7 @@ class SqliteStorageTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-1, 2, 100})
+    @ValueSource(ints = {-1, 3, 100})
     void rejectsUnsupportedSchemaVersionsWithoutChangingTheDatabase(int version) throws Exception {
         Path database = root.resolve("index.db");
 
@@ -114,8 +124,8 @@ class SqliteStorageTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"DROP TABLE chunk_attributes", "ALTER TABLE chunks RENAME COLUMN content TO wrong",
-            "DELETE FROM index_metadata", "UPDATE index_metadata SET index_format_version = 2"})
-    void rejectsIncompleteOrIncompatibleVersionOneDatabases(String damage) throws Exception {
+            "DELETE FROM index_metadata", "UPDATE index_metadata SET index_format_version = 3"})
+    void rejectsIncompleteOrIncompatibleCurrentDatabases(String damage) throws Exception {
         Path database = root.resolve("index.db");
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
@@ -140,7 +150,7 @@ class SqliteStorageTest {
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertEquals(1, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(2, scalar(storage.connection(), "PRAGMA user_version"));
         }
     }
 

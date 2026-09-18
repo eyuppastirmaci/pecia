@@ -23,7 +23,8 @@ public final class SqliteStorage implements AutoCloseable {
     }
 
     /**
-     * Opens a SQLite index belonging to the given existing project directory.
+     * Opens a SQLite index belonging to the given existing project directory, creating the current schema
+     * or atomically upgrading a compatible version-one index and its stored chunks for FTS5 search.
      *
      * @param databasePath the database file path, resolved against the working directory when relative
      * @param projectRoot the existing project directory whose canonical URI owns the index

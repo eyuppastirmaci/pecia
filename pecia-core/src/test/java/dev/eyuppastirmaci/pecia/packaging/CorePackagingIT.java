@@ -37,6 +37,15 @@ class CorePackagingIT {
 
     @Test
     void runsTheSharedEngineUsingOnlyTheCoreJarAndRuntimeDependencies() throws Exception {
+        runConsumer("verify");
+    }
+
+    @Test
+    void migratesExistingV1DataUsingOnlyPackagedSqlAndRuntimeDependencies() throws Exception {
+        runConsumer("verifyV1Migration");
+    }
+
+    private void runConsumer(String method) throws Exception {
         Path coreJar = requiredPath("pecia.it.jar");
         Path runtimeDirectory = requiredPath("pecia.it.runtimeDirectory");
         List<URL> urls = new ArrayList<>();
@@ -49,23 +58,35 @@ class CorePackagingIT {
         }
 
         assertTrue(urls.size() > 1, "The consumer needs the packaged runtime dependencies");
-        urls.add(requiredPath("pecia.it.testClasses").toUri().toURL());
+        // Copy only the standalone consumer and its nested classes, excluding all test helpers/resources.
+        Path consumerDirectory = Files.createDirectories(fixture.resolve("consumer-classes"));
+        Path packagePath = Path.of("dev/eyuppastirmaci/pecia/packaging");
+        Path destination = Files.createDirectories(consumerDirectory.resolve(packagePath));
+        try (var classes = Files.list(requiredPath("pecia.it.testClasses").resolve(packagePath))) {
+            for (Path type : classes.filter(path -> path.getFileName().toString()
+                    .matches("PackagedCoreConsumer(?:\\$[^/]+)?\\.class")).toList()) {
+                Files.copy(type, destination.resolve(type.getFileName()));
+            }
+        }
+        urls.add(consumerDirectory.toUri().toURL());
 
         // The platform parent prevents Maven's production and test classpaths from satisfying missing JAR contents.
         try (URLClassLoader consumerLoader = new URLClassLoader(urls.toArray(URL[]::new),
                 ClassLoader.getPlatformClassLoader())) {
             for (String unavailable : List.of("dev.eyuppastirmaci.pecia.Bootstrap", "picocli.CommandLine",
-                    "javafx.application.Application", "org.slf4j.impl.StaticLoggerBinder")) {
+                    "javafx.application.Application", "org.slf4j.impl.StaticLoggerBinder",
+                    "org.junit.jupiter.api.Test", "dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport",
+                    "ai.onnxruntime.OrtEnvironment", "ai.djl.Model")) {
                 assertThrows(ClassNotFoundException.class, () -> consumerLoader.loadClass(unavailable), unavailable);
             }
 
             Class<?> consumer = consumerLoader.loadClass("dev.eyuppastirmaci.pecia.packaging.PackagedCoreConsumer");
 
             try {
-                consumer.getMethod("verify", Path.class, Path.class, Path.class)
-                        .invoke(null, fixture.toRealPath(), coreJar, runtimeDirectory);
+                consumer.getMethod(method, Path.class, Path.class, Path.class)
+                        .invoke(null, Files.createDirectory(fixture.resolve("project")).toRealPath(), coreJar, runtimeDirectory);
             } catch (InvocationTargetException failure) {
-                throw new AssertionError("The isolated packaged-core consumer failed", failure.getCause());
+                throw new AssertionError("The isolated packaged-core consumer failed: " + method, failure.getCause());
             }
         }
     }
@@ -95,6 +116,10 @@ class CorePackagingIT {
             assertNotNull(jar.getManifest(), "The core JAR must have a manifest");
             assertNull(jar.getManifest().getMainAttributes().getValue(Attributes.Name.MAIN_CLASS));
             assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/index/IndexService.class"));
+            for (String migration : List.of("V1__create_initial_schema.sql", "V2__add_chunk_fts.sql")) {
+                assertTrue(readEntry(jar, "db/migration/" + migration).length > 0,
+                        "The core JAR must contain the migration: " + migration);
+            }
             List<String> forbiddenPrefixes = List.of("dev/eyuppastirmaci/pecia/cli/",
                     "dev/eyuppastirmaci/pecia/Bootstrap", "picocli/", "javafx/", "org/commonmark/",
                     "org/eclipse/jgit/", "org/tomlj/", "org/slf4j/", "org/sqlite/");

@@ -8,8 +8,8 @@ import java.util.Map;
 
 final class SqliteSchemaInitializer {
     private static final String SCHEMA_RESOURCE = "/db/migration/V1__create_initial_schema.sql";
-    private static final int SCHEMA_VERSION = 1;
-    private static final int INDEX_FORMAT_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
+    private static final int INDEX_FORMAT_VERSION = 2;
     private static final Map<String, String> REQUIRED_COLUMNS = Map.of(
             "files", "id, source_path, document_type, content_hash",
             "chunks", "id, file_id, chunk_index, content, start_line, end_line",
@@ -29,8 +29,20 @@ final class SqliteSchemaInitializer {
         }
     }
 
-    /* Serializes version checks and first creation so concurrent openers cannot initialize the same database twice. */
-    static void initialize(Connection connection, String rootUri, String schema) throws SQLException {
+    static void initialize(Connection connection, String rootUri, String schema) throws IOException, SQLException {
+        SqliteFtsSchema fts = SqliteFtsSchema.load();
+        initialize(connection, rootUri, schema, fts.script(), fts, SqliteFtsSupport::verify);
+    }
+
+    /* Failure-injection seam; expected definitions always come from the canonical bundled resource. */
+    static void initialize(Connection connection, String rootUri, String schema, String migration, FtsCheck ftsCheck)
+            throws IOException, SQLException {
+        initialize(connection, rootUri, schema, migration, SqliteFtsSchema.load(), ftsCheck);
+    }
+
+    /* Serializes validation, creation and upgrade so concurrent openers cannot migrate the same index twice. */
+    private static void initialize(Connection connection, String rootUri, String schema, String migration,
+                                   SqliteFtsSchema fts, FtsCheck ftsCheck) throws SQLException {
         try (var statement = connection.createStatement()) {
             statement.execute("BEGIN IMMEDIATE");
 
@@ -42,24 +54,47 @@ final class SqliteSchemaInitializer {
                     version = result.getInt(1);
                 }
 
+                if (version != 0 && version != 1 && version != SCHEMA_VERSION) {
+                    throw new SQLException("Unsupported SQLite schema version: " + version + "; expected 1 or " + SCHEMA_VERSION);
+                }
+
                 if (version == 0) {
                     requireEmptyDatabase(connection);
+                } else {
+                    // Validate ownership and the old format before even attempting migration or writing schema objects.
+                    validateSchema(connection, rootUri, version == 1 ? 1 : INDEX_FORMAT_VERSION);
+                }
+
+                if (version == 1) {
+                    requireValidRelationships(connection);
+                }
+                ftsCheck.verify(connection);
+
+                if (version == 0) {
                     // Xerial executes the complete SQL script, avoiding an unsafe split on semicolons.
                     statement.executeUpdate(schema);
 
                     try (var insert = connection.prepareStatement(
                             "INSERT INTO index_metadata(singleton, project_root_uri, index_format_version) VALUES (1, ?, ?)")) {
                         insert.setString(1, rootUri);
-                        insert.setInt(2, INDEX_FORMAT_VERSION);
+                        insert.setInt(2, 1);
                         insert.executeUpdate();
                     }
 
-                    statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
-                } else if (version != SCHEMA_VERSION) {
-                    throw new SQLException("Unsupported SQLite schema version: " + version + "; expected " + SCHEMA_VERSION);
+                    validateSchema(connection, rootUri, 1);
                 }
 
-                validateSchema(connection, rootUri);
+                if (version < SCHEMA_VERSION) {
+                    statement.executeUpdate(migration);
+                    fts.validate(connection);
+                    statement.executeUpdate("UPDATE index_metadata SET index_format_version = " + INDEX_FORMAT_VERSION
+                            + " WHERE singleton = 1");
+                    statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+                } else {
+                    fts.validate(connection);
+                }
+
+                validateSchema(connection, rootUri, INDEX_FORMAT_VERSION);
                 statement.execute("COMMIT");
             } catch (SQLException | RuntimeException | Error failure) {
                 try {
@@ -83,7 +118,7 @@ final class SqliteSchemaInitializer {
     }
 
     /* Verifies required tables and readable columns before accepting the version and project ownership marker. */
-    private static void validateSchema(Connection connection, String rootUri) throws SQLException {
+    private static void validateSchema(Connection connection, String rootUri, int expectedFormat) throws SQLException {
         for (var table : REQUIRED_COLUMNS.entrySet()) {
             try (var query = connection.prepareStatement("SELECT type FROM sqlite_schema WHERE name = ?")) {
                 query.setString(1, table.getKey());
@@ -111,7 +146,7 @@ final class SqliteSchemaInitializer {
                 throw new SQLException("SQLite index belongs to another project root: " + result.getString(2));
             }
 
-            if (result.getInt(3) != INDEX_FORMAT_VERSION) {
+            if (result.getInt(3) != expectedFormat) {
                 throw new SQLException("Unsupported index format version: " + result.getInt(3));
             }
 
@@ -119,5 +154,19 @@ final class SqliteSchemaInitializer {
                 throw new SQLException("SQLite index metadata must contain exactly one row");
             }
         }
+    }
+
+    private static void requireValidRelationships(Connection connection) throws SQLException {
+        // Only before backfill: an orphan chunk must not silently disappear from the JOIN-based search copy.
+        try (var statement = connection.createStatement(); var result = statement.executeQuery("PRAGMA foreign_key_check")) {
+            if (result.next()) {
+                throw new SQLException("Invalid SQLite V1 foreign-key relationship in table: " + result.getString(1));
+            }
+        }
+    }
+
+    @FunctionalInterface
+    interface FtsCheck {
+        void verify(Connection connection) throws SQLException;
     }
 }
