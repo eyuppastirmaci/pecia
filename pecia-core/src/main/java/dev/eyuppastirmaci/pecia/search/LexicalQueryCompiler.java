@@ -9,8 +9,8 @@ final class LexicalQueryCompiler {
     static final int MAX_QUERY_PARTS = 64;
 
     /**
-     * Quotes each searchable whitespace-delimited part and combines the phrases with AND.
-     * SQLite remains responsible for tokenization and case/diacritic handling within each phrase.
+     * Quotes each searchable whitespace-delimited part and combines the phrases with AND. SQLite
+     * remains responsible for tokenization and case/diacritic handling within each phrase.
      *
      * @param request the validated request whose original text is preserved
      * @return a MATCH expression to bind as a SQL parameter, or empty when no searchable parts remain
@@ -52,10 +52,13 @@ final class LexicalQueryCompiler {
     }
 
     private static boolean containsSearchableCharacter(int codePoint) {
-        return Character.isLetter(codePoint) || switch (Character.getType(codePoint)) {
-            case Character.DECIMAL_DIGIT_NUMBER, Character.LETTER_NUMBER, Character.OTHER_NUMBER,
-                    Character.PRIVATE_USE -> true;
-            default -> false;
-        };
+        return Character.isLetter(codePoint)
+                || switch (Character.getType(codePoint)) {
+                    case Character.DECIMAL_DIGIT_NUMBER,
+                            Character.LETTER_NUMBER,
+                            Character.OTHER_NUMBER,
+                            Character.PRIVATE_USE -> true;
+                    default -> false;
+                };
     }
 }

@@ -1,18 +1,17 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -20,13 +19,17 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-
-import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SqliteLexicalRetrieverTest {
     @TempDir
     Path root;
+
     private SqliteStorage storage;
     private SqliteLexicalRetriever retriever;
 
@@ -52,10 +55,14 @@ class SqliteLexicalRetrieverTest {
         var results = retriever.retrieve("\"needle\"", 10);
 
         assertEquals(List.of(body.id(), heading.id(), path.id()), ids(results));
-        assertEquals(List.of(body.fileId(), heading.fileId(), path.fileId()),
+        assertEquals(
+                List.of(body.fileId(), heading.fileId(), path.fileId()),
                 results.stream().map(SqliteLexicalRetriever.Candidate::fileId).toList());
-        assertEquals(List.of("a/guide.md", "b/guide.md", "needle/guide.md"),
-                results.stream().map(SqliteLexicalRetriever.Candidate::sourcePath).toList());
+        assertEquals(
+                List.of("a/guide.md", "b/guide.md", "needle/guide.md"),
+                results.stream()
+                        .map(SqliteLexicalRetriever.Candidate::sourcePath)
+                        .toList());
         // All rows have equal total token counts and one occurrence in different columns.
         assertEquals(results.get(0).bm25Score(), results.get(1).bm25Score());
         assertEquals(results.get(0).bm25Score(), results.get(2).bm25Score());
@@ -96,18 +103,22 @@ class SqliteLexicalRetrieverTest {
         }
 
         for (String path : paths) {
-            for (int index : new int[]{2, 0, 1}) {
+            for (int index : new int[] {2, 0, 1}) {
                 insert(path, index, "needle");
             }
         }
 
         var results = retriever.retrieve("\"needle\"", 100);
 
-        assertEquals(List.of("A.md:0", "A.md:1", "A.md:2", "a.md:0", "a.md:1", "a.md:2",
-                        "z.md:0", "z.md:1", "z.md:2", "İ.md:0", "İ.md:1", "İ.md:2",
-                        "ı.md:0", "ı.md:1", "ı.md:2"),
-                results.stream().map(hit -> hit.sourcePath() + ":" + hit.chunkIndex()).toList());
-        assertTrue(results.stream().allMatch(hit -> hit.bm25Score() == results.getFirst().bm25Score()));
+        assertEquals(
+                List.of(
+                        "A.md:0", "A.md:1", "A.md:2", "a.md:0", "a.md:1", "a.md:2", "z.md:0", "z.md:1", "z.md:2",
+                        "İ.md:0", "İ.md:1", "İ.md:2", "ı.md:0", "ı.md:1", "ı.md:2"),
+                results.stream()
+                        .map(hit -> hit.sourcePath() + ":" + hit.chunkIndex())
+                        .toList());
+        assertTrue(results.stream()
+                .allMatch(hit -> hit.bm25Score() == results.getFirst().bm25Score()));
         assertEquals(results.subList(0, 4), retriever.retrieve("\"needle\"", 4));
         assertEquals(results, retriever.retrieve("\"needle\"", 100));
     }
@@ -229,13 +240,23 @@ class SqliteLexicalRetrieverTest {
 
     private StoredChunk insert(String path, int index, String content, String... headings) throws SQLException {
         Path source = Path.of(path);
-        var file = storage.files().save(source, DocumentType.MARKDOWN,
-                ContentHash.sha256(content.getBytes(StandardCharsets.UTF_8)));
-        return storage.chunks().insert(file.id(), new Chunk(source, DocumentType.MARKDOWN, index, content,
-                new LineRange(1, 2), new ChunkMetadata(List.of(headings), Collections.emptyMap())));
+        var file = storage.files()
+                .save(source, DocumentType.MARKDOWN, ContentHash.sha256(content.getBytes(StandardCharsets.UTF_8)));
+        return storage.chunks()
+                .insert(
+                        file.id(),
+                        new Chunk(
+                                source,
+                                DocumentType.MARKDOWN,
+                                index,
+                                content,
+                                new LineRange(1, 2),
+                                new ChunkMetadata(List.of(headings), Collections.emptyMap())));
     }
 
     private static List<Long> ids(List<SqliteLexicalRetriever.Candidate> candidates) {
-        return candidates.stream().map(SqliteLexicalRetriever.Candidate::chunkId).toList();
+        return candidates.stream()
+                .map(SqliteLexicalRetriever.Candidate::chunkId)
+                .toList();
     }
 }

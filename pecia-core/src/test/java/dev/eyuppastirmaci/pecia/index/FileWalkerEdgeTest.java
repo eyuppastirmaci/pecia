@@ -1,7 +1,10 @@
 package dev.eyuppastirmaci.pecia.index;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -9,12 +12,13 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class FileWalkerEdgeTest {
-    @TempDir Path root;
+    @TempDir
+    Path root;
+
     private final FileWalker walker = new FileWalker(new GlobFilter(List.of("**/*.md"), List.of()));
 
     @Test
@@ -97,7 +101,8 @@ class FileWalkerEdgeTest {
             assumeTrue(false, "Symlink creation unavailable: " + unavailable.getMessage());
         }
 
-        assertEquals(List.of(Path.of("actual/sub/keep.md")), walker.scan(root, root).files());
+        assertEquals(
+                List.of(Path.of("actual/sub/keep.md")), walker.scan(root, root).files());
         assertThrows(IOException.class, () -> walker.scan(link, root));
         assertThrows(IOException.class, () -> walker.scan(link.resolve("sub"), root));
     }

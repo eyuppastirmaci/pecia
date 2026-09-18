@@ -1,5 +1,13 @@
 package dev.eyuppastirmaci.pecia.chunking.source;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
@@ -9,24 +17,15 @@ import dev.eyuppastirmaci.pecia.content.FileContent;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SourceCodeLocationTest {
 
@@ -46,7 +45,15 @@ class SourceCodeLocationTest {
         assertEquals(3, chunks.size());
         assertSlice(document, chunks.get(0), 0, "one" + newline, 0, firstEnd, 1, 1);
         assertSlice(document, chunks.get(1), 1, " \ttwo" + newline, firstEnd, secondEnd, 2, 2);
-        assertSlice(document, chunks.get(2), 2, "three" + newline, secondEnd, document.content().length(), 3, 3);
+        assertSlice(
+                document,
+                chunks.get(2),
+                2,
+                "three" + newline,
+                secondEnd,
+                document.content().length(),
+                3,
+                3);
     }
 
     @Test
@@ -114,7 +121,15 @@ class SourceCodeLocationTest {
         List<Chunk> chunks = new SourceCodeChunker(tokenizer, 3).chunk(document);
 
         assertEquals(1, chunks.size());
-        assertSlice(document, chunks.getFirst(), 0, document.content(), 0, document.content().length(), 1, 1);
+        assertSlice(
+                document,
+                chunks.getFirst(),
+                0,
+                document.content(),
+                0,
+                document.content().length(),
+                1,
+                1);
     }
 
     @Test
@@ -137,8 +152,8 @@ class SourceCodeLocationTest {
         Path source = Path.of("src", "İçerik.tsx");
         Path file = directory.resolve(source).toAbsolutePath().normalize();
         FileContent loaded = new FileContent(file, bytes);
-        Document document = new TextDocumentExtractor().extract(
-                new ExtractionRequest(file, source, DocumentType.SOURCE_CODE), loaded);
+        Document document = new TextDocumentExtractor()
+                .extract(new ExtractionRequest(file, source, DocumentType.SOURCE_CODE), loaded);
         ContentHash hash = document.contentHash();
         List<Chunk> chunks = new SourceCodeChunker(tokenizer, 5, 1).chunk(document);
 
@@ -158,8 +173,8 @@ class SourceCodeLocationTest {
     void keepsMetadataImmutableAndSourceIdentityLocalToEachDocument() {
         SourceCodeChunker chunker = new SourceCodeChunker(tokenizer, 5, 1);
         Document first = document("++++++");
-        Document second = new Document(Path.of("other", "SameContent.py"), DocumentType.SOURCE_CODE,
-                first.content(), first.contentHash());
+        Document second = new Document(
+                Path.of("other", "SameContent.py"), DocumentType.SOURCE_CODE, first.content(), first.contentHash());
         List<Chunk> original = chunker.chunk(first);
         List<Chunk> other = chunker.chunk(second);
 
@@ -168,13 +183,27 @@ class SourceCodeLocationTest {
         verifySource(second, other, 5, 1);
         assertEquals(0, other.getFirst().index());
         assertThrows(UnsupportedOperationException.class, () -> original.add(original.getFirst()));
-        assertThrows(UnsupportedOperationException.class, () -> original.getFirst().metadata().attributes().put("startOffset", "99"));
-        assertThrows(UnsupportedOperationException.class, () -> original.getFirst().metadata().headingPath().add("Heading"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> original.getFirst().metadata().attributes().put("startOffset", "99"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> original.getFirst().metadata().headingPath().add("Heading"));
     }
 
-    /* Checks exact source coordinates and identity against explicit expected values rather than the production boundary helpers. */
-    private static void assertSlice(Document document, Chunk chunk, int index, String content,
-                                    int start, int end, int firstLine, int lastLine) {
+    /**
+     * Checks exact source coordinates and identity against explicit expected values rather than the production boundary
+     * helpers.
+     */
+    private static void assertSlice(
+            Document document,
+            Chunk chunk,
+            int index,
+            String content,
+            int start,
+            int end,
+            int firstLine,
+            int lastLine) {
         assertEquals(content, chunk.content());
         assertEquals(document.content().substring(start, end), chunk.content());
         assertEquals(document.sourcePath(), chunk.sourcePath());
@@ -182,7 +211,8 @@ class SourceCodeLocationTest {
         assertEquals(index, chunk.index());
         assertEquals(new LineRange(firstLine, lastLine), chunk.sourceLocation());
         assertEquals(List.of(), chunk.metadata().headingPath());
-        assertEquals(Map.of("startOffset", Integer.toString(start), "endOffset", Integer.toString(end)),
+        assertEquals(
+                Map.of("startOffset", Integer.toString(start), "endOffset", Integer.toString(end)),
                 chunk.metadata().attributes());
     }
 
@@ -201,12 +231,20 @@ class SourceCodeLocationTest {
             assertTrue(end > covered && end <= text.length());
             assertTrue(tokenizer.countModelInput(chunk.content()) <= limit);
             assertTrue(tokenizer.count(text.substring(start, covered)) <= overlap);
-            assertSlice(document, chunk, index, text.substring(start, end), start, end,
-                    lineAt(text, start), lineAt(text, end - 1));
+            assertSlice(
+                    document,
+                    chunk,
+                    index,
+                    text.substring(start, end),
+                    start,
+                    end,
+                    lineAt(text, start),
+                    lineAt(text, end - 1));
 
             for (int offset : new int[] {start, end}) {
                 if (offset > 0 && offset < text.length()) {
-                    assertFalse(Character.isHighSurrogate(text.charAt(offset - 1)) && Character.isLowSurrogate(text.charAt(offset)));
+                    assertFalse(Character.isHighSurrogate(text.charAt(offset - 1))
+                            && Character.isLowSurrogate(text.charAt(offset)));
                     assertFalse(text.charAt(offset - 1) == '\r' && text.charAt(offset) == '\n');
                 }
             }
@@ -218,7 +256,8 @@ class SourceCodeLocationTest {
 
         assertEquals(text.length(), covered);
         assertEquals(text, reconstructed.toString());
-        assertArrayEquals(text.getBytes(StandardCharsets.UTF_8), reconstructed.toString().getBytes(StandardCharsets.UTF_8));
+        assertArrayEquals(
+                text.getBytes(StandardCharsets.UTF_8), reconstructed.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     /* Counts complete terminators before a source character, treating CRLF as a single terminator. */
@@ -234,7 +273,10 @@ class SourceCodeLocationTest {
     }
 
     private static Document document(String text) {
-        return new Document(Path.of("src", "Example.java"), DocumentType.SOURCE_CODE, text,
+        return new Document(
+                Path.of("src", "Example.java"),
+                DocumentType.SOURCE_CODE,
+                text,
                 ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
     }
 }

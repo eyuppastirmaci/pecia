@@ -11,6 +11,12 @@ public final class FileContent {
     private final byte[] bytes;
     private final ContentHash contentHash;
 
+    /**
+     * Copies and hashes the supplied bytes for an absolute, normalized source path.
+     *
+     * @throws NullPointerException if either argument is null
+     * @throws IllegalArgumentException if the path is not absolute and normalized
+     */
     public FileContent(Path file, byte[] bytes) {
         Objects.requireNonNull(bytes, "bytes");
 
@@ -29,7 +35,6 @@ public final class FileContent {
      * @return the source file path
      */
     public Path file() {
-
         return file;
     }
 
@@ -39,7 +44,6 @@ public final class FileContent {
      * @return the byte count
      */
     public int size() {
-
         return bytes.length;
     }
 
@@ -49,7 +53,6 @@ public final class FileContent {
      * @return a copy of the source bytes
      */
     public byte[] bytes() {
-
         return Arrays.copyOf(bytes, bytes.length);
     }
 
@@ -59,7 +62,6 @@ public final class FileContent {
      * @return the source content hash
      */
     public ContentHash contentHash() {
-
         return contentHash;
     }
 }

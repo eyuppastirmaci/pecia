@@ -1,14 +1,13 @@
 package dev.eyuppastirmaci.pecia.search;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Collections;
 import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LexicalQueryCompilerTest {
     private final LexicalQueryCompiler compiler = new LexicalQueryCompiler();
@@ -19,8 +18,15 @@ class LexicalQueryCompilerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"JWT_SECRET", "UserRepository.findByEmail", "ERR_CONNECTION_TIMEOUT",
-            "PaymentService", "src/main/java/PaymentService.java", "error-handler::retry()"})
+    @ValueSource(
+            strings = {
+                "JWT_SECRET",
+                "UserRepository.findByEmail",
+                "ERR_CONNECTION_TIMEOUT",
+                "PaymentService",
+                "src/main/java/PaymentService.java",
+                "error-handler::retry()"
+            })
     void preservesPunctuationInsideEachPhrase(String query) {
         assertExpression(query, "\"" + query + "\"");
     }
@@ -32,8 +38,10 @@ class LexicalQueryCompilerTest {
 
     @Test
     void doesNotExposeBooleanPrefixColumnOrNearSyntax() {
-        assertExpression("foo OR bar AND NOT baz* content:qux NEAR(x)",
-                "\"foo\" AND \"OR\" AND \"bar\" AND \"AND\" AND \"NOT\" AND \"baz*\" AND \"content:qux\" AND \"NEAR(x)\"");
+        assertExpression(
+                "foo OR bar AND NOT baz* content:qux NEAR(x)",
+                "\"foo\" AND \"OR\" AND \"bar\" AND \"AND\" AND \"NOT\" AND \"baz*\" AND \"content:qux\""
+                        + " AND \"NEAR(x)\"");
     }
 
     @Test
@@ -78,12 +86,13 @@ class LexicalQueryCompilerTest {
         String expected = String.join(" AND ", Collections.nCopies(64, "\"word\""));
 
         assertExpression(query, expected);
-        assertEquals(Optional.empty(), compiler.compile(new SearchRequest(String.join(" ", Collections.nCopies(64, "!")))));
+        assertEquals(
+                Optional.empty(), compiler.compile(new SearchRequest(String.join(" ", Collections.nCopies(64, "!")))));
     }
 
     @Test
     void rejectsTheSixtyFifthPartBeforeFilteringOrDeduplication() {
-        for (String part : new String[]{"word", "!"}) {
+        for (String part : new String[] {"word", "!"}) {
             SearchRequest request = new SearchRequest(String.join(" ", Collections.nCopies(65, part)));
             assertThrows(IllegalArgumentException.class, () -> compiler.compile(request));
         }
@@ -100,8 +109,7 @@ class LexicalQueryCompilerTest {
 
     @Test
     void isReusableAfterFailureAndEmptyCompilation() {
-        assertThrows(IllegalArgumentException.class,
-                () -> compiler.compile(new SearchRequest("word ".repeat(65))));
+        assertThrows(IllegalArgumentException.class, () -> compiler.compile(new SearchRequest("word ".repeat(65))));
         assertEquals(Optional.empty(), compiler.compile(new SearchRequest("!!!")));
         assertExpression("next", "\"next\"");
     }

@@ -1,5 +1,9 @@
 package dev.eyuppastirmaci.pecia.chunking;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
@@ -8,13 +12,6 @@ import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.tomlj.Toml;
-import org.tomlj.TomlArray;
-import org.tomlj.TomlParseResult;
-import org.tomlj.TomlTable;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -23,10 +20,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.tomlj.Toml;
+import org.tomlj.TomlArray;
+import org.tomlj.TomlParseResult;
+import org.tomlj.TomlTable;
 
 class GoldenChunkerTest {
 
@@ -38,23 +37,24 @@ class GoldenChunkerTest {
         TomlTable specification = readToml(scenario + ".expected.toml");
         byte[] input = readResource(scenario + ".input");
         ContentHash hash = ContentHash.sha256(input);
-        assertEquals(specification.getString("input_sha256"), hash.value(),
-                "Golden input bytes changed: " + scenario);
-        Document document = new Document(Path.of(specification.getString("source_path")),
+        assertEquals(specification.getString("input_sha256"), hash.value(), "Golden input bytes changed: " + scenario);
+        Document document = new Document(
+                Path.of(specification.getString("source_path")),
                 DocumentType.valueOf(specification.getString("document_type")),
-                new String(input, StandardCharsets.UTF_8), hash);
+                new String(input, StandardCharsets.UTF_8),
+                hash);
         MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
         assertEquals(pinnedTokenizer(), tokenizer.identity(), "Golden corpus tokenizer changed");
         int maxTokens = integer(specification, "max_tokens");
         int overlapTokens = integer(specification, "overlap_tokens");
         DocumentChunker chunker = DocumentChunkerFactory.create(tokenizer, maxTokens, overlapTokens)
-                                                       .getChunker(document);
+                .getChunker(document);
         List<Chunk> expected = expectedChunks(specification.getArray("chunks"));
 
         assertEquals(expected, chunker.chunk(document), "Golden output changed: " + scenario);
         assertEquals(expected, chunker.chunk(document), "Reused chunker changed output: " + scenario);
         DocumentChunker fresh = DocumentChunkerFactory.create(tokenizer, maxTokens, overlapTokens)
-                                                     .getChunker(document);
+                .getChunker(document);
         assertEquals(expected, fresh.chunk(document), "Fresh chunker changed output: " + scenario);
     }
 
@@ -69,9 +69,13 @@ class GoldenChunkerTest {
     private static TokenizerIdentity pinnedTokenizer() throws IOException {
         TomlTable identity = readToml("corpus.toml").getTable("tokenizer");
 
-        return new TokenizerIdentity(identity.getString("model_id"), identity.getString("revision"),
-                identity.getString("algorithm"), identity.getString("vocabulary_sha256"),
-                integer(identity, "vocabulary_size"), integer(identity, "max_input_tokens"),
+        return new TokenizerIdentity(
+                identity.getString("model_id"),
+                identity.getString("revision"),
+                identity.getString("algorithm"),
+                identity.getString("vocabulary_sha256"),
+                integer(identity, "vocabulary_size"),
+                integer(identity, "max_input_tokens"),
                 integer(identity, "special_token_count"));
     }
 
@@ -89,9 +93,12 @@ class GoldenChunkerTest {
                 metadata.put(key, attributes.getString(key));
             }
 
-            chunks.add(new Chunk(Path.of(row.getString("source_path")),
-                    DocumentType.valueOf(row.getString("document_type")), integer(row, "index"),
-                    row.getString("content"), new LineRange(integer(row, "first_line"), integer(row, "last_line")),
+            chunks.add(new Chunk(
+                    Path.of(row.getString("source_path")),
+                    DocumentType.valueOf(row.getString("document_type")),
+                    integer(row, "index"),
+                    row.getString("content"),
+                    new LineRange(integer(row, "first_line"), integer(row, "last_line")),
                     new ChunkMetadata(strings(row.getArray("heading_path")), metadata)));
         }
 

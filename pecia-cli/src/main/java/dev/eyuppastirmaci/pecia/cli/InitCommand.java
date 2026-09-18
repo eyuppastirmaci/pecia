@@ -1,22 +1,22 @@
 package dev.eyuppastirmaci.pecia.cli;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
-import picocli.CommandLine.Command;
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import picocli.CommandLine.Command;
 
+/** Writes default project configuration without replacing an existing file. */
 @Command(
         name = "init",
         description = "Writes a .pecia.toml config file at the project root.",
-        mixinStandardHelpOptions = true
-)
+        mixinStandardHelpOptions = true)
 public class InitCommand implements Callable<Integer> {
 
     private final PeciaConfigFile configFile;
 
+    /** Creates a command using the supplied non-null configuration writer. */
     public InitCommand(PeciaConfigFile configFile) {
         this.configFile = Objects.requireNonNull(configFile, "configFile");
     }

@@ -1,22 +1,24 @@
 package dev.eyuppastirmaci.pecia.project;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexService;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ProjectContextResolverTest {
 
@@ -104,12 +106,15 @@ class ProjectContextResolverTest {
         assertThrows(NullPointerException.class, () -> new ProjectContextResolver(null));
         assertThrows(NullPointerException.class, () -> resolver.resolve(null));
         assertThrows(NullPointerException.class, () -> new ProjectContext(root, null, context.databasePath()));
-        assertThrows(NullPointerException.class,
+        assertThrows(
+                NullPointerException.class,
                 () -> new ProjectContext(null, context.loadedConfig(), context.databasePath()));
         assertThrows(NullPointerException.class, () -> new ProjectContext(root, context.loadedConfig(), null));
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> new ProjectContext(root.getParent(), context.loadedConfig(), context.databasePath()));
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> new ProjectContext(Path.of("relative"), context.loadedConfig(), context.databasePath()));
     }
 
@@ -131,29 +136,38 @@ class ProjectContextResolverTest {
     @Test
     void excludesCustomDatabaseAndSidecarsButKeepsSimilarNamesAndTargetRelativePresentation() throws IOException {
         Files.writeString(root.resolve(".pecia.toml"), """
-                [index]
-                include = ["**/*"]
-                exclude = []
-                [store]
-                path = "data/index.txt"
-                """);
+            [index]
+            include = ["**/*"]
+            exclude = []
+            [store]
+            path = "data/index.txt"
+            """);
         Path target = Files.createDirectory(root.resolve("data"));
 
-        for (String name : List.of("index.txt", "index.txt-wal", "index.txt-shm",
-                "index.txt-journal", "index.txt.backup", "keep.md")) {
+        for (String name : List.of(
+                "index.txt", "index.txt-wal", "index.txt-shm", "index.txt-journal", "index.txt.backup", "keep.md")) {
             Files.writeString(target.resolve(name), name);
         }
 
         ProjectContext context = resolver.resolve(target);
 
-        assertEquals(Set.of(target.resolve("index.txt"), target.resolve("index.txt-wal"),
-                target.resolve("index.txt-shm"), target.resolve("index.txt-journal")), context.storageFiles());
+        assertEquals(
+                Set.of(
+                        target.resolve("index.txt"),
+                        target.resolve("index.txt-wal"),
+                        target.resolve("index.txt-shm"),
+                        target.resolve("index.txt-journal")),
+                context.storageFiles());
 
-        assertThrows(UnsupportedOperationException.class, () -> context.storageFiles().clear());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> context.storageFiles().clear());
 
         IndexPreview preview = new IndexService(loader).preview(target);
 
-        assertEquals(List.of(Path.of("index.txt.backup"), Path.of("keep.md")), preview.walkResult().files());
+        assertEquals(
+                List.of(Path.of("index.txt.backup"), Path.of("keep.md")),
+                preview.walkResult().files());
         assertTrue(preview.walkResult().complete());
 
         for (Path path : context.storageFiles()) {

@@ -1,5 +1,11 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
@@ -8,13 +14,6 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchScore;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
@@ -24,13 +23,17 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SqliteLexicalEnrichmentTest {
     @TempDir
     Path root;
+
     private SqliteStorage storage;
     private SqliteLexicalRetriever retriever;
 
@@ -48,7 +51,8 @@ class SqliteLexicalEnrichmentTest {
     @Test
     void mapsAuthoritativeSourceLocationAndOrderedMetadataWithoutDecoration() throws SQLException {
         String content = "<T> & needle\r\nİstanbul 😀";
-        ChunkMetadata metadata = new ChunkMetadata(List.of("Guide > Root", "Install Now", "Install Now"),
+        ChunkMetadata metadata = new ChunkMetadata(
+                List.of("Guide > Root", "Install Now", "Install Now"),
                 Map.of("language", "java", "startOffset", "70", "endOffset", "95"));
         var stored = insert("docs/Ödeme rehberi.md", 3, content, metadata);
 
@@ -66,23 +70,37 @@ class SqliteLexicalEnrichmentTest {
         assertEquals(SearchScore.Kind.SQLITE_BM25, hit.score().kind());
         assertTrue(hit.score().kind().lowerIsBetter());
         assertThrows(UnsupportedOperationException.class, hits::clear);
-        assertThrows(UnsupportedOperationException.class, () -> hit.metadata().headingPath().add("changed"));
-        assertThrows(UnsupportedOperationException.class, () -> hit.metadata().attributes().put("changed", "true"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> hit.metadata().headingPath().add("changed"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> hit.metadata().attributes().put("changed", "true"));
     }
 
     @Test
     void preservesRankingAndLimitWhileEnrichingDifferentHeadings() throws SQLException {
-        var weak = insert("a.md", 0, "needle filler filler filler",
+        var weak = insert(
+                "a.md",
+                0,
+                "needle filler filler filler",
                 new ChunkMetadata(List.of("Alpha Beta", "Gamma Delta"), Map.of("rank", "weak")));
-        var strong = insert("z.md", 0, "needle needle needle filler",
+        var strong = insert(
+                "z.md",
+                0,
+                "needle needle needle filler",
                 new ChunkMetadata(List.of("Other Words", "More Words"), Map.of("rank", "strong")));
 
         var hits = retriever.search("\"needle\"", 10);
 
-        assertEquals(List.of(strong.id(), weak.id()), hits.stream().map(SearchHit::chunkId).toList());
+        assertEquals(
+                List.of(strong.id(), weak.id()),
+                hits.stream().map(SearchHit::chunkId).toList());
         assertTrue(hits.get(0).score().value() < hits.get(1).score().value());
-        assertEquals(List.of("Other Words", "More Words"), hits.get(0).metadata().headingPath());
-        assertEquals(List.of("Alpha Beta", "Gamma Delta"), hits.get(1).metadata().headingPath());
+        assertEquals(
+                List.of("Other Words", "More Words"), hits.get(0).metadata().headingPath());
+        assertEquals(
+                List.of("Alpha Beta", "Gamma Delta"), hits.get(1).metadata().headingPath());
         assertEquals(List.of(hits.getFirst()), retriever.search("\"needle\"", 1));
     }
 
@@ -91,15 +109,20 @@ class SqliteLexicalEnrichmentTest {
         var first = insert("needle.md", 0, "needle", new ChunkMetadata(List.of("needle", "needle"), Map.of()));
         var second = insert("needle.md", 1, "needle", new ChunkMetadata(List.of("needle", "needle"), Map.of()));
 
-        assertEquals(List.of(first.id(), second.id()), retriever.search("\"needle\"", 10).stream()
-                .map(SearchHit::chunkId).toList());
+        assertEquals(
+                List.of(first.id(), second.id()),
+                retriever.search("\"needle\"", 10).stream()
+                        .map(SearchHit::chunkId)
+                        .toList());
     }
 
     @Test
     void suppliesEmptyMetadataWhenTheChunkHasNone() throws SQLException {
         insert("notes.txt", 0, "needle", ChunkMetadata.empty());
 
-        assertEquals(ChunkMetadata.empty(), retriever.search("\"needle\"", 10).getFirst().metadata());
+        assertEquals(
+                ChunkMetadata.empty(),
+                retriever.search("\"needle\"", 10).getFirst().metadata());
     }
 
     @ParameterizedTest
@@ -125,7 +148,10 @@ class SqliteLexicalEnrichmentTest {
     @ValueSource(booleans = {false, true})
     void usesTheContentBeginningWhenOnlyHeadingOrPathMatches(boolean pathMatch) throws SQLException {
         String content = "intro\r\n" + "body ".repeat(80);
-        insert(pathMatch ? "needle.md" : "notes.md", 0, content,
+        insert(
+                pathMatch ? "needle.md" : "notes.md",
+                0,
+                content,
                 pathMatch ? ChunkMetadata.empty() : new ChunkMetadata(List.of("needle"), Map.of()));
 
         SearchHit hit = retriever.search("\"needle\"", 10).getFirst();
@@ -151,14 +177,17 @@ class SqliteLexicalEnrichmentTest {
         String content = "x".repeat(398) + "🚀" + "y".repeat(40);
         insert("needle.md", 0, content, ChunkMetadata.empty());
 
-        assertEquals("x".repeat(398) + "🚀…", retriever.search("\"needle\"", 10).getFirst().snippet());
+        assertEquals(
+                "x".repeat(398) + "🚀…",
+                retriever.search("\"needle\"", 10).getFirst().snippet());
     }
 
     @Test
     void preservesExactBoundaryAndTokenlessContent() throws SQLException {
         insert("needle.md", 0, "🚀".repeat(400), ChunkMetadata.empty());
 
-        assertEquals("🚀".repeat(400), retriever.search("\"needle\"", 10).getFirst().snippet());
+        assertEquals(
+                "🚀".repeat(400), retriever.search("\"needle\"", 10).getFirst().snippet());
     }
 
     @Test
@@ -169,8 +198,8 @@ class SqliteLexicalEnrichmentTest {
         execute(storage.connection(), "UPDATE chunk_headings SET position = 2 WHERE chunk_id = ?", unselected.id());
 
         List<String> queries = new ArrayList<>();
-        Connection counted = (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-                new Class<?>[]{Connection.class}, (proxy, method, arguments) -> {
+        Connection counted = (Connection) Proxy.newProxyInstance(
+                Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, arguments) -> {
                     if (method.getName().equals("prepareStatement")) {
                         queries.add((String) arguments[0]);
                     }
@@ -195,17 +224,18 @@ class SqliteLexicalEnrichmentTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {
-            "UPDATE chunks SET start_line = 0",
-            "UPDATE chunks SET end_line = 1",
-            "UPDATE chunks SET chunk_index = -1",
-            "UPDATE chunks SET content = ' '",
-            "UPDATE files SET source_path = 'a//b'",
-            "UPDATE files SET document_type = 'UNKNOWN'",
-            "UPDATE chunk_headings SET position = 2",
-            "UPDATE chunk_headings SET heading = ' '",
-            "UPDATE chunk_attributes SET name = ' ' WHERE name = 'key'"
-    })
+    @ValueSource(
+            strings = {
+                "UPDATE chunks SET start_line = 0",
+                "UPDATE chunks SET end_line = 1",
+                "UPDATE chunks SET chunk_index = -1",
+                "UPDATE chunks SET content = ' '",
+                "UPDATE files SET source_path = 'a//b'",
+                "UPDATE files SET document_type = 'UNKNOWN'",
+                "UPDATE chunk_headings SET position = 2",
+                "UPDATE chunk_headings SET heading = ' '",
+                "UPDATE chunk_attributes SET name = ' ' WHERE name = 'key'"
+            })
     void rejectsCorruptResultsWithoutRollingBackTheCallersChanges(String corruption) throws SQLException {
         insert("needle.md", 0, "needle", new ChunkMetadata(List.of("Title"), Map.of("key", "value")));
         execute(storage.connection(), "PRAGMA ignore_check_constraints = ON");
@@ -216,14 +246,16 @@ class SqliteLexicalEnrichmentTest {
         assertThrows(SQLException.class, () -> retriever.search("\"needle\"", 10));
         assertFalse(storage.connection().getAutoCommit());
         try (var statement = storage.connection().createStatement();
-             var rows = statement.executeQuery("SELECT value FROM chunk_attributes WHERE name = 'sentinel'")) {
+                var rows = statement.executeQuery("SELECT value FROM chunk_attributes WHERE name = 'sentinel'")) {
             assertTrue(rows.next());
             assertEquals("retained", rows.getString(1));
         }
 
         storage.connection().rollback();
         storage.connection().setAutoCommit(true);
-        assertEquals(List.of("Title"), retriever.search("\"needle\"", 10).getFirst().metadata().headingPath());
+        assertEquals(
+                List.of("Title"),
+                retriever.search("\"needle\"", 10).getFirst().metadata().headingPath());
     }
 
     @Test
@@ -266,9 +298,11 @@ class SqliteLexicalEnrichmentTest {
 
     private StoredChunk insert(String path, int index, String content, ChunkMetadata metadata) throws SQLException {
         Path source = Path.of(path);
-        var file = storage.files().save(source, DocumentType.SOURCE_CODE,
-                ContentHash.sha256(content.getBytes(StandardCharsets.UTF_8)));
-        return storage.chunks().insert(file.id(), new Chunk(source, DocumentType.SOURCE_CODE, index, content,
-                new LineRange(118, 161), metadata));
+        var file = storage.files()
+                .save(source, DocumentType.SOURCE_CODE, ContentHash.sha256(content.getBytes(StandardCharsets.UTF_8)));
+        return storage.chunks()
+                .insert(
+                        file.id(),
+                        new Chunk(source, DocumentType.SOURCE_CODE, index, content, new LineRange(118, 161), metadata));
     }
 }

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/** Renders and writes the default project configuration. */
 public final class PeciaConfigFile {
 
     public static final String FILE_NAME = ".pecia.toml";
@@ -19,38 +20,39 @@ public final class PeciaConfigFile {
         PeciaConfig defaults = PeciaConfig.defaults();
 
         return """
-                # Pecia configuration. Flags on the command line override these values.
-                # Globs are case-insensitive and relative to this file's directory.
-                # Custom arrays replace defaults; an empty include accepts all candidates.
+            # Pecia configuration. Flags on the command line override these values.
+            # Globs are case-insensitive and relative to this file's directory.
+            # Custom arrays replace defaults; an empty include accepts all candidates.
 
-                [index]
-                include = %s
-                exclude = %s   # .gitignore is always applied too
-                max_file_bytes = %d
+            [index]
+            include = %s
+            exclude = %s   # .gitignore is always applied too
+            max_file_bytes = %d
 
-                [chunk]
-                max_tokens = %d
-                overlap_tokens = %d
+            [chunk]
+            max_tokens = %d
+            overlap_tokens = %d
 
-                [embed]
-                concurrency = %d
+            [embed]
+            concurrency = %d
 
-                [store]
-                path = %s
-                """.formatted(tomlArray(defaults.include()), tomlArray(defaults.exclude()),
-                defaults.maxFileBytes(), defaults.maxTokens(), defaults.overlapTokens(),
-                defaults.embedConcurrency(), quote(defaults.storePath()));
+            [store]
+            path = %s
+            """.formatted(
+                        tomlArray(defaults.include()),
+                        tomlArray(defaults.exclude()),
+                        defaults.maxFileBytes(),
+                        defaults.maxTokens(),
+                        defaults.overlapTokens(),
+                        defaults.embedConcurrency(),
+                        quote(defaults.storePath()));
     }
 
     private static String tomlArray(List<String> values) {
-
-        return values.stream()
-                     .map(PeciaConfigFile::quote)
-                     .collect(Collectors.joining(", ", "[", "]"));
+        return values.stream().map(PeciaConfigFile::quote).collect(Collectors.joining(", ", "[", "]"));
     }
 
     private static String quote(String value) {
-
         // Escape backslashes before quotes so the result remains a valid TOML basic string.
         return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
@@ -67,7 +69,6 @@ public final class PeciaConfigFile {
         Path file = dir.resolve(FILE_NAME);
 
         if (Files.exists(file)) {
-
             return false;
         }
 

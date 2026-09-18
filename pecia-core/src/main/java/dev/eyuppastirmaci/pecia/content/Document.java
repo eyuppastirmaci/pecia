@@ -6,6 +6,7 @@ import java.util.Objects;
 /** Extracted text, its raw-byte hash, and its project-relative source identity. */
 public record Document(Path sourcePath, DocumentType type, String content, ContentHash contentHash) {
 
+    /** Validates non-null components and a normalized, project-relative source path. */
     public Document {
         sourcePath = ContentPath.requireProjectRelative(sourcePath);
         Objects.requireNonNull(type, "type");

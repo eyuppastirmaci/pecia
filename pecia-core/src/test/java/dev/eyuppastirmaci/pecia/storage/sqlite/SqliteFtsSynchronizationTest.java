@@ -1,19 +1,26 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.FtsRow;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.applyFts;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertConsistent;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertMatches;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertChunk;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.rows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.FtsRow;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
-
-import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.*;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SqliteFtsSynchronizationTest {
     @TempDir
@@ -64,9 +71,11 @@ class SqliteFtsSynchronizationTest {
             assertMatches(connection, "source_path: currenthome", 11, 22);
             assertMatches(connection, "content: travellingcontent", 11);
             assertMatches(connection, "headings: travellingheading", 11);
-            assertEquals(List.of(
-                    new FtsRow(11, "travellingcontent", "travellingheading", "archive/currenthome.md"),
-                    new FtsRow(22, "residentcontent", "", "archive/currenthome.md")), rows(connection));
+            assertEquals(
+                    List.of(
+                            new FtsRow(11, "travellingcontent", "travellingheading", "archive/currenthome.md"),
+                            new FtsRow(22, "residentcontent", "", "archive/currenthome.md")),
+                    rows(connection));
             assertConsistent(connection);
         }
     }
@@ -81,21 +90,27 @@ class SqliteFtsSynchronizationTest {
             insertHeading(connection, 11, 2, "Parent heading");
             insertHeading(connection, 11, 1, "Child heading");
 
-            assertEquals(List.of(new FtsRow(11, "bodytoken", "Parent heading Child heading Parent heading",
-                    "notes.md")), rows(connection));
+            assertEquals(
+                    List.of(new FtsRow(11, "bodytoken", "Parent heading Child heading Parent heading", "notes.md")),
+                    rows(connection));
             assertMatches(connection, "headings: parent", 11);
             assertMatches(connection, "headings: \"parent heading child heading parent heading\"", 11);
             assertConsistent(connection);
 
-            execute(connection, "UPDATE chunk_headings SET heading = ? WHERE chunk_id = ? AND position = ?",
-                    "Updated heading", 11, 1);
+            execute(
+                    connection,
+                    "UPDATE chunk_headings SET heading = ? WHERE chunk_id = ? AND position = ?",
+                    "Updated heading",
+                    11,
+                    1);
             assertMatches(connection, "headings: child");
             assertMatches(connection, "headings: updated", 11);
             assertMatches(connection, "headings: \"parent heading updated heading parent heading\"", 11);
             assertConsistent(connection);
 
             execute(connection, "DELETE FROM chunk_headings WHERE chunk_id = ? AND position = ?", 11, 2);
-            assertEquals(List.of(new FtsRow(11, "bodytoken", "Parent heading Updated heading", "notes.md")),
+            assertEquals(
+                    List.of(new FtsRow(11, "bodytoken", "Parent heading Updated heading", "notes.md")),
                     rows(connection));
             assertMatches(connection, "headings: parent", 11);
             assertMatches(connection, "headings: \"updated heading parent heading\"");
@@ -147,21 +162,34 @@ class SqliteFtsSynchronizationTest {
             insertHeading(connection, 22, 0, "Resident");
             assertMatches(connection, "headings: travelling", 11);
 
-            execute(connection, "UPDATE chunk_headings SET chunk_id = ? WHERE chunk_id = ? AND position = ?",
-                    22, 11, 1);
-            assertEquals(List.of(
-                    new FtsRow(11, "sourcebody", "Retained", "notes.md"),
-                    new FtsRow(22, "destinationbody", "Resident Travelling", "notes.md")), rows(connection));
+            execute(
+                    connection,
+                    "UPDATE chunk_headings SET chunk_id = ? WHERE chunk_id = ? AND position = ?",
+                    22,
+                    11,
+                    1);
+            assertEquals(
+                    List.of(
+                            new FtsRow(11, "sourcebody", "Retained", "notes.md"),
+                            new FtsRow(22, "destinationbody", "Resident Travelling", "notes.md")),
+                    rows(connection));
             assertMatches(connection, "headings: travelling", 22);
             assertMatches(connection, "headings: retained", 11);
             assertMatches(connection, "headings: \"resident travelling\"", 22);
             assertConsistent(connection);
 
-            execute(connection, "UPDATE chunk_headings SET chunk_id = ?, position = ? WHERE chunk_id = ? AND position = ?",
-                    22, 2, 11, 0);
-            assertEquals(List.of(
-                    new FtsRow(11, "sourcebody", "", "notes.md"),
-                    new FtsRow(22, "destinationbody", "Resident Travelling Retained", "notes.md")), rows(connection));
+            execute(
+                    connection,
+                    "UPDATE chunk_headings SET chunk_id = ?, position = ? WHERE chunk_id = ? AND position =" + " ?",
+                    22,
+                    2,
+                    11,
+                    0);
+            assertEquals(
+                    List.of(
+                            new FtsRow(11, "sourcebody", "", "notes.md"),
+                            new FtsRow(22, "destinationbody", "Resident Travelling Retained", "notes.md")),
+                    rows(connection));
             assertMatches(connection, "headings: retained", 22);
             assertMatches(connection, "headings: \"resident travelling retained\"", 22);
             assertMatches(connection, "content: sourcebody", 11);
@@ -187,10 +215,12 @@ class SqliteFtsSynchronizationTest {
             assertMatches(connection, "source_path: newlocation", 11, 12);
             assertMatches(connection, "source_path: unchanged", 21);
             assertMatches(connection, "headings: overview", 11);
-            assertEquals(List.of(
-                    new FtsRow(11, "firstbody", "Overview", "archive/newlocation.txt"),
-                    new FtsRow(12, "secondbody", "", "archive/newlocation.txt"),
-                    new FtsRow(21, "otherbody", "", "docs/unchanged.md")), rows(connection));
+            assertEquals(
+                    List.of(
+                            new FtsRow(11, "firstbody", "Overview", "archive/newlocation.txt"),
+                            new FtsRow(12, "secondbody", "", "archive/newlocation.txt"),
+                            new FtsRow(21, "otherbody", "", "docs/unchanged.md")),
+                    rows(connection));
             assertConsistent(connection);
         }
     }
@@ -208,8 +238,12 @@ class SqliteFtsSynchronizationTest {
             insertHeading(connection, 11, 0, "Removedparent");
             insertHeading(connection, 11, 1, "Removedchild");
             insertHeading(connection, 12, 0, "Removedparent");
-            execute(connection, "INSERT INTO chunk_attributes(chunk_id, name, value) VALUES (?, ?, ?)",
-                    11, "startOffset", "0");
+            execute(
+                    connection,
+                    "INSERT INTO chunk_attributes(chunk_id, name, value) VALUES (?, ?, ?)",
+                    11,
+                    "startOffset",
+                    "0");
             insertChunk(connection, 21, 2, 0, "retainedbody");
             insertHeading(connection, 21, 0, "Retainedheading");
             assertMatches(connection, "source_path: removedpath", 11, 12);
@@ -221,7 +255,8 @@ class SqliteFtsSynchronizationTest {
             assertMatches(connection, "content: retainedbody", 21);
             assertMatches(connection, "headings: retainedheading", 21);
             assertMatches(connection, "source_path: retainedpath", 21);
-            assertEquals(List.of(new FtsRow(21, "retainedbody", "Retainedheading", "docs/retainedpath.md")),
+            assertEquals(
+                    List.of(new FtsRow(21, "retainedbody", "Retainedheading", "docs/retainedpath.md")),
                     rows(connection));
             assertConsistent(connection);
         }
@@ -236,16 +271,33 @@ class SqliteFtsSynchronizationTest {
             insertHeading(connection, 11, 0, "Stableheading");
             List<FtsRow> before = rows(connection);
 
-            assertSingleSourceChange(connection, "UPDATE files SET content_hash = ?, document_type = ? WHERE id = ?",
-                    "b".repeat(64), "PLAIN_TEXT", 1);
-            assertSingleSourceChange(connection, "UPDATE chunks SET start_line = ?, end_line = ?, chunk_index = ? WHERE id = ?",
-                    2, 8, 5, 11);
-            assertSingleSourceChange(connection, "INSERT INTO chunk_attributes(chunk_id, name, value) VALUES (?, ?, ?)",
-                    11, "startOffset", "10");
-            assertSingleSourceChange(connection, "UPDATE chunk_attributes SET value = ? WHERE chunk_id = ? AND name = ?",
-                    "20", 11, "startOffset");
-            assertSingleSourceChange(connection, "DELETE FROM chunk_attributes WHERE chunk_id = ? AND name = ?",
-                    11, "startOffset");
+            assertSingleSourceChange(
+                    connection,
+                    "UPDATE files SET content_hash = ?, document_type = ? WHERE id = ?",
+                    "b".repeat(64),
+                    "PLAIN_TEXT",
+                    1);
+            assertSingleSourceChange(
+                    connection,
+                    "UPDATE chunks SET start_line = ?, end_line = ?, chunk_index = ? WHERE id = ?",
+                    2,
+                    8,
+                    5,
+                    11);
+            assertSingleSourceChange(
+                    connection,
+                    "INSERT INTO chunk_attributes(chunk_id, name, value) VALUES (?, ?, ?)",
+                    11,
+                    "startOffset",
+                    "10");
+            assertSingleSourceChange(
+                    connection,
+                    "UPDATE chunk_attributes SET value = ? WHERE chunk_id = ? AND name = ?",
+                    "20",
+                    11,
+                    "startOffset");
+            assertSingleSourceChange(
+                    connection, "DELETE FROM chunk_attributes WHERE chunk_id = ? AND name = ?", 11, "startOffset");
 
             assertEquals(before, rows(connection));
             assertMatches(connection, "content: stablebody", 11);
@@ -264,7 +316,8 @@ class SqliteFtsSynchronizationTest {
     }
 
     private static long totalChanges(Connection connection) throws SQLException {
-        try (var statement = connection.createStatement(); var result = statement.executeQuery("SELECT total_changes()")) {
+        try (var statement = connection.createStatement();
+                var result = statement.executeQuery("SELECT total_changes()")) {
             assertTrue(result.next());
             return result.getLong(1);
         }

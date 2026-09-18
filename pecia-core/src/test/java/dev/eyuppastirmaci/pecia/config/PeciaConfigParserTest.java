@@ -1,12 +1,11 @@
 package dev.eyuppastirmaci.pecia.config;
 
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 class PeciaConfigParserTest {
 
@@ -15,21 +14,21 @@ class PeciaConfigParserTest {
     @Test
     void parsesAFullConfig() {
         String toml = """
-                [index]
-                include = ["**/*.rs"]
-                exclude = ["**/build/**"]
-                max_file_bytes = 4096
+            [index]
+            include = ["**/*.rs"]
+            exclude = ["**/build/**"]
+            max_file_bytes = 4096
 
-                [chunk]
-                max_tokens = 512
-                overlap_tokens = 64
+            [chunk]
+            max_tokens = 512
+            overlap_tokens = 64
 
-                [embed]
-                concurrency = 4
+            [embed]
+            concurrency = 4
 
-                [store]
-                path = "custom/index.db"
-                """;
+            [store]
+            path = "custom/index.db"
+            """;
 
         PeciaConfig config = parser.parse(toml);
 
@@ -45,9 +44,9 @@ class PeciaConfigParserTest {
     @Test
     void missingKeysFallBackToDefaults() {
         String toml = """
-                [chunk]
-                max_tokens = 512
-                """;
+            [chunk]
+            max_tokens = 512
+            """;
 
         PeciaConfig config = parser.parse(toml);
 
@@ -72,32 +71,32 @@ class PeciaConfigParserTest {
 
     @Test
     void malformedTomlIsRejected() {
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> parser.parse("[index\ninclude = ["));
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> parser.parse("[index\ninclude = ["));
 
         assertTrue(e.getMessage().contains("Invalid .pecia.toml"));
     }
 
     @Test
     void wrongValueTypeIsRejected() {
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> parser.parse("[chunk]\nmax_tokens = \"lots\""));
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> parser.parse("[chunk]\nmax_tokens = \"lots\""));
 
         assertTrue(e.getMessage().contains("chunk.max_tokens must be an integer"));
     }
 
     @Test
     void nonStringGlobIsRejected() {
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> parser.parse("[index]\ninclude = [1, 2]"));
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> parser.parse("[index]\ninclude = [1, 2]"));
 
         assertTrue(e.getMessage().contains("index.include must contain only strings"));
     }
 
     @Test
     void invalidRangeIsRejected() {
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> parser.parse("[chunk]\nmax_tokens = 10\noverlap_tokens = 10"));
+        IllegalArgumentException e = assertThrows(
+                IllegalArgumentException.class, () -> parser.parse("[chunk]\nmax_tokens = 10\noverlap_tokens = 10"));
 
         assertTrue(e.getMessage().contains("overlap_tokens"));
     }

@@ -1,5 +1,11 @@
 package dev.eyuppastirmaci.pecia.cli;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
@@ -7,10 +13,6 @@ import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,12 +24,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class PackagedCliIT {
 
@@ -56,15 +55,15 @@ class PackagedCliIT {
 
         assertSuccess(result);
         assertEquals("""
-                Usage: pecia [-hV] [COMMAND]
-                Indexes documents and source code for offline lexical search.
-                  -h, --help      Show this help message and exit.
-                  -V, --version   Print version information and exit.
-                Commands:
-                  init   Writes a .pecia.toml config file at the project root.
-                  index  Builds a local lexical index from a folder of text files.
-                  query  Searches the local index using BM25 lexical ranking.
-                """, result.out());
+            Usage: pecia [-hV] [COMMAND]
+            Indexes documents and source code for offline lexical search.
+              -h, --help      Show this help message and exit.
+              -V, --version   Print version information and exit.
+            Commands:
+              init   Writes a .pecia.toml config file at the project root.
+              index  Builds a local lexical index from a folder of text files.
+              query  Searches the local index using BM25 lexical ranking.
+            """, result.out());
     }
 
     @Test
@@ -115,12 +114,12 @@ class PackagedCliIT {
 
         assertSuccess(result);
         assertEquals("""
-                config: defaults (no .pecia.toml found)
-                3 file(s) would be indexed:
-                  Dockerfile
-                  Main.JS
-                  notes.md
-                """, result.out());
+            config: defaults (no .pecia.toml found)
+            3 file(s) would be indexed:
+              Dockerfile
+              Main.JS
+              notes.md
+            """, result.out());
         assertEquals(before, projectEntries());
         assertFalse(Files.exists(project.resolve(".pecia.toml")));
         assertFalse(Files.exists(project.resolve(".pecia")));
@@ -129,10 +128,10 @@ class PackagedCliIT {
     @Test
     void childDryRunUsesProjectConfigAndInheritedIgnoreRules() throws Exception {
         String config = """
-                [index]
-                include = ["docs/*.md"]
-                exclude = ["docs/excluded.md"]
-                """;
+            [index]
+            include = ["docs/*.md"]
+            exclude = ["docs/excluded.md"]
+            """;
         Files.writeString(project.resolve(".pecia.toml"), config);
         Files.writeString(project.resolve(".gitignore"), "ignored.md\n");
         Files.writeString(project.resolve("outside.md"), "outside target");
@@ -148,8 +147,9 @@ class PackagedCliIT {
         Result result = run(docs, "index", ".", "--dry-run");
 
         assertSuccess(result);
-        assertEquals("config: " + project.resolve(".pecia.toml") + "\n"
-                + "1 file(s) would be indexed:\n  keep.md\n", result.out());
+        assertEquals(
+                "config: " + project.resolve(".pecia.toml") + "\n" + "1 file(s) would be indexed:\n  keep.md\n",
+                result.out());
         assertEquals(config, Files.readString(project.resolve(".pecia.toml")));
         assertEquals(before, projectEntries());
     }
@@ -190,17 +190,19 @@ class PackagedCliIT {
 
     @Test
     void partialScanListsUsableFilesAndWarnsWithFailureStatus() throws Exception {
-        // An ignore path that is a directory fails consistently without platform-specific permission changes.
+        // An ignore path that is a directory fails consistently without platform-specific permission
+        // changes.
         Path invalidIgnore = Files.createDirectories(project.resolve("bad/.gitignore"));
         Files.writeString(project.resolve("good.md"), "good");
 
         Result result = run(project, "index", ".", "--dry-run");
 
         assertEquals(1, result.exitCode());
-        assertEquals("config: defaults (no .pecia.toml found)\n"
-                + "1 file(s) would be indexed:\n  good.md\n", result.out());
+        assertEquals(
+                "config: defaults (no .pecia.toml found)\n" + "1 file(s) would be indexed:\n  good.md\n", result.out());
         assertTrue(result.err().startsWith("warning: " + invalidIgnore + ": "), result.err());
-        assertTrue(result.err().endsWith("pecia index: incomplete scan; listed files are only partial results\n"),
+        assertTrue(
+                result.err().endsWith("pecia index: incomplete scan; listed files are only partial results\n"),
                 result.err());
         assertNoStackTrace(result.err());
         assertFalse(Files.exists(project.resolve(".pecia")));
@@ -225,14 +227,16 @@ class PackagedCliIT {
         try (SqliteStorage storage = SqliteStorage.openReadOnly(database, project)) {
             List<StoredFile> files = storage.files().findAll();
 
-            assertEquals(List.of(Path.of("README.md"), Path.of("notes.txt"), Path.of("src/Auth.java")),
+            assertEquals(
+                    List.of(Path.of("README.md"), Path.of("notes.txt"), Path.of("src/Auth.java")),
                     files.stream().map(file -> file.sourcePath()).toList());
 
             for (StoredFile file : files) {
                 assertEquals(1, storage.chunks().findByFileId(file.id()).size());
             }
 
-            StoredFile auth = storage.files().findByPath(Path.of("src/Auth.java")).orElseThrow();
+            StoredFile auth =
+                    storage.files().findByPath(Path.of("src/Auth.java")).orElseThrow();
             assertEquals(DocumentType.SOURCE_CODE, auth.documentType());
             assertEquals(ContentHash.sha256(source.getBytes(StandardCharsets.UTF_8)), auth.contentHash());
 
@@ -245,7 +249,11 @@ class PackagedCliIT {
             assertEquals(1, markdownHits.size());
             assertEquals(Path.of("README.md"), markdownHits.getFirst().sourcePath());
             assertEquals(List.of("Guide"), markdownHits.getFirst().metadata().headingPath());
-            assertEquals(1, storage.lexicalSearch().search(new SearchRequest("legacyneedle")).size());
+            assertEquals(
+                    1,
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("legacyneedle"))
+                            .size());
         }
 
         Files.writeString(project.resolve("notes.txt"), "replacementneedle notes\n");
@@ -261,7 +269,9 @@ class PackagedCliIT {
                 assertEquals(1, storage.chunks().findByFileId(file.id()).size());
             }
 
-            assertTrue(storage.lexicalSearch().search(new SearchRequest("legacyneedle")).isEmpty());
+            assertTrue(storage.lexicalSearch()
+                    .search(new SearchRequest("legacyneedle"))
+                    .isEmpty());
 
             List<SearchHit> replacement = storage.lexicalSearch().search(new SearchRequest("replacementneedle"));
             assertEquals(1, replacement.size());
@@ -302,12 +312,18 @@ class PackagedCliIT {
     void helpAndDryRunDoNotInitializeTheTokenizerOrWriteAnIndex() throws Exception {
         Files.writeString(project.resolve("notes.txt"), "text\n");
         List<Path> before = projectEntries();
-        List<List<String>> commands = List.of(List.of("--help"), List.of("index", "--help"),
-                                             List.of("query", "--help"), List.of("index", "--dry-run"));
+        List<List<String>> commands = List.of(
+                List.of("--help"),
+                List.of("index", "--help"),
+                List.of("query", "--help"),
+                List.of("index", "--dry-run"));
 
         for (int index = 0; index < commands.size(); index++) {
             Path log = sandbox.resolve("discovery-initialization-" + index + ".log");
-            Result result = run(project, List.of(initializationLogging(log)), commands.get(index).toArray(String[]::new));
+            Result result = run(
+                    project,
+                    List.of(initializationLogging(log)),
+                    commands.get(index).toArray(String[]::new));
 
             assertSuccess(result);
             assertTrue(initialized(log, "dev/eyuppastirmaci/pecia/Bootstrap"), "The JVM probe must be active");
@@ -321,11 +337,11 @@ class PackagedCliIT {
         Files.createDirectory(project.resolve("src"));
         Path source = project.resolve("src/PaymentService.java");
         Files.writeString(source, """
-                class PaymentService {
-                    String secret = "JWT_SECRET";
-                    void charge() {}
-                }
-                """);
+            class PaymentService {
+                String secret = "JWT_SECRET";
+                void charge() {}
+            }
+            """);
         Files.createDirectory(project.resolve("docs"));
         Path document = project.resolve("docs/Ödeme.md");
         Files.writeString(document, "# Ödeme rehberi\n\nJWT_SECRET ödeme işlemini doğrular.\n");
@@ -346,20 +362,41 @@ class PackagedCliIT {
         Path workingDirectory = Files.createDirectory(sandbox.resolve("elsewhere"));
         Path initializationLog = sandbox.resolve("query-initialization.log");
 
-        Result identifier = run(workingDirectory, List.of(initializationLogging(initializationLog)),
-                "query", "JWT_SECRET", "--root", project.toString());
+        Result identifier = run(
+                workingDirectory,
+                List.of(initializationLogging(initializationLog)),
+                "query",
+                "JWT_SECRET",
+                "--root",
+                project.toString());
 
         assertSuccess(identifier);
-        assertEquals(expected.stream().map(hit -> "  BM25: " + hit.score().value()).toList(),
-                identifier.out().lines().filter(line -> line.startsWith("  BM25: ")).toList());
-        assertTrue(identifier.out().indexOf(portablePath(expected.getFirst().sourcePath()) + ":")
-                < identifier.out().indexOf(portablePath(expected.getLast().sourcePath()) + ":"), identifier.out());
+        assertEquals(
+                expected.stream().map(hit -> "  BM25: " + hit.score().value()).toList(),
+                identifier
+                        .out()
+                        .lines()
+                        .filter(line -> line.startsWith("  BM25: "))
+                        .toList());
+        assertTrue(
+                identifier.out().indexOf(portablePath(expected.getFirst().sourcePath()) + ":")
+                        < identifier
+                                .out()
+                                .indexOf(portablePath(expected.getLast().sourcePath()) + ":"),
+                identifier.out());
         assertTrue(identifier.out().contains("src/PaymentService.java:1-4\n  BM25: "), identifier.out());
-        assertTrue(identifier.out().contains("  class PaymentService {\n      String secret = \"JWT_SECRET\";\n"
-                + "      void charge() {}\n  }\n"), identifier.out());
+        assertTrue(
+                identifier
+                        .out()
+                        .contains("  class PaymentService {\n      String secret = \"JWT_SECRET\";\n"
+                                + "      void charge() {}\n  }\n"),
+                identifier.out());
         assertTrue(identifier.out().contains("docs/Ödeme.md:1-3\n  BM25: "), identifier.out());
-        assertTrue(identifier.out().contains("  heading: Ödeme rehberi\n  # Ödeme rehberi\n  \n"
-                        + "  JWT_SECRET ödeme işlemini doğrular.\n"),
+        assertTrue(
+                identifier
+                        .out()
+                        .contains("  heading: Ödeme rehberi\n  # Ödeme rehberi\n  \n"
+                                + "  JWT_SECRET ödeme işlemini doğrular.\n"),
                 identifier.out());
         assertTrue(identifier.out().endsWith("\n\n"), identifier.out());
         assertFalse(identifier.out().contains("\u001b"));
@@ -370,7 +407,12 @@ class PackagedCliIT {
 
         assertSuccess(limited);
         assertTrue(limited.out().startsWith(portablePath(expected.getFirst().sourcePath()) + ":"), limited.out());
-        assertEquals(1, limited.out().lines().filter(line -> line.startsWith("  BM25: ")).count());
+        assertEquals(
+                1,
+                limited.out()
+                        .lines()
+                        .filter(line -> line.startsWith("  BM25: "))
+                        .count());
 
         Result unicode = run(project, "query", "ödeme");
 
@@ -412,13 +454,14 @@ class PackagedCliIT {
         Files.writeString(project.resolve("good.txt"), "outdatedneedle\n");
         Path database = project.resolve(".pecia/index.db");
         assertIndexSummary(run(project, "index"), database, 2, 2);
-        Files.write(rejected, new byte[] { (byte) 0xc3, 0x28 });
+        Files.write(rejected, new byte[] {(byte) 0xc3, 0x28});
         Files.writeString(project.resolve("good.txt"), "updatedneedle\n");
 
         Result partial = run(project, "index");
 
         assertEquals(1, partial.exitCode());
-        assertEquals("index: " + database + "\ncandidates: 2\nindexed: 1\nchunks: 1\nrejected: 1\nfailed: 0\n",
+        assertEquals(
+                "index: " + database + "\ncandidates: 2\nindexed: 1\nchunks: 1\nrejected: 1\nfailed: 0\n",
                 partial.out());
         assertTrue(partial.err().startsWith("warning: bad.txt: INVALID_UTF8: "), partial.err());
         assertNoStackTrace(partial.err());
@@ -439,19 +482,28 @@ class PackagedCliIT {
     @Test
     void executableJarIncludesCoreVocabularyAndLicenses() throws Exception {
         try (JarFile jar = new JarFile(executableJar.toFile())) {
-            assertEquals("dev.eyuppastirmaci.pecia.Bootstrap",
+            assertEquals(
+                    "dev.eyuppastirmaci.pecia.Bootstrap",
                     jar.getManifest().getMainAttributes().getValue("Main-Class"));
             assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/index/IndexService.class"));
             assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/search/QueryService.class"));
             assertNotNull(jar.getJarEntry("picocli/CommandLine.class"));
-            assertTrue(jar.stream().map(entry -> entry.getName()).noneMatch(name ->
-                    name.startsWith("ai/onnxruntime/") || name.startsWith("ai/djl/")
-                            || name.startsWith("org/tensorflow/") || name.startsWith("org/pytorch/")
-                            || name.endsWith(".onnx") || name.endsWith(".safetensors")
-                            || name.endsWith("pytorch_model.bin")), "The lexical JAR must not bundle a semantic runtime or model");
+            assertTrue(
+                    jar.stream()
+                            .map(entry -> entry.getName())
+                            .noneMatch(name -> name.startsWith("ai/onnxruntime/")
+                                    || name.startsWith("ai/djl/")
+                                    || name.startsWith("org/tensorflow/")
+                                    || name.startsWith("org/pytorch/")
+                                    || name.endsWith(".onnx")
+                                    || name.endsWith(".safetensors")
+                                    || name.endsWith("pytorch_model.bin")),
+                    "The lexical JAR must not bundle a semantic runtime or model");
             byte[] vocabulary = resource(jar, TOKENIZER_PATH + "vocab.txt");
-            assertEquals(VOCABULARY_SHA256,
-                    HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(vocabulary)));
+            assertEquals(
+                    VOCABULARY_SHA256,
+                    HexFormat.of()
+                            .formatHex(MessageDigest.getInstance("SHA-256").digest(vocabulary)));
             String notice = new String(resource(jar, TOKENIZER_PATH + "NOTICE.txt"), StandardCharsets.UTF_8);
             assertTrue(notice.contains("sentence-transformers/all-MiniLM-L6-v2"));
             assertTrue(notice.contains("1110a243fdf4706b3f48f1d95db1a4f5529b4d41"));
@@ -459,8 +511,8 @@ class PackagedCliIT {
             String tokenizerLicense = new String(resource(jar, TOKENIZER_PATH + "LICENSE.txt"), StandardCharsets.UTF_8);
             assertTrue(tokenizerLicense.contains("Apache License"));
             assertTrue(tokenizerLicense.contains("Version 2.0, January 2004"));
-            String commonmarkLicense = new String(resource(jar, "META-INF/licenses/commonmark-LICENSE.txt"),
-                    StandardCharsets.UTF_8);
+            String commonmarkLicense =
+                    new String(resource(jar, "META-INF/licenses/commonmark-LICENSE.txt"), StandardCharsets.UTF_8);
             assertTrue(commonmarkLicense.contains("Copyright (c) 2015, Atlassian Pty Ltd"));
             assertTrue(commonmarkLicense.contains("Redistribution and use in source and binary forms"));
         }
@@ -468,16 +520,21 @@ class PackagedCliIT {
 
     /* Runs the distribution in an isolated directory and redirects both streams to avoid pipe deadlocks. */
     private Result run(Path directory, String... arguments) throws Exception {
-
         return run(directory, List.of(), arguments);
     }
 
     private Result run(Path directory, List<String> jvmArguments, String... arguments) throws Exception {
         Path javaBin = Path.of(System.getProperty("java.home"), "bin");
-        Path java = Files.isRegularFile(javaBin.resolve("java.exe")) ? javaBin.resolve("java.exe") : javaBin.resolve("java");
-        List<String> command = new ArrayList<>(List.of(java.toString(), "-Dfile.encoding=UTF-8",
-                                                     "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8", "-Dpicocli.ansi=false",
-                                                     "-Dpicocli.usage.width=80"));
+        Path java = Files.isRegularFile(javaBin.resolve("java.exe"))
+                ? javaBin.resolve("java.exe")
+                : javaBin.resolve("java");
+        List<String> command = new ArrayList<>(List.of(
+                java.toString(),
+                "-Dfile.encoding=UTF-8",
+                "-Dstdout.encoding=UTF-8",
+                "-Dstderr.encoding=UTF-8",
+                "-Dpicocli.ansi=false",
+                "-Dpicocli.usage.width=80"));
 
         command.addAll(jvmArguments);
         command.addAll(List.of("-jar", executableJar.toString()));
@@ -486,8 +543,10 @@ class PackagedCliIT {
         Path output = Files.createTempDirectory(sandbox, "process-");
         Path stdout = output.resolve("stdout.txt");
         Path stderr = output.resolve("stderr.txt");
-        ProcessBuilder builder = new ProcessBuilder(command).directory(directory.toFile())
-                .redirectOutput(stdout.toFile()).redirectError(stderr.toFile());
+        ProcessBuilder builder = new ProcessBuilder(command)
+                .directory(directory.toFile())
+                .redirectOutput(stdout.toFile())
+                .redirectError(stderr.toFile());
         builder.environment().keySet().removeAll(List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"));
         Process process = builder.start();
 
@@ -502,7 +561,9 @@ class PackagedCliIT {
 
             assertTrue(completed, () -> "CLI timed out: " + command);
 
-            return new Result(process.exitValue(), Files.readString(stdout).replace("\r\n", "\n"),
+            return new Result(
+                    process.exitValue(),
+                    Files.readString(stdout).replace("\r\n", "\n"),
                     Files.readString(stderr).replace("\r\n", "\n"));
         } finally {
             if (process.isAlive()) {
@@ -514,8 +575,9 @@ class PackagedCliIT {
     private List<Path> projectEntries() throws IOException {
         try (var paths = Files.walk(project)) {
             return paths.filter(path -> !path.equals(project))
-                        .map(project::relativize)
-                        .sorted().toList();
+                    .map(project::relativize)
+                    .sorted()
+                    .toList();
         }
     }
 
@@ -535,22 +597,28 @@ class PackagedCliIT {
 
     private static void assertIndexSummary(Result result, Path database, int files, int chunks) {
         assertSuccess(result);
-        assertEquals("index: " + database + "\ncandidates: " + files + "\nindexed: " + files
-                + "\nchunks: " + chunks + "\nrejected: 0\nfailed: 0\n", result.out());
+        assertEquals(
+                "index: "
+                        + database
+                        + "\ncandidates: "
+                        + files
+                        + "\nindexed: "
+                        + files
+                        + "\nchunks: "
+                        + chunks
+                        + "\nrejected: 0\nfailed: 0\n",
+                result.out());
     }
 
     private static String initializationLogging(Path destination) {
-
         return "-Xlog:class+init=info:file=" + destination;
     }
 
     private static boolean initialized(Path log, String className) throws IOException {
-
         return Files.readString(log).contains("Initializing '" + className + "'");
     }
 
     private static String portablePath(Path path) {
-
         return path.toString().replace(path.getFileSystem().getSeparator(), "/");
     }
 
@@ -568,6 +636,5 @@ class PackagedCliIT {
         assertFalse(error.contains("Caused by:"), error);
     }
 
-    private record Result(int exitCode, String out, String err) {
-    }
+    private record Result(int exitCode, String out, String err) {}
 }

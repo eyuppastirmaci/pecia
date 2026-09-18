@@ -3,11 +3,13 @@ package dev.eyuppastirmaci.pecia.chunking.internal;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
+/** Indexes whitespace-delimited words and physical lines in unchanged source text. */
 public final class SourceText {
 
     private final int[] wordEnds;
     private final int[] lineStarts;
 
+    /** Builds source boundaries while treating CRLF pairs as single line terminators. */
     public SourceText(String text) {
         IntStream.Builder words = IntStream.builder();
         IntStream.Builder starts = IntStream.builder().add(0);
@@ -71,9 +73,11 @@ public final class SourceText {
     }
 
     /**
-     * Resolves a source position to its physical line with terminators belonging to the line they terminate.
+     * Resolves a source position to its physical line with terminators belonging to the line they
+     * terminate.
      *
-     * @param offset zero-based UTF-16 source offset, including EOF when an insertion position is needed
+     * @param offset zero-based UTF-16 source offset, including EOF when an insertion position is
+     *     needed
      * @return the one-based line number, including the empty line after a final terminator at EOF
      */
     public int lineAt(int offset) {

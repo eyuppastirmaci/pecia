@@ -1,13 +1,13 @@
 package dev.eyuppastirmaci.pecia.content;
 
+import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.BINARY_CONTENT;
+import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.INVALID_UTF8;
+
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
-
-import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.BINARY_CONTENT;
-import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.INVALID_UTF8;
 
 /** UTF-8 extraction strategy shared by every v0.1 document family. */
 public final class TextDocumentExtractor implements DocumentExtractor {
@@ -51,30 +51,35 @@ public final class TextDocumentExtractor implements DocumentExtractor {
         }
 
         if (looksBinary(text)) {
-            throw new ExtractionException(BINARY_CONTENT, request.file(),
-                    "File contains binary control characters: " + request.file());
+            throw new ExtractionException(
+                    BINARY_CONTENT, request.file(), "File contains binary control characters: " + request.file());
         }
 
         return new Document(request.sourcePath(), request.type(), text, content.contentHash());
     }
 
-    /* Configures strict UTF-8 decoding so malformed or unmappable input is rejected instead of replaced. */
+    /**
+     * Configures strict UTF-8 decoding so malformed or unmappable input is rejected instead of
+     * replaced.
+     */
     private static String decodeUtf8(FileContent content) throws ExtractionException {
-
         try {
-            return StandardCharsets.UTF_8.newDecoder()
-                                         .onMalformedInput(CodingErrorAction.REPORT)
-                                         .onUnmappableCharacter(CodingErrorAction.REPORT)
-                                         .decode(ByteBuffer.wrap(content.bytes()))
-                                         .toString();
+            return StandardCharsets.UTF_8
+                    .newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(content.bytes()))
+                    .toString();
         } catch (CharacterCodingException failure) {
-
-            throw new ExtractionException(INVALID_UTF8, content.file(),
-                    "File is not valid UTF-8: " + content.file(), failure);
+            throw new ExtractionException(
+                    INVALID_UTF8, content.file(), "File is not valid UTF-8: " + content.file(), failure);
         }
     }
 
-    /* Treats NUL or a meaningful density of disallowed control characters as evidence of binary content. */
+    /**
+     * Treats NUL or a meaningful density of disallowed control characters as evidence of binary
+     * content.
+     */
     private static boolean looksBinary(String text) {
         int suspiciousControls = 0;
 
@@ -82,12 +87,14 @@ public final class TextDocumentExtractor implements DocumentExtractor {
             char character = text.charAt(index);
 
             if (character == '\0') {
-
                 return true;
             }
 
             if (Character.isISOControl(character)
-                    && character != '\n' && character != '\r' && character != '\t' && character != '\f') {
+                    && character != '\n'
+                    && character != '\r'
+                    && character != '\t'
+                    && character != '\f') {
                 suspiciousControls++;
             }
         }

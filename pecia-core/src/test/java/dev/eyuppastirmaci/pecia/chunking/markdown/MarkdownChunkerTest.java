@@ -1,24 +1,22 @@
 package dev.eyuppastirmaci.pecia.chunking.markdown;
 
-import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
-import org.junit.jupiter.api.Test;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Random;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 class MarkdownChunkerTest {
 
@@ -50,13 +48,13 @@ class MarkdownChunkerTest {
         String last = "six seven eight";
         List<Chunk> chunks = verify(first + list + last, tokenizer.countModelInput(first), 2);
 
-        assertEquals(List.of(first, list, last), chunks.stream().map(Chunk::content).toList());
+        assertEquals(
+                List.of(first, list, last), chunks.stream().map(Chunk::content).toList());
     }
 
     @Test
     void splitsOversizedListsAtItemBoundariesBeforeUsingTextFallback() {
-        for (String list : List.of("- one\n- two\n- three\n- four\n",
-                "1. one\n2. two\n3. three\n4. four\n")) {
+        for (String list : List.of("- one\n- two\n- three\n- four\n", "1. one\n2. two\n3. three\n4. four\n")) {
             List<Chunk> chunks = verify(list, 6, 2);
 
             assertEquals(4, chunks.size());
@@ -137,8 +135,15 @@ class MarkdownChunkerTest {
     void maintainsExactGlobalOffsetsAndLineLocationsAcrossFallback() {
         for (String newline : List.of("\n", "\r\n", "\r")) {
             String prefix = "😀 Önsöz" + newline + newline;
-            String text = prefix + "# İçerik" + newline + "```" + newline
-                    + ("cafe\u0301 ve içerik 😀" + newline).repeat(30) + "```" + newline + "# Son";
+            String text = prefix
+                    + "# İçerik"
+                    + newline
+                    + "```"
+                    + newline
+                    + ("cafe\u0301 ve içerik 😀" + newline).repeat(30)
+                    + "```"
+                    + newline
+                    + "# Son";
             List<Chunk> chunks = verify(text, 16, 3);
 
             assertEquals(prefix, chunks.getFirst().content());
@@ -189,17 +194,20 @@ class MarkdownChunkerTest {
 
     @Test
     void preservesWhitespaceReferencesAndHtmlAroundOversizedBlocks() {
-        String text = " \t\n[ref]: https://example.com\n\n<!-- hidden -->\n\n"
-                + "- [label][ref]\n".repeat(50) + "\n \t\r\n";
+        String text =
+                " \t\n[ref]: https://example.com\n\n<!-- hidden -->\n\n" + "- [label][ref]\n".repeat(50) + "\n \t\r\n";
 
         verify(text, 8, 2);
     }
 
     @Test
     void preservesEmptyItemsNestedQuotesAndDefinitionsInsideContainers() {
-        for (String text : List.of("-\n-\n-\n", "> - item\n>   - nested\n>\n> tail\n",
+        for (String text : List.of(
+                "-\n-\n-\n",
+                "> - item\n>   - nested\n>\n> tail\n",
                 "- [ref]: https://example.com\n\n  text\n\n- next\n",
-                "- > quote\n  >\n  > body\n\n- end\n", "> ".repeat(40) + "text\n")) {
+                "- > quote\n  >\n  > body\n\n- end\n",
+                "> ".repeat(40) + "text\n")) {
             verify(text, 4, 1);
         }
     }
@@ -210,9 +218,16 @@ class MarkdownChunkerTest {
                 + "## Linux\n##### Advanced\n# Usage\nbody";
         List<Chunk> chunks = verify(text, 256, 0);
 
-        assertEquals(List.of(List.of(), List.of("Installation"), List.of("Installation", "Windows"),
-                List.of("Installation", "Windows", "Terminal"), List.of("Installation", "Linux"),
-                List.of("Installation", "Linux", "Advanced"), List.of("Usage")), headingPaths(chunks));
+        assertEquals(
+                List.of(
+                        List.of(),
+                        List.of("Installation"),
+                        List.of("Installation", "Windows"),
+                        List.of("Installation", "Windows", "Terminal"),
+                        List.of("Installation", "Linux"),
+                        List.of("Installation", "Linux", "Advanced"),
+                        List.of("Usage")),
+                headingPaths(chunks));
     }
 
     @Test
@@ -227,13 +242,14 @@ class MarkdownChunkerTest {
 
     @Test
     void carriesHeadingContextThroughFallbackOverlapAndNestedBlockSplits() {
-        String first = "# Root\n## Windows\n" + "one two three four ".repeat(30) + "\n\n"
-                + "- item\n".repeat(40) + "\n";
+        String first =
+                "# Root\n## Windows\n" + "one two three four ".repeat(30) + "\n\n" + "- item\n".repeat(40) + "\n";
         String second = "## Linux\n```\n" + "code\n".repeat(40) + "```\n";
         List<Chunk> chunks = verify(first + second, 12, 3);
 
         for (Chunk chunk : chunks) {
-            List<String> expected = startOf(chunk) == 0 ? List.of("Root")
+            List<String> expected = startOf(chunk) == 0
+                    ? List.of("Root")
                     : startOf(chunk) < first.length() ? List.of("Root", "Windows") : List.of("Root", "Linux");
             assertEquals(expected, chunk.metadata().headingPath());
         }
@@ -277,7 +293,8 @@ class MarkdownChunkerTest {
             String child = "cafe\u0301" + newline + "ayrıntı" + newline + "---" + newline + "body";
             List<Chunk> chunks = verify(root + child, 256, 0);
 
-            assertEquals(List.of(List.of("İçerik 😀"), List.of("İçerik 😀", "cafe\u0301 ayrıntı")), headingPaths(chunks));
+            assertEquals(
+                    List.of(List.of("İçerik 😀"), List.of("İçerik 😀", "cafe\u0301 ayrıntı")), headingPaths(chunks));
             assertEquals(new LineRange(1, 3), chunks.getFirst().sourceLocation());
             assertEquals(new LineRange(4, 7), chunks.getLast().sourceLocation());
         }
@@ -289,7 +306,9 @@ class MarkdownChunkerTest {
         List<Chunk> chunks = verify(text, 256, 0);
 
         assertEquals(text, chunks.getFirst().content());
-        assertEquals(List.of("Install Windows CLI & tools"), chunks.getFirst().metadata().headingPath());
+        assertEquals(
+                List.of("Install Windows CLI & tools"),
+                chunks.getFirst().metadata().headingPath());
     }
 
     @Test
@@ -297,8 +316,9 @@ class MarkdownChunkerTest {
         String text = "# Root\n## Old\n##\n### New\n#\nbody";
         List<Chunk> chunks = verify(text, 256, 0);
 
-        assertEquals(List.of(List.of("Root"), List.of("Root", "Old"), List.of("Root"),
-                List.of("Root", "New"), List.of()), headingPaths(chunks));
+        assertEquals(
+                List.of(List.of("Root"), List.of("Root", "Old"), List.of("Root"), List.of("Root", "New"), List.of()),
+                headingPaths(chunks));
     }
 
     @Test
@@ -309,7 +329,9 @@ class MarkdownChunkerTest {
             }
         }
 
-        assertEquals(List.of(), verify("Preamble\n\n# Root\nbody", 256, 0).getFirst().metadata().headingPath());
+        assertEquals(
+                List.of(),
+                verify("Preamble\n\n# Root\nbody", 256, 0).getFirst().metadata().headingPath());
     }
 
     @Test
@@ -318,13 +340,16 @@ class MarkdownChunkerTest {
         String text = "# Same\n## Child\n# Same\n## Child\n";
         List<Chunk> first = chunker.chunk(document(text));
 
-        assertEquals(List.of(List.of("Same"), List.of("Same", "Child"), List.of("Same"), List.of("Same", "Child")),
+        assertEquals(
+                List.of(List.of("Same"), List.of("Same", "Child"), List.of("Same"), List.of("Same", "Child")),
                 headingPaths(first));
         assertTrue(startOf(first.get(3)) > startOf(first.get(1)));
         assertEquals(List.of(List.of("Other")), headingPaths(chunker.chunk(document("# Other\n"))));
         assertEquals(List.of(List.of()), headingPaths(chunker.chunk(document("No heading"))));
         assertEquals(first, chunker.chunk(document(text)));
-        assertThrows(UnsupportedOperationException.class, () -> first.getFirst().metadata().headingPath().add("changed"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> first.getFirst().metadata().headingPath().add("changed"));
     }
 
     @Test
@@ -340,10 +365,18 @@ class MarkdownChunkerTest {
     @Test
     void maintainsSourceCoverageAcrossSeededMixedOversizedBlocks() {
         Random random = new Random(93);
-        String[] blocks = {"# Heading\n\n", "## Child\n\n", "word ".repeat(40) + "\n\n",
-                "- one\n  - nested\n- two\n\n", "- item\n".repeat(50) + "\n",
-                "```java\n" + "int x = 1;\n".repeat(30) + "```\n\n", "> quoted\n>\n> - item\n\n",
-                "[ref]: https://example.com\n\n", "😀 İçerik\r\n\r\n", "世😀".repeat(20) + "\n\n"};
+        String[] blocks = {
+            "# Heading\n\n",
+            "## Child\n\n",
+            "word ".repeat(40) + "\n\n",
+            "- one\n  - nested\n- two\n\n",
+            "- item\n".repeat(50) + "\n",
+            "```java\n" + "int x = 1;\n".repeat(30) + "```\n\n",
+            "> quoted\n>\n> - item\n\n",
+            "[ref]: https://example.com\n\n",
+            "😀 İçerik\r\n\r\n",
+            "世😀".repeat(20) + "\n\n"
+        };
 
         for (int example = 0; example < 60; example++) {
             StringBuilder text = new StringBuilder();
@@ -357,7 +390,10 @@ class MarkdownChunkerTest {
         }
     }
 
-    /* Checks global coverage, exact source slices, Unicode boundaries, overlap, and line ranges independently of chunking helpers. */
+    /**
+     * Checks global coverage, exact source slices, Unicode boundaries, overlap, and line ranges independently of
+     * chunking helpers.
+     */
     private List<Chunk> verify(String text, int limit, int overlap) {
         Document document = document(text);
         DocumentChunker chunker = new MarkdownChunker(tokenizer, limit, overlap);
@@ -386,15 +422,17 @@ class MarkdownChunkerTest {
 
             while (contextOffset < text.length()
                     && (Character.isWhitespace(text.codePointAt(contextOffset))
-                    || Character.isSpaceChar(text.codePointAt(contextOffset)))) {
+                            || Character.isSpaceChar(text.codePointAt(contextOffset)))) {
                 contextOffset += Character.charCount(text.codePointAt(contextOffset));
             }
 
-            while (sectionIndex + 1 < sections.size() && sections.get(sectionIndex).endOffset() <= contextOffset) {
+            while (sectionIndex + 1 < sections.size()
+                    && sections.get(sectionIndex).endOffset() <= contextOffset) {
                 sectionIndex++;
             }
 
-            assertEquals(sections.get(sectionIndex).headingPath(), chunk.metadata().headingPath());
+            assertEquals(
+                    sections.get(sectionIndex).headingPath(), chunk.metadata().headingPath());
             assertTrue(tokenizer.countModelInput(chunk.content()) <= limit);
             assertTrue(tokenizer.count(text.substring(start, coveredEnd)) <= overlap);
             assertEquals(new LineRange(lineAt(text, start), lineAt(text, end - 1)), chunk.sourceLocation());
@@ -425,7 +463,8 @@ class MarkdownChunkerTest {
 
     private static void assertSafeBoundary(String text, int offset) {
         if (offset > 0 && offset < text.length()) {
-            assertFalse(Character.isHighSurrogate(text.charAt(offset - 1)) && Character.isLowSurrogate(text.charAt(offset)));
+            assertFalse(Character.isHighSurrogate(text.charAt(offset - 1))
+                    && Character.isLowSurrogate(text.charAt(offset)));
             assertFalse(text.charAt(offset - 1) == '\r' && text.charAt(offset) == '\n');
         }
     }
@@ -444,7 +483,10 @@ class MarkdownChunkerTest {
     }
 
     private static Document document(String text) {
-        return new Document(Path.of("docs/example.md"), DocumentType.MARKDOWN, text,
+        return new Document(
+                Path.of("docs/example.md"),
+                DocumentType.MARKDOWN,
+                text,
                 ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
     }
 }

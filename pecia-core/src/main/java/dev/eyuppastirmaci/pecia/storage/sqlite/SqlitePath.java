@@ -1,12 +1,12 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
 import dev.eyuppastirmaci.pecia.content.ContentPath;
-
 import java.nio.file.Path;
 import java.util.StringJoiner;
 
+/** Converts project-relative paths to and from the portable spelling stored in SQLite. */
 public final class SqlitePath {
-    private SqlitePath() { }
+    private SqlitePath() {}
 
     /**
      * Encodes a project-relative path using slash-separated name elements.

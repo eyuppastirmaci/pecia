@@ -8,20 +8,26 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/** Applies case-insensitive include/exclude globs to project-relative paths. */
 public final class GlobFilter {
 
     private final List<PathMatcher> includeMatchers;
     private final List<PathMatcher> excludeMatchers;
     private final List<PathMatcher> excludedDirectories;
 
+    /**
+     * Compiles glob lists, with exclusions taking precedence and empty includes accepting all paths.
+     */
     public GlobFilter(List<String> includeGlobs, List<String> excludeGlobs) {
         this.includeMatchers = compile(includeGlobs);
         this.excludeMatchers = compile(excludeGlobs);
 
-        // Remove subtree suffixes to identify directories that can be skipped before visiting their children.
+        // Remove subtree suffixes to identify directories that can be skipped before visiting their
+        // children.
         this.excludedDirectories = compile(excludeGlobs.stream()
-                                                       .filter(glob -> glob.endsWith("/**"))
-                                                       .map(glob -> glob.substring(0, glob.length() - 3)).toList());
+                .filter(glob -> glob.endsWith("/**"))
+                .map(glob -> glob.substring(0, glob.length() - 3))
+                .toList());
     }
 
     /**
@@ -35,7 +41,6 @@ public final class GlobFilter {
         relative = folded(relative);
 
         if (anyMatch(excludeMatchers, relative)) {
-
             return false;
         }
 
@@ -51,21 +56,16 @@ public final class GlobFilter {
      * @throws NullPointerException if relative is null
      */
     public boolean excludesDirectory(Path relative) {
-
         return anyMatch(excludedDirectories, folded(relative));
     }
 
     private static Path folded(Path path) {
-
         return path.getFileSystem().getPath(path.toString().toLowerCase(Locale.ROOT));
     }
 
     private static boolean anyMatch(List<PathMatcher> matchers, Path relative) {
-
         for (PathMatcher matcher : matchers) {
-
             if (matcher.matches(relative)) {
-
                 return true;
             }
         }
@@ -73,7 +73,7 @@ public final class GlobFilter {
         return false;
     }
 
-    /* Compiles case-folded glob patterns and adds root-level variants for recursive patterns. */
+    /** Compiles case-folded glob patterns and adds root-level variants for recursive patterns. */
     private static List<PathMatcher> compile(List<String> globs) {
         FileSystem fs = FileSystems.getDefault();
 
@@ -84,7 +84,8 @@ public final class GlobFilter {
             glob = glob.toLowerCase(Locale.ROOT);
             matchers.add(fs.getPathMatcher("glob:" + glob));
 
-            // A glob like "**/*.md" never matches a root-level "README.md", so also match the part after "**/".
+            // A glob like "**/*.md" never matches a root-level "README.md", so also match the part after
+            // "**/".
             if (glob.startsWith("**/")) {
                 matchers.add(fs.getPathMatcher("glob:" + glob.substring(3)));
             }

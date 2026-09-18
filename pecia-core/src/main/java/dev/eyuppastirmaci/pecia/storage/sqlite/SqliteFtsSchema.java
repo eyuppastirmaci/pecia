@@ -12,12 +12,19 @@ import java.util.regex.Pattern;
 /** The bundled V2 declarations are also the contract for accepting an existing search index. */
 final class SqliteFtsSchema {
     private static final String RESOURCE = "/db/migration/V2__add_chunk_fts.sql";
-    private static final Set<String> REQUIRED_OBJECTS = Set.of("chunks_fts", "chunks_fts_insert", "chunks_fts_update",
-            "chunks_fts_delete", "chunk_headings_fts_insert", "chunk_headings_fts_update", "chunk_headings_fts_delete",
+    private static final Set<String> REQUIRED_OBJECTS = Set.of(
+            "chunks_fts",
+            "chunks_fts_insert",
+            "chunks_fts_update",
+            "chunks_fts_delete",
+            "chunk_headings_fts_insert",
+            "chunk_headings_fts_update",
+            "chunk_headings_fts_delete",
             "files_fts_path_update");
-    // Only extracts declarations from this fixed resource layout, never splits executable SQL at semicolons.
+    // Only extracts declarations from this fixed resource layout, never splits executable SQL at
+    // semicolons.
     private static final Pattern DECLARATION = Pattern.compile(
-            "(?ms)^CREATE VIRTUAL TABLE (chunks_fts) USING fts5\\(.*?^\\);|^CREATE TRIGGER ([a-z_]+)\\b.*?^END;");
+            "(?ms)^CREATE VIRTUAL TABLE (chunks_fts) USING fts5\\(.*?^\\);|^CREATE TRIGGER" + " ([a-z_]+)\\b.*?^END;");
 
     private final String script;
     private final Map<String, Definition> definitions;
@@ -42,7 +49,8 @@ final class SqliteFtsSchema {
         while (matcher.find()) {
             boolean table = matcher.group(1) != null;
             String name = table ? matcher.group(1) : matcher.group(2);
-            if (definitions.put(name, new Definition(table ? "table" : "trigger", canonical(matcher.group()))) != null) {
+            if (definitions.put(name, new Definition(table ? "table" : "trigger", canonical(matcher.group())))
+                    != null) {
                 throw new IOException("Duplicate bundled SQLite FTS declaration: " + name);
             }
         }
@@ -61,7 +69,8 @@ final class SqliteFtsSchema {
             for (var object : definitions.entrySet()) {
                 query.setString(1, object.getKey());
                 try (var result = query.executeQuery()) {
-                    if (!result.next() || !object.getValue().type().equals(result.getString(1))
+                    if (!result.next()
+                            || !object.getValue().type().equals(result.getString(1))
                             || !object.getValue().sql().equals(canonical(result.getString(2)))) {
                         throw new SQLException("Missing or incompatible SQLite FTS schema object: " + object.getKey());
                     }
@@ -69,10 +78,11 @@ final class SqliteFtsSchema {
             }
         }
 
-        // Preparing the projection opens the virtual table and checks its columns, without scanning chunk content.
+        // Preparing the projection opens the virtual table and checks its columns, without scanning
+        // chunk content.
         try (var statement = connection.createStatement();
-             var ignored = statement.executeQuery("SELECT rowid, content, headings, source_path FROM main.chunks_fts LIMIT 0")) {
-        }
+                var ignored = statement.executeQuery(
+                        "SELECT rowid, content, headings, source_path FROM main.chunks_fts LIMIT 0")) {}
     }
 
     private static String canonical(String sql) {
@@ -80,9 +90,10 @@ final class SqliteFtsSchema {
             return "";
         }
         String result = sql.replace("\r\n", "\n").strip();
-        // sqlite_schema omits the terminator; preserve all internal whitespace and string literal values.
+        // sqlite_schema omits the terminator; preserve all internal whitespace and string literal
+        // values.
         return result.endsWith(";") ? result.substring(0, result.length() - 1).stripTrailing() : result;
     }
 
-    private record Definition(String type, String sql) { }
+    private record Definition(String type, String sql) {}
 }

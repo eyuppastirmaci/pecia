@@ -5,12 +5,12 @@ import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.sqlite.mapper.StoredChunkRowMapper;
-
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
+/** Reads and writes chunks and their metadata using the owning storage's connection. */
 public final class SqliteChunkRepository {
     private final SqliteStorage storage;
     private final Connection connection;
@@ -41,10 +41,10 @@ public final class SqliteChunkRepository {
             long id;
 
             try (var insert = connection.prepareStatement("""
-                    INSERT INTO chunks(file_id, chunk_index, content, start_line, end_line)
-                    SELECT id, ?, ?, ?, ? FROM files WHERE id = ? AND source_path = ? AND document_type = ?
-                    RETURNING id
-                    """)) {
+                INSERT INTO chunks(file_id, chunk_index, content, start_line, end_line)
+                SELECT id, ?, ?, ?, ? FROM files WHERE id = ? AND source_path = ? AND document_type = ?
+                RETURNING id
+                """)) {
                 insert.setInt(1, chunk.index());
                 insert.setString(2, chunk.content());
                 insert.setInt(3, lines.startLine());
@@ -84,10 +84,10 @@ public final class SqliteChunkRepository {
             List<StoredChunk> chunks = new ArrayList<>();
 
             try (var query = connection.prepareStatement("""
-                    SELECT c.id, c.file_id, c.chunk_index, c.content, c.start_line, c.end_line,
-                           f.source_path, f.document_type
-                    FROM chunks c JOIN files f ON f.id = c.file_id WHERE c.file_id = ? ORDER BY c.chunk_index
-                    """)) {
+                SELECT c.id, c.file_id, c.chunk_index, c.content, c.start_line, c.end_line,
+                       f.source_path, f.document_type
+                FROM chunks c JOIN files f ON f.id = c.file_id WHERE c.file_id = ? ORDER BY c.chunk_index
+                """)) {
                 query.setLong(1, fileId);
 
                 try (var rows = query.executeQuery()) {
@@ -121,7 +121,7 @@ public final class SqliteChunkRepository {
 
     private void writeMetadata(long id, ChunkMetadata metadata) throws SQLException {
         try (var heading = connection.prepareStatement("INSERT INTO chunk_headings VALUES (?, ?, ?)");
-             var attribute = connection.prepareStatement("INSERT INTO chunk_attributes VALUES (?, ?, ?)")) {
+                var attribute = connection.prepareStatement("INSERT INTO chunk_attributes VALUES (?, ?, ?)")) {
             for (int position = 0; position < metadata.headingPath().size(); position++) {
                 heading.setLong(1, id);
                 heading.setInt(2, position);

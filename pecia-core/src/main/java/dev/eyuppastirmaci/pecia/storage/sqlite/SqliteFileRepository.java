@@ -4,7 +4,6 @@ import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.mapper.StoredFileRowMapper;
-
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -12,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+/** Reads and writes file manifest entries using the owning storage's connection. */
 public final class SqliteFileRepository {
     private static final String COLUMNS = "id, source_path, document_type, content_hash";
     private final Connection connection;
@@ -21,14 +21,14 @@ public final class SqliteFileRepository {
         this.connection = connection;
     }
 
-    /* Acquires the write lock and preserves an existing file ID without a separate read-before-write race. */
+    /** Acquires the write lock and preserves an existing file ID without a read-before-write race. */
     StoredFile save(Path sourcePath, DocumentType type, ContentHash hash) throws SQLException {
         try (var statement = connection.prepareStatement("""
-                INSERT INTO files(source_path, document_type, content_hash) VALUES (?, ?, ?)
-                ON CONFLICT(source_path) DO UPDATE SET
-                    document_type = excluded.document_type, content_hash = excluded.content_hash
-                RETURNING id, source_path, document_type, content_hash
-                """)) {
+            INSERT INTO files(source_path, document_type, content_hash) VALUES (?, ?, ?)
+            ON CONFLICT(source_path) DO UPDATE SET
+                document_type = excluded.document_type, content_hash = excluded.content_hash
+            RETURNING id, source_path, document_type, content_hash
+            """)) {
             statement.setString(1, SqlitePath.encode(sourcePath));
             statement.setString(2, type.name());
             statement.setString(3, hash.value());
@@ -60,7 +60,9 @@ public final class SqliteFileRepository {
         String hash = contentHash.value();
 
         try (var statement = connection.prepareStatement(
-                "INSERT INTO files(source_path, document_type, content_hash) VALUES (?, ?, ?) RETURNING " + COLUMNS)) {
+                "INSERT INTO files(source_path, document_type, content_hash) VALUES (?, ?, ?) RETURNING"
+                        + " "
+                        + COLUMNS)) {
             statement.setString(1, path);
             statement.setString(2, type);
             statement.setString(3, hash);
@@ -106,7 +108,8 @@ public final class SqliteFileRepository {
         List<StoredFile> files = new ArrayList<>();
 
         try (var statement = connection.createStatement();
-             var rows = statement.executeQuery("SELECT " + COLUMNS + " FROM files ORDER BY source_path COLLATE BINARY")) {
+                var rows = statement.executeQuery(
+                        "SELECT " + COLUMNS + " FROM files ORDER BY source_path COLLATE BINARY")) {
             while (rows.next()) {
                 files.add(mapper.map(rows));
             }
@@ -118,7 +121,8 @@ public final class SqliteFileRepository {
     /**
      * Updates a manifest entry by ID within the connection's current transaction.
      *
-     * @param file the replacement manifest values whose related chunks the caller must keep consistent
+     * @param file the replacement manifest values whose related chunks the caller must keep
+     *     consistent
      * @return true when the ID existed
      * @throws SQLException if the path conflicts or updating fails
      * @throws NullPointerException if file is null

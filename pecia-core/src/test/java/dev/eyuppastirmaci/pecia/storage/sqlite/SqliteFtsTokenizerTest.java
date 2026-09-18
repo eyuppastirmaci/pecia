@@ -1,9 +1,6 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.sqlite.JDBC;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -11,8 +8,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.sqlite.JDBC;
 
 class SqliteFtsTokenizerTest {
     private Connection connection;
@@ -24,7 +23,8 @@ class SqliteFtsTokenizerTest {
 
         try (var statement = connection.createStatement()) {
             statement.executeUpdate("CREATE VIRTUAL TABLE temp.tokenizer_fixture USING fts5(body, tokenize = '"
-                    + SqliteFtsSupport.TOKENIZER + "', detail = full, columnsize = 1)");
+                    + SqliteFtsSupport.TOKENIZER
+                    + "', detail = full, columnsize = 1)");
         }
     }
 
@@ -161,8 +161,8 @@ class SqliteFtsTokenizerTest {
     }
 
     private void insert(long rowId, String body) throws SQLException {
-        try (var statement = connection.prepareStatement(
-                "INSERT INTO temp.tokenizer_fixture(rowid, body) VALUES (?, ?)")) {
+        try (var statement =
+                connection.prepareStatement("INSERT INTO temp.tokenizer_fixture(rowid, body) VALUES (?, ?)")) {
             statement.setLong(1, rowId);
             statement.setString(2, body);
             statement.executeUpdate();
@@ -173,7 +173,7 @@ class SqliteFtsTokenizerTest {
         List<Long> actual = new ArrayList<>();
 
         try (var statement = connection.prepareStatement(
-                "SELECT rowid FROM temp.tokenizer_fixture WHERE tokenizer_fixture MATCH ? ORDER BY rowid")) {
+                "SELECT rowid FROM temp.tokenizer_fixture WHERE tokenizer_fixture MATCH ? ORDER BY" + " rowid")) {
             statement.setString(1, expression);
 
             try (var rows = statement.executeQuery()) {

@@ -1,16 +1,15 @@
 package dev.eyuppastirmaci.pecia.config;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class PeciaConfigLoaderTest {
 
@@ -26,9 +25,9 @@ class PeciaConfigLoaderTest {
 
     @Test
     void loadedConfigRequiresConfigurationAndRoot() {
-        assertThrows(NullPointerException.class,
-                () -> new PeciaConfigLoader.LoadedConfig(null, root, false));
-        assertThrows(NullPointerException.class,
+        assertThrows(NullPointerException.class, () -> new PeciaConfigLoader.LoadedConfig(null, root, false));
+        assertThrows(
+                NullPointerException.class,
                 () -> new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), null, false));
     }
 

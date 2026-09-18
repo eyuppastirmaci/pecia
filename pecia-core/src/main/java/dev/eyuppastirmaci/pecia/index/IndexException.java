@@ -17,12 +17,10 @@ public final class IndexException extends Exception {
     }
 
     public IndexResult result() {
-
         return result;
     }
 
     public List<WalkResult.Issue> scanIssues() {
-
         return scanIssues;
     }
 }

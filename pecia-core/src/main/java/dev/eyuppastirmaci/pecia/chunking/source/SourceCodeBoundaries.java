@@ -1,7 +1,6 @@
 package dev.eyuppastirmaci.pecia.chunking.source;
 
 import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
-
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.OptionalInt;
@@ -29,7 +28,8 @@ final class SourceCodeBoundaries {
             int start = offset;
             long indent = 0;
 
-            // Tab stops are only a comparison heuristic; indentation characters remain untouched in the source.
+            // Tab stops are only a comparison heuristic; indentation characters remain untouched in the
+            // source.
             while (offset < textLength && (text.charAt(offset) == ' ' || text.charAt(offset) == '\t')) {
                 indent += text.charAt(offset) == '\t' ? TAB_WIDTH - indent % TAB_WIDTH : 1;
                 offset++;
@@ -92,7 +92,10 @@ final class SourceCodeBoundaries {
         return lineEnds[index];
     }
 
-    /* Finds the first physical line ending after a UTF-16 offset, returning the line count at end of input. */
+    /**
+     * Finds the first physical line ending after a UTF-16 offset, returning the line count at end of
+     * input.
+     */
     int firstLineAfter(int offset) {
         if (offset < 0 || offset > textLength) {
             throw new IllegalArgumentException("Offset must be within the source text");
@@ -103,7 +106,10 @@ final class SourceCodeBoundaries {
         return index >= 0 ? index + 1 : -index - 1;
     }
 
-    /* Prefers EOF when it fits, otherwise the latest blank-run end, dedent start, or line end within an exclusive/inclusive window. */
+    /**
+     * Prefers EOF when it fits, otherwise the latest blank-run end, dedent start, or line end within
+     * an exclusive/inclusive window.
+     */
     OptionalInt preferredEnd(int minimumExclusive, int maximumInclusive) {
         if (minimumExclusive < 0 || maximumInclusive < minimumExclusive || maximumInclusive > textLength) {
             throw new IllegalArgumentException("Boundary window must be ordered and within the source text");

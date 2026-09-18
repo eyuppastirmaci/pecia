@@ -1,26 +1,24 @@
 package dev.eyuppastirmaci.pecia.chunking.text;
 
-import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
-import org.junit.jupiter.api.Test;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 import java.util.stream.Collectors;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 class TextChunkerTest {
 
@@ -81,7 +79,8 @@ class TextChunkerTest {
         TextChunker chunker = new TextChunker(tokenizer, 256, 0);
 
         assertEquals(1, chunker.chunk(full).size());
-        assertEquals(256, tokenizer.countModelInput(chunker.chunk(full).getFirst().content()));
+        assertEquals(
+                256, tokenizer.countModelInput(chunker.chunk(full).getFirst().content()));
         assertEquals(2, chunker.chunk(oversized).size());
         verify(oversized, chunker.chunk(oversized), 256, 0);
     }
@@ -91,7 +90,8 @@ class TextChunkerTest {
         Document document = document("one two three four five six seven eight", DocumentType.PLAIN_TEXT);
         List<Chunk> chunks = new TextChunker(tokenizer, 6, 2).chunk(document);
 
-        assertEquals(List.of("one two three four ", "three four five six ", "five six seven eight"),
+        assertEquals(
+                List.of("one two three four ", "three four five six ", "five six seven eight"),
                 chunks.stream().map(Chunk::content).toList());
         verify(document, chunks, 6, 2);
     }
@@ -101,7 +101,8 @@ class TextChunkerTest {
         Document document = document("one two paymentValidation hello", DocumentType.PLAIN_TEXT);
         List<Chunk> chunks = new TextChunker(tokenizer, 6, 2).chunk(document);
 
-        assertEquals(List.of("one two ", "paymentValidation ", "hello"),
+        assertEquals(
+                List.of("one two ", "paymentValidation ", "hello"),
                 chunks.stream().map(Chunk::content).toList());
         verify(document, chunks, 6, 2);
     }
@@ -132,7 +133,8 @@ class TextChunkerTest {
         Document document = document("one two\r\n\r\nthree four\r\nfive six\rseven", DocumentType.PLAIN_TEXT);
         List<Chunk> chunks = new TextChunker(tokenizer, 4, 0).chunk(document);
 
-        assertEquals(List.of(new LineRange(1, 2), new LineRange(3, 3), new LineRange(4, 4), new LineRange(5, 5)),
+        assertEquals(
+                List.of(new LineRange(1, 2), new LineRange(3, 3), new LineRange(4, 4), new LineRange(5, 5)),
                 chunks.stream().map(Chunk::sourceLocation).toList());
         verify(document, chunks, 4, 0);
     }
@@ -148,8 +150,8 @@ class TextChunkerTest {
 
     @Test
     void preservesTurkishAndCombiningCharactersAcrossLocaleChanges() {
-        Document document = document("İstanbul'da ödeme doğrulama.\n\nBaşlık: cafe\u0301 ve içerik.\n".repeat(3),
-                DocumentType.PLAIN_TEXT);
+        Document document = document(
+                "İstanbul'da ödeme doğrulama.\n\nBaşlık: cafe\u0301 ve içerik.\n".repeat(3), DocumentType.PLAIN_TEXT);
         TextChunker chunker = new TextChunker(tokenizer, 14, 3);
         List<Chunk> expected = chunker.chunk(document);
         Locale previous = Locale.getDefault();
@@ -188,8 +190,22 @@ class TextChunkerTest {
     @Test
     void maintainsCoverageAndLimitsAcrossSeededMixedInputs() {
         Random random = new Random(8);
-        String[] units = {"hello", "paymentValidation", "İçerik", "cafe\u0301", "世😀", "[CLS]", "word.",
-                "a".repeat(101), " ", "\t", "\r\n", "\n\n", "\r", "\u00a0"};
+        String[] units = {
+            "hello",
+            "paymentValidation",
+            "İçerik",
+            "cafe\u0301",
+            "世😀",
+            "[CLS]",
+            "word.",
+            "a".repeat(101),
+            " ",
+            "\t",
+            "\r\n",
+            "\n\n",
+            "\r",
+            "\u00a0"
+        };
 
         for (int example = 0; example < 60; example++) {
             StringBuilder text = new StringBuilder("start ");
@@ -210,8 +226,8 @@ class TextChunkerTest {
 
     @Test
     void processesLargeParagraphsAndWhitespaceRunsWithoutLosingContent() {
-        Document document = document(" \t".repeat(5000) + "hello world ".repeat(1000) + "\r\n".repeat(5000),
-                DocumentType.PLAIN_TEXT);
+        Document document = document(
+                " \t".repeat(5000) + "hello world ".repeat(1000) + "\r\n".repeat(5000), DocumentType.PLAIN_TEXT);
         List<Chunk> chunks = new TextChunker(tokenizer, 256, 32).chunk(document);
 
         assertTrue(chunks.size() > 1);
@@ -220,15 +236,17 @@ class TextChunkerTest {
 
     @Test
     void preservesLargeRegionsThatNormalizeToNoTokens() {
-        Document document = document("\u200b ".repeat(10_000) + "hello ".repeat(300)
-                + "\u200b ".repeat(10_000), DocumentType.PLAIN_TEXT);
+        Document document = document(
+                "\u200b ".repeat(10_000) + "hello ".repeat(300) + "\u200b ".repeat(10_000), DocumentType.PLAIN_TEXT);
         List<Chunk> chunks = new TextChunker(tokenizer, 256, 32).chunk(document);
 
         assertEquals(2, chunks.size());
         verify(document, chunks, 256, 32);
     }
 
-    /* Reconstructs the source from recorded offsets while independently checking coverage, overlap, and line locations. */
+    /**
+     * Reconstructs the source from recorded offsets while independently checking coverage, overlap, and line locations.
+     */
     private void verify(Document document, List<Chunk> chunks, int limit, int overlap) {
         int coveredEnd = 0;
         int previousStart = -1;
@@ -249,7 +267,8 @@ class TextChunkerTest {
             assertEquals(List.of(), chunk.metadata().headingPath());
             assertTrue(tokenizer.countModelInput(chunk.content()) <= limit);
             assertTrue(tokenizer.count(document.content().substring(start, coveredEnd)) <= overlap);
-            assertEquals(new LineRange(lineAt(document.content(), start), lineAt(document.content(), end - 1)),
+            assertEquals(
+                    new LineRange(lineAt(document.content(), start), lineAt(document.content(), end - 1)),
                     chunk.sourceLocation());
             assertSafeBoundary(document.content(), start);
             assertSafeBoundary(document.content(), end);
@@ -288,7 +307,7 @@ class TextChunkerTest {
     }
 
     private static Document document(String text, DocumentType type) {
-        return new Document(Path.of("docs/example.txt"), type, text,
-                ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
+        return new Document(
+                Path.of("docs/example.txt"), type, text, ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
     }
 }

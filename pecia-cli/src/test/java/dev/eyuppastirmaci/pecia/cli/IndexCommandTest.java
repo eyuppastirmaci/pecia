@@ -1,25 +1,23 @@
 package dev.eyuppastirmaci.pecia.cli;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexService;
-import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import picocli.CommandLine;
-
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import picocli.CommandLine;
 
 class IndexCommandTest {
 
@@ -160,12 +158,22 @@ class IndexCommandTest {
 
         assertEquals(0, run(root.toString()));
         assertEquals("", err.toString());
-        assertEquals(String.join(System.lineSeparator(),
-                "index: " + root.resolve(".pecia/index.db"), "candidates: 2", "indexed: 2",
-                "chunks: 1", "rejected: 0", "failed: 0", ""), out.toString());
+        assertEquals(
+                String.join(
+                        System.lineSeparator(),
+                        "index: " + root.resolve(".pecia/index.db"),
+                        "candidates: 2",
+                        "indexed: 2",
+                        "chunks: 1",
+                        "rejected: 0",
+                        "failed: 0",
+                        ""),
+                out.toString());
 
         try (SqliteStorage storage = SqliteStorage.openReadOnly(root.resolve(".pecia/index.db"), root)) {
-            assertEquals(1, storage.lexicalSearch().search(new SearchRequest("needle")).size());
+            assertEquals(
+                    1,
+                    storage.lexicalSearch().search(new SearchRequest("needle")).size());
         }
     }
 

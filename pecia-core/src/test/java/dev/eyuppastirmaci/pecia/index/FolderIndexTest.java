@@ -1,12 +1,17 @@
 package dev.eyuppastirmaci.pecia.index;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,8 +21,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class FolderIndexTest {
 
@@ -53,9 +58,17 @@ class FolderIndexTest {
 
         try (SqliteStorage storage = SqliteStorage.open(result.context().databasePath(), root)) {
             assertEquals(4, storage.files().findAll().size());
-            assertEquals(Path.of("child/a.md"),
-                    storage.lexicalSearch().search(new SearchRequest("markdownneedle")).getFirst().sourcePath());
-            assertEquals(1, storage.lexicalSearch().search(new SearchRequest("outsideneedle")).size());
+            assertEquals(
+                    Path.of("child/a.md"),
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("markdownneedle"))
+                            .getFirst()
+                            .sourcePath());
+            assertEquals(
+                    1,
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("outsideneedle"))
+                            .size());
         }
     }
 
@@ -77,8 +90,16 @@ class FolderIndexTest {
         assertThrows(UnsupportedOperationException.class, () -> partial.issues().clear());
 
         try (SqliteStorage storage = SqliteStorage.open(initial.context().databasePath(), root)) {
-            assertEquals(1, storage.lexicalSearch().search(new SearchRequest("oldneedle")).size());
-            assertEquals(1, storage.lexicalSearch().search(new SearchRequest("updatedneedle")).size());
+            assertEquals(
+                    1,
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("oldneedle"))
+                            .size());
+            assertEquals(
+                    1,
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("updatedneedle"))
+                            .size());
         }
 
         Files.writeString(root.resolve("b.txt"), "fixedneedle");
@@ -117,7 +138,8 @@ class FolderIndexTest {
         assertEquals(IndexResult.Status.INCOMPLETE_SCAN, failure.result().status());
         assertEquals(0, failure.result().indexedFiles());
         assertEquals(1, failure.scanIssues().size());
-        assertThrows(UnsupportedOperationException.class, () -> failure.scanIssues().clear());
+        assertThrows(
+                UnsupportedOperationException.class, () -> failure.scanIssues().clear());
         assertFalse(Files.exists(root.resolve(".pecia")));
 
         Files.delete(root.resolve("bad/.gitignore"));
@@ -137,7 +159,8 @@ class FolderIndexTest {
         assertEquals(0, result.candidateCount());
 
         try (SqliteStorage storage = SqliteStorage.open(result.context().databasePath(), root)) {
-            assertTrue(storage.lexicalSearch().search(new SearchRequest("absent")).isEmpty());
+            assertTrue(
+                    storage.lexicalSearch().search(new SearchRequest("absent")).isEmpty());
         }
 
         Path other = Files.createDirectory(root.resolve("other"));
@@ -151,7 +174,6 @@ class FolderIndexTest {
 
     @Test
     void storageFailureStopsAfterAtomicRollbackAndPreservesEarlierFiles() throws Exception {
-
         for (String name : List.of("a", "b", "c")) {
             Files.writeString(root.resolve(name + ".txt"), name + "old");
         }
@@ -162,13 +184,14 @@ class FolderIndexTest {
             SqliteStorage storage = SqliteStorage.open(context.databasePath(), context.projectRoot());
             captured.set(storage);
 
-            try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + context.databasePath().toUri());
-                 Statement statement = connection.createStatement()) {
+            try (Connection connection = DriverManager.getConnection(
+                            "jdbc:sqlite:" + context.databasePath().toUri());
+                    Statement statement = connection.createStatement()) {
                 statement.execute("""
-                        CREATE TRIGGER fail_b BEFORE INSERT ON chunks
-                        WHEN NEW.file_id = (SELECT id FROM files WHERE source_path = 'b.txt')
-                        BEGIN SELECT RAISE(ABORT, 'injected replacement failure'); END
-                        """);
+                    CREATE TRIGGER fail_b BEFORE INSERT ON chunks
+                    WHEN NEW.file_id = (SELECT id FROM files WHERE source_path = 'b.txt')
+                    BEGIN SELECT RAISE(ABORT, 'injected replacement failure'); END
+                    """);
             }
 
             return storage;
@@ -187,15 +210,17 @@ class FolderIndexTest {
         assertInstanceOf(SQLException.class, failure.getCause());
         assertThrows(SQLException.class, () -> captured.get().files().findAll());
 
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + initial.context().databasePath().toUri());
-             Statement statement = connection.createStatement()) {
+        try (Connection connection = DriverManager.getConnection(
+                        "jdbc:sqlite:" + initial.context().databasePath().toUri());
+                Statement statement = connection.createStatement()) {
             statement.execute("DROP TRIGGER fail_b");
         }
 
         try (SqliteStorage storage = SqliteStorage.open(initial.context().databasePath(), root)) {
-
             for (String query : List.of("anew", "bold", "cold")) {
-                assertEquals(1, storage.lexicalSearch().search(new SearchRequest(query)).size());
+                assertEquals(
+                        1,
+                        storage.lexicalSearch().search(new SearchRequest(query)).size());
             }
 
             assertTrue(storage.lexicalSearch().search(new SearchRequest("bnew")).isEmpty());

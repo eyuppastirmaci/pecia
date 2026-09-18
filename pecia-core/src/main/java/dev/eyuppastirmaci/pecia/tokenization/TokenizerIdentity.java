@@ -18,35 +18,30 @@ public record TokenizerIdentity(
         String vocabularySha256,
         int vocabularySize,
         int maxInputTokens,
-        int specialTokenCount
-) {
+        int specialTokenCount) {
 
     private static final int SHA_256_HEX_LENGTH = 64;
 
+    /** Validates non-blank identifiers, a lowercase SHA-256 digest, and consistent token limits. */
     public TokenizerIdentity {
         modelId = requireText(modelId, "modelId");
         revision = requireText(revision, "revision");
         algorithm = requireText(algorithm, "algorithm");
         vocabularySha256 = requireText(vocabularySha256, "vocabularySha256");
 
-        if (vocabularySha256.length() != SHA_256_HEX_LENGTH
-                || !vocabularySha256.matches("[0-9a-f]{64}")) {
-
+        if (vocabularySha256.length() != SHA_256_HEX_LENGTH || !vocabularySha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("vocabularySha256 must be a lowercase SHA-256 digest");
         }
 
         if (vocabularySize <= 0) {
-
             throw new IllegalArgumentException("vocabularySize must be positive: " + vocabularySize);
         }
 
         if (maxInputTokens <= 0) {
-
             throw new IllegalArgumentException("maxInputTokens must be positive: " + maxInputTokens);
         }
 
         if (specialTokenCount < 0 || specialTokenCount >= maxInputTokens) {
-
             throw new IllegalArgumentException(
                     "specialTokenCount must be between zero and maxInputTokens: " + specialTokenCount);
         }
@@ -58,9 +53,13 @@ public record TokenizerIdentity(
      * @return the complete tokenizer compatibility key
      */
     public String compatibilityKey() {
-
-        return String.join(":", modelId + "@" + revision, algorithm, vocabularySha256,
-                Integer.toString(vocabularySize), Integer.toString(maxInputTokens),
+        return String.join(
+                ":",
+                modelId + "@" + revision,
+                algorithm,
+                vocabularySha256,
+                Integer.toString(vocabularySize),
+                Integer.toString(maxInputTokens),
                 Integer.toString(specialTokenCount));
     }
 

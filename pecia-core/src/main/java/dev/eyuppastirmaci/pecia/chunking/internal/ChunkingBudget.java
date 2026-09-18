@@ -2,10 +2,10 @@ package dev.eyuppastirmaci.pecia.chunking.internal;
 
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
 
+/** Shared validation of chunking limits against a tokenizer's model input contract. */
 public final class ChunkingBudget {
 
-    private ChunkingBudget() {
-    }
+    private ChunkingBudget() {}
 
     /**
      * Validates the model input and overlap limits and returns the available content token budget.
@@ -21,8 +21,11 @@ public final class ChunkingBudget {
         var identity = tokenCounter.identity();
 
         if (maxTokens <= identity.specialTokenCount() || maxTokens > identity.maxInputTokens()) {
-            throw new IllegalArgumentException("maxTokens must be greater than " + identity.specialTokenCount()
-                    + " and at most " + identity.maxInputTokens() + ", including special tokens");
+            throw new IllegalArgumentException("maxTokens must be greater than "
+                    + identity.specialTokenCount()
+                    + " and at most "
+                    + identity.maxInputTokens()
+                    + ", including special tokens");
         }
 
         int contentBudget = maxTokens - identity.specialTokenCount();

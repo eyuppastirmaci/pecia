@@ -11,6 +11,7 @@ import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import picocli.CommandLine;
 
+/** Wires core services into CLI commands and provides the executable entry point. */
 public final class Bootstrap implements CommandLine.IFactory {
 
     private final CommandLine.IFactory fallback = CommandLine.defaultFactory();
@@ -32,7 +33,6 @@ public final class Bootstrap implements CommandLine.IFactory {
      */
     @Override
     public <K> K create(Class<K> cls) throws Exception {
-
         if (cls == InitCommand.class) {
             return cls.cast(new InitCommand(configFile));
         }

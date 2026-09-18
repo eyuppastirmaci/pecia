@@ -17,10 +17,14 @@ public record WalkResult(List<Path> files, List<Issue> issues) {
      * @return true when the issue list is empty
      */
     public boolean complete() {
-
         return issues.isEmpty();
     }
 
+    /**
+     * A path that prevented traversal from completing.
+     *
+     * @param reason diagnostic message, or null when the filesystem provided none
+     */
     public record Issue(Path path, String reason) {
         public Issue {
             Objects.requireNonNull(path, "path");

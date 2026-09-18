@@ -1,7 +1,6 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -37,11 +36,12 @@ final class SqliteChunkMetadataReader {
         Map<Long, List<String>> headings = new HashMap<>();
         Map<Long, Map<String, String>> attributes = new HashMap<>();
 
-        // Only fixed SQL and generated placeholders form the selection; IDs are always bound parameters.
+        // Only fixed SQL and generated placeholders form the selection; IDs are always bound
+        // parameters.
         try (var query = connection.prepareStatement("""
-                SELECT chunk_id, position, heading FROM chunk_headings
-                WHERE chunk_id IN (%s) ORDER BY chunk_id, position
-                """.formatted(selection))) {
+            SELECT chunk_id, position, heading FROM chunk_headings
+            WHERE chunk_id IN (%s) ORDER BY chunk_id, position
+            """.formatted(selection))) {
             bind(query, parameters);
 
             try (var rows = query.executeQuery()) {
@@ -58,13 +58,14 @@ final class SqliteChunkMetadataReader {
         }
 
         try (var query = connection.prepareStatement("""
-                SELECT chunk_id, name, value FROM chunk_attributes WHERE chunk_id IN (%s)
-                """.formatted(selection))) {
+            SELECT chunk_id, name, value FROM chunk_attributes WHERE chunk_id IN (%s)
+            """.formatted(selection))) {
             bind(query, parameters);
 
             try (var rows = query.executeQuery()) {
                 while (rows.next()) {
-                    attributes.computeIfAbsent(rows.getLong(1), ignored -> new HashMap<>())
+                    attributes
+                            .computeIfAbsent(rows.getLong(1), ignored -> new HashMap<>())
                             .put(rows.getString(2), rows.getString(3));
                 }
             }
@@ -76,8 +77,9 @@ final class SqliteChunkMetadataReader {
 
         try {
             for (long id : ids) {
-                result.put(id, new ChunkMetadata(headings.getOrDefault(id, List.of()),
-                        attributes.getOrDefault(id, Map.of())));
+                result.put(
+                        id,
+                        new ChunkMetadata(headings.getOrDefault(id, List.of()), attributes.getOrDefault(id, Map.of())));
             }
         } catch (IllegalArgumentException | NullPointerException invalid) {
             throw new SQLException("Invalid stored chunk metadata", invalid);

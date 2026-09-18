@@ -1,5 +1,12 @@
 package dev.eyuppastirmaci.pecia.cli;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
@@ -7,12 +14,6 @@ import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import picocli.CommandLine;
-
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -25,8 +26,11 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
 import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import picocli.CommandLine;
 
 class QueryCommandTest {
 
@@ -148,11 +152,12 @@ class QueryCommandTest {
         if (reason.equals("CORRUPT_INDEX")) {
             Files.writeString(db, "not a database");
         } else {
-
             try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db.toUri());
-                 Statement statement = connection.createStatement()) {
-                statement.execute(reason.equals("WRONG_PROJECT")
-                        ? "UPDATE index_metadata SET project_root_uri = 'file:///other/'" : "PRAGMA user_version = 99");
+                    Statement statement = connection.createStatement()) {
+                statement.execute(
+                        reason.equals("WRONG_PROJECT")
+                                ? "UPDATE index_metadata SET project_root_uri = 'file:///other/'"
+                                : "PRAGMA user_version = 99");
             }
         }
 
@@ -171,14 +176,14 @@ class QueryCommandTest {
         Files.createDirectory(db.getParent());
 
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db.toUri());
-             Statement statement = connection.createStatement();
-             InputStream input = getClass().getResourceAsStream("/db/migration/V1__create_initial_schema.sql")) {
-
+                Statement statement = connection.createStatement();
+                InputStream input = getClass().getResourceAsStream("/db/migration/V1__create_initial_schema.sql")) {
             assertNotNull(input);
             statement.executeUpdate(new String(input.readAllBytes(), StandardCharsets.UTF_8));
             statement.execute("PRAGMA user_version = 1");
 
-            try (PreparedStatement insert = connection.prepareStatement("INSERT INTO index_metadata VALUES (1, ?, 1)")) {
+            try (PreparedStatement insert =
+                    connection.prepareStatement("INSERT INTO index_metadata VALUES (1, ?, 1)")) {
                 insert.setString(1, root.toRealPath().toUri().toASCIIString());
                 insert.executeUpdate();
             }

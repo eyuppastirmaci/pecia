@@ -1,19 +1,33 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.sqlite.JDBC;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.V1_RESOURCE;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.V2_RESOURCE;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertConsistent;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertMatches;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertChunk;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.resource;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.rows;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Properties;
-
-import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.*;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.sqlite.JDBC;
 
 class SqliteFtsMigrationFailureTest {
     @TempDir
@@ -36,9 +50,16 @@ class SqliteFtsMigrationFailureTest {
         try (Connection connection = raw(database)) {
             byte[] before = Files.readAllBytes(database);
             SQLException cause = new SQLException("no such module: fts5", "missing", 1);
-            SQLException failure = assertThrows(SQLException.class, () -> SqliteSchemaInitializer.initialize(
-                    connection, rootUri(), resource(V1_RESOURCE), resource(V2_RESOURCE),
-                    owned -> SqliteFtsSupport.verify(owned, (probeConnection, table) -> { throw cause; })));
+            SQLException failure = assertThrows(
+                    SQLException.class,
+                    () -> SqliteSchemaInitializer.initialize(
+                            connection,
+                            rootUri(),
+                            resource(V1_RESOURCE),
+                            resource(V2_RESOURCE),
+                            owned -> SqliteFtsSupport.verify(owned, (probeConnection, table) -> {
+                                throw cause;
+                            })));
 
             assertTrue(failure.getMessage().contains("FTS5 is unavailable"));
             assertSame(cause, failure.getCause());
@@ -66,25 +87,35 @@ class SqliteFtsMigrationFailureTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"partial-schema", "mid-backfill", "after-backfill", "wrong-trigger", "after-version-update"})
+    @ValueSource(
+            strings = {"partial-schema", "mid-backfill", "after-backfill", "wrong-trigger", "after-version-update"})
     void failedUpgradeRestoresTheExactVersionOneDatabaseAndCanBeRetried(String failurePoint) throws Exception {
         try (Connection connection = openVersionOne(root)) {
             seed(connection);
             byte[] before = Files.readAllBytes(root.resolve("index.db"));
             String canonical = resource(V2_RESOURCE);
-            String failingMigration = switch (failurePoint) {
-                case "partial-schema" -> "CREATE TABLE partially_created(value TEXT); INVALID SQL;";
-                case "mid-backfill" -> canonical.replace("SELECT c.id, c.content,",
-                        "SELECT c.id, CASE WHEN c.id = 12 THEN abs(-9223372036854775808) ELSE c.content END,");
-                case "after-backfill" -> canonical + "\nINSERT INTO missing_target VALUES (1);";
-                case "wrong-trigger" -> canonical.replace("DELETE FROM chunks_fts WHERE rowid = OLD.id;", "SELECT 1;");
-                // Both version markers will be advanced before final ownership validation rejects this change.
-                case "after-version-update" -> canonical + "\nUPDATE index_metadata SET project_root_uri = 'wrong-owner';";
-                default -> throw new AssertionError(failurePoint);
-            };
+            String failingMigration =
+                    switch (failurePoint) {
+                        case "partial-schema" -> "CREATE TABLE partially_created(value TEXT); INVALID SQL;";
+                        case "mid-backfill" ->
+                            canonical.replace(
+                                    "SELECT c.id, c.content,",
+                                    "SELECT c.id, CASE WHEN c.id = 12 THEN abs(-9223372036854775808) ELSE c.content"
+                                            + " END,");
+                        case "after-backfill" -> canonical + "\nINSERT INTO missing_target VALUES (1);";
+                        case "wrong-trigger" ->
+                            canonical.replace("DELETE FROM chunks_fts WHERE rowid = OLD.id;", "SELECT 1;");
+                        // Both version markers will be advanced before final ownership validation rejects this
+                        // change.
+                        case "after-version-update" ->
+                            canonical + "\nUPDATE index_metadata SET project_root_uri = 'wrong-owner';";
+                        default -> throw new AssertionError(failurePoint);
+                    };
 
-            SQLException failure = assertThrows(SQLException.class, () -> SqliteSchemaInitializer.initialize(
-                    connection, rootUri(), resource(V1_RESOURCE), failingMigration, SqliteFtsSupport::verify));
+            SQLException failure = assertThrows(
+                    SQLException.class,
+                    () -> SqliteSchemaInitializer.initialize(
+                            connection, rootUri(), resource(V1_RESOURCE), failingMigration, SqliteFtsSupport::verify));
 
             assertFalse(failure.getMessage().contains("FTS5 is unavailable"));
             assertEquals(0, failure.getSuppressed().length);
@@ -107,8 +138,14 @@ class SqliteFtsMigrationFailureTest {
     void failingFreshInitializationLeavesNoSchemaAndAllowsNormalOpen() throws Exception {
         Path database = root.resolve("index.db");
         try (Connection connection = raw(database)) {
-            assertThrows(SQLException.class, () -> SqliteSchemaInitializer.initialize(connection, rootUri(),
-                    resource(V1_RESOURCE), resource(V2_RESOURCE) + "\nINVALID SQL;", SqliteFtsSupport::verify));
+            assertThrows(
+                    SQLException.class,
+                    () -> SqliteSchemaInitializer.initialize(
+                            connection,
+                            rootUri(),
+                            resource(V1_RESOURCE),
+                            resource(V2_RESOURCE) + "\nINVALID SQL;",
+                            SqliteFtsSupport::verify));
             assertEquals(0, scalar(connection, "PRAGMA user_version"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM temp.sqlite_schema"));
@@ -124,8 +161,12 @@ class SqliteFtsMigrationFailureTest {
     void acceptsHistoricalCrLfDeclarationsWhenOpeningWithAnLfResource() throws Exception {
         try (Connection connection = openVersionOne(root)) {
             seed(connection);
-            SqliteSchemaInitializer.initialize(connection, rootUri(), resource(V1_RESOURCE),
-                    resource(V2_RESOURCE).replace("\n", "\r\n"), SqliteFtsSupport::verify);
+            SqliteSchemaInitializer.initialize(
+                    connection,
+                    rootUri(),
+                    resource(V1_RESOURCE),
+                    resource(V2_RESOURCE).replace("\n", "\r\n"),
+                    SqliteFtsSupport::verify);
             assertMatches(connection, "originalfirst", 11);
         }
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
@@ -140,9 +181,9 @@ class SqliteFtsMigrationFailureTest {
         try (Connection connection = openVersionOne(root)) {
             seed(connection);
             execute(connection, """
-                    CREATE TRIGGER fail_format_update BEFORE UPDATE OF index_format_version ON index_metadata
-                    BEGIN SELECT RAISE(ABORT, 'injected format update failure'); END;
-                    """);
+                CREATE TRIGGER fail_format_update BEFORE UPDATE OF index_format_version ON index_metadata
+                BEGIN SELECT RAISE(ABORT, 'injected format update failure'); END;
+                """);
         }
         byte[] before = Files.readAllBytes(database);
 
@@ -194,7 +235,8 @@ class SqliteFtsMigrationFailureTest {
     }
 
     private static int scalar(Connection connection, String sql) throws SQLException {
-        try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
+        try (var statement = connection.createStatement();
+                var rows = statement.executeQuery(sql)) {
             assertTrue(rows.next());
             return rows.getInt(1);
         }

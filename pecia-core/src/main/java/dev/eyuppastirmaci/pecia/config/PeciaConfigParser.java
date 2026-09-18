@@ -1,15 +1,15 @@
 package dev.eyuppastirmaci.pecia.config;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
 import org.tomlj.Toml;
 import org.tomlj.TomlArray;
 import org.tomlj.TomlInvalidTypeException;
 import org.tomlj.TomlParseError;
 import org.tomlj.TomlParseResult;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Function;
-
+/** Parses project TOML and validates supported settings against their defaults. */
 public final class PeciaConfigParser {
 
     /**
@@ -18,7 +18,8 @@ public final class PeciaConfigParser {
      * @param toml raw TOML text
      * @return the parsed configuration
      * @throws NullPointerException if toml is null
-     * @throws IllegalArgumentException if the TOML is malformed or a value has the wrong type or an invalid range
+     * @throws IllegalArgumentException if the TOML is malformed or a value has the wrong type or an
+     *     invalid range
      */
     public PeciaConfig parse(String toml) {
         TomlParseResult result = Toml.parse(toml);
@@ -36,8 +37,7 @@ public final class PeciaConfigParser {
                 intValue(result, "chunk.max_tokens", defaults.maxTokens()),
                 intValue(result, "chunk.overlap_tokens", defaults.overlapTokens()),
                 intValue(result, "embed.concurrency", defaults.embedConcurrency()),
-                stringValue(result, "store.path", defaults.storePath())
-        );
+                stringValue(result, "store.path", defaults.storePath()));
     }
 
     private static String describeErrors(TomlParseResult result) {

@@ -1,8 +1,14 @@
 package dev.eyuppastirmaci.pecia.chunking.source;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
 import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
-
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
@@ -13,12 +19,6 @@ import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -29,13 +29,11 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Timeout(60)
 class SourceCodeChunkingAcceptanceTest {
@@ -72,9 +70,11 @@ class SourceCodeChunkingAcceptanceTest {
     @ParameterizedTest
     @ValueSource(strings = {"panel.jsx", "panel.tsx"})
     void treatsMarkdownLikeSyntaxAndIncompleteCodeAsRawSource(String filename) throws Exception {
-        String text = "const markdown = `\n# Not a heading\n```java\n" + "int value = 1;\n".repeat(40)
+        String text = "const markdown = `\n# Not a heading\n```java\n"
+                + "int value = 1;\n".repeat(40)
                 + "`;\nconst panel = <Panel title=\"## Literal\">\n"
-                + "  <span>{value}</span>\n".repeat(40) + "  {/* deliberately unfinished";
+                + "  <span>{value}</span>\n".repeat(40)
+                + "  {/* deliberately unfinished";
         Document document = extract(filename, text.getBytes(StandardCharsets.UTF_8));
         DocumentChunkerFactory factory = DocumentChunkerFactory.create(tokenizer, 16, 3);
         List<Chunk> chunks = factory.getChunker(document).chunk(document);
@@ -86,15 +86,16 @@ class SourceCodeChunkingAcceptanceTest {
     @ParameterizedTest
     @ValueSource(strings = {"bundle.js", "generated.sql", "minified.css"})
     void splitsLongUnbrokenLinesAndPreservesAdjacentMixedIndentation(String filename) throws Exception {
-        String line = switch (filename) {
-            case "bundle.js" -> "const values=[" + "1,2,3,".repeat(1500) + "0];";
-            case "generated.sql" -> "SELECT " + "1+2+3+".repeat(1500) + "0;";
-            case "minified.css" -> ".item{" + "margin:0;padding:0;".repeat(600) + "}";
-            default -> throw new AssertionError("Unexpected fixture: " + filename);
-        };
+        String line =
+                switch (filename) {
+                    case "bundle.js" -> "const values=[" + "1,2,3,".repeat(1500) + "0];";
+                    case "generated.sql" -> "SELECT " + "1+2+3+".repeat(1500) + "0;";
+                    case "minified.css" -> ".item{" + "margin:0;padding:0;".repeat(600) + "}";
+                    default -> throw new AssertionError("Unexpected fixture: " + filename);
+                };
 
-        Document document = extract(filename, ("\t" + line + "\r\n \t\r\n    tail\n\tend\r\n\r\n")
-                .getBytes(StandardCharsets.UTF_8));
+        Document document = extract(
+                filename, ("\t" + line + "\r\n \t\r\n    tail\n\tend\r\n\r\n").getBytes(StandardCharsets.UTF_8));
 
         for (int overlap : List.of(0, 8)) {
             DocumentChunkerFactory factory = DocumentChunkerFactory.create(tokenizer, 32, overlap);
@@ -120,8 +121,11 @@ class SourceCodeChunkingAcceptanceTest {
 
     @Test
     void retainsCoverageAtTinyBudgetsAndMaximumAllowedOverlap() throws Exception {
-        String text = "\t# İÇERİK 😀\r\n\n" + "value+=1;".repeat(20)
-                + "\r\n \t\n" + "<Node>{value}</Node>".repeat(15) + "\r\n\r\n\u00a0";
+        String text = "\t# İÇERİK 😀\r\n\n"
+                + "value+=1;".repeat(20)
+                + "\r\n \t\n"
+                + "<Node>{value}</Node>".repeat(15)
+                + "\r\n\r\n\u00a0";
         Document document = extract("tiny.tsx", text.getBytes(StandardCharsets.UTF_8));
 
         for (int limit : List.of(3, 4, 6, 12)) {
@@ -138,7 +142,9 @@ class SourceCodeChunkingAcceptanceTest {
         String text = "# İÇERİK\ndef calculate():\n" + "\tprint('İstanbul 😀')\n".repeat(30);
         Locale previous = Locale.getDefault();
         Document baseline = extract("İÇERİK.PYI", text.getBytes(StandardCharsets.UTF_8));
-        List<Chunk> expected = DocumentChunkerFactory.create(tokenizer, 16, 3).getChunker(baseline).chunk(baseline);
+        List<Chunk> expected = DocumentChunkerFactory.create(tokenizer, 16, 3)
+                .getChunker(baseline)
+                .chunk(baseline);
 
         try {
             for (Locale locale : List.of(Locale.forLanguageTag("tr-TR"), Locale.ENGLISH, Locale.ROOT)) {
@@ -187,30 +193,53 @@ class SourceCodeChunkingAcceptanceTest {
 
     private static List<SourceSample> samples() {
         return List.of(
-                sample("Example.java", "class Example {\n    String build() {\n        var result = new StringBuilder();\n",
-                        "        result.append(\"İçerik 😀\");\n", "        return result.toString();\n    }\n}"),
-                sample("main.py", "def build(items):\n    output = []\n",
-                        "    for item in items:\n        output.append(str(item))\n", "    return output"),
-                sample("main.go", "package main\n\nfunc build() string {\n\tvalue := \"\"\n",
-                        "\tvalue += \"İçerik 😀\"\n", "\treturn value\n}"),
-                sample("main.rs", "fn build() -> String {\n    let mut value = String::new();\n",
-                        "    value.push_str(\"İçerik 😀\");\n", "    value\n}"),
-                sample("Main.kt", "fun build(): String {\n    val result = StringBuilder()\n",
-                        "    result.append(\"İçerik 😀\")\n", "    return result.toString()\n}"),
-                sample("panel.jsx", "export const Panel = ({label}) => (\n  <ul>\n",
-                        "    <li>{label} {/* # Not a heading */}</li>\n", "  </ul>\n);"),
-                sample("panel.tsx", "type Props = {label: string};\nexport const Panel = ({label}: Props) => (\n  <section>\n",
-                        "    <p title=\"## Literal\">{label}</p>\n", "  </section>\n);"),
-                sample("run.sh", "#!/bin/sh\n# Print the message\n",
-                        "printf '%s\\n' 'İçerik 😀'\n", "exit 0"),
-                sample("query.sql", "BEGIN;\n",
-                        "INSERT INTO messages (body) VALUES ('İçerik 😀');\n", "COMMIT;"),
+                sample(
+                        "Example.java",
+                        "class Example {\n    String build() {\n        var result = new StringBuilder();\n",
+                        "        result.append(\"İçerik 😀\");\n",
+                        "        return result.toString();\n    }\n}"),
+                sample(
+                        "main.py",
+                        "def build(items):\n    output = []\n",
+                        "    for item in items:\n        output.append(str(item))\n",
+                        "    return output"),
+                sample(
+                        "main.go",
+                        "package main\n\nfunc build() string {\n\tvalue := \"\"\n",
+                        "\tvalue += \"İçerik 😀\"\n",
+                        "\treturn value\n}"),
+                sample(
+                        "main.rs",
+                        "fn build() -> String {\n    let mut value = String::new();\n",
+                        "    value.push_str(\"İçerik 😀\");\n",
+                        "    value\n}"),
+                sample(
+                        "Main.kt",
+                        "fun build(): String {\n    val result = StringBuilder()\n",
+                        "    result.append(\"İçerik 😀\")\n",
+                        "    return result.toString()\n}"),
+                sample(
+                        "panel.jsx",
+                        "export const Panel = ({label}) => (\n  <ul>\n",
+                        "    <li>{label} {/* # Not a heading */}</li>\n",
+                        "  </ul>\n);"),
+                sample(
+                        "panel.tsx",
+                        "type Props = {label: string};\n"
+                                + "export const Panel = ({label}: Props) => (\n"
+                                + "  <section>\n",
+                        "    <p title=\"## Literal\">{label}</p>\n",
+                        "  </section>\n);"),
+                sample("run.sh", "#!/bin/sh\n# Print the message\n", "printf '%s\\n' 'İçerik 😀'\n", "exit 0"),
+                sample("query.sql", "BEGIN;\n", "INSERT INTO messages (body) VALUES ('İçerik 😀');\n", "COMMIT;"),
                 sample("style.css", ".items {\n", "    padding: 1rem;\n    color: #123456;\n", "}"),
-                sample("Dockerfile", "FROM alpine:3.20\nWORKDIR /app\n",
-                        "RUN printf '%s\\n' 'İçerik 😀' >> /app/messages\n", "CMD [\"cat\", \"/app/messages\"]"),
+                sample(
+                        "Dockerfile",
+                        "FROM alpine:3.20\nWORKDIR /app\n",
+                        "RUN printf '%s\\n' 'İçerik 😀' >> /app/messages\n",
+                        "CMD [\"cat\", \"/app/messages\"]"),
                 sample("Makefile", ".PHONY: all\nall:\n", "\t@printf '%s\\n' 'İçerik 😀'\n", "\t@echo done"),
-                sample("script.ps1", "$messages = @()\n", "$messages += 'İçerik 😀'\n", "$messages | Write-Output")
-        );
+                sample("script.ps1", "$messages = @()\n", "$messages += 'İçerik 😀'\n", "$messages | Write-Output"));
     }
 
     private static SourceSample sample(String filename, String prefix, String body, String suffix) {
@@ -222,10 +251,14 @@ class SourceCodeChunkingAcceptanceTest {
         Path file = source.toAbsolutePath().normalize();
         DocumentType type = new FileTypeDetector().detect(source).orElseThrow();
 
-        return new TextDocumentExtractor().extract(new ExtractionRequest(file, source, type), new FileContent(file, bytes));
+        return new TextDocumentExtractor()
+                .extract(new ExtractionRequest(file, source, type), new FileContent(file, bytes));
     }
 
-    /* Reconstructs only newly covered source while checking original identity, safe offsets, line ranges, and exact token limits. */
+    /**
+     * Reconstructs only newly covered source while checking original identity, safe offsets, line ranges, and exact
+     * token limits.
+     */
     private void verifyCoverage(Document document, List<Chunk> chunks, int limit, int overlap) {
         String text = document.content();
         StringBuilder reconstructed = new StringBuilder();
@@ -242,9 +275,13 @@ class SourceCodeChunkingAcceptanceTest {
             assertEquals(document.sourcePath(), chunk.sourcePath());
             assertEquals(document.type(), chunk.documentType());
             assertEquals(List.of(), chunk.metadata().headingPath());
-            assertEquals(Set.of("startOffset", "endOffset"), chunk.metadata().attributes().keySet());
+            assertEquals(
+                    Set.of("startOffset", "endOffset"),
+                    chunk.metadata().attributes().keySet());
             assertEquals(new LineRange(lineAt(text, start), lineAt(text, end - 1)), chunk.sourceLocation());
-            assertTrue(chunk.content().codePoints().anyMatch(cp -> !Character.isWhitespace(cp) && !Character.isSpaceChar(cp)));
+            assertTrue(chunk.content()
+                    .codePoints()
+                    .anyMatch(cp -> !Character.isWhitespace(cp) && !Character.isSpaceChar(cp)));
             assertTrue(tokenizer.countModelInput(chunk.content()) <= limit);
             assertTrue(tokenizer.count(text.substring(start, covered)) <= overlap);
 
@@ -254,7 +291,8 @@ class SourceCodeChunkingAcceptanceTest {
 
             for (int offset : new int[] {start, end}) {
                 if (offset > 0 && offset < text.length()) {
-                    assertFalse(Character.isHighSurrogate(text.charAt(offset - 1)) && Character.isLowSurrogate(text.charAt(offset)));
+                    assertFalse(Character.isHighSurrogate(text.charAt(offset - 1))
+                            && Character.isLowSurrogate(text.charAt(offset)));
                     assertFalse(text.charAt(offset - 1) == '\r' && text.charAt(offset) == '\n');
                 }
             }
@@ -266,7 +304,8 @@ class SourceCodeChunkingAcceptanceTest {
 
         assertEquals(text.length(), covered);
         assertEquals(text, reconstructed.toString());
-        assertArrayEquals(text.getBytes(StandardCharsets.UTF_8), reconstructed.toString().getBytes(StandardCharsets.UTF_8));
+        assertArrayEquals(
+                text.getBytes(StandardCharsets.UTF_8), reconstructed.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     /* Counts only complete line terminators preceding the requested source character. */
@@ -281,6 +320,5 @@ class SourceCodeChunkingAcceptanceTest {
         return line;
     }
 
-    private record SourceSample(String filename, String text) {
-    }
+    private record SourceSample(String filename, String text) {}
 }

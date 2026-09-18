@@ -1,16 +1,15 @@
 package dev.eyuppastirmaci.pecia.chunking.source;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-
-import java.util.List;
-import java.util.OptionalInt;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.OptionalInt;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SourceCodeBoundariesTest {
 
@@ -74,7 +73,8 @@ class SourceCodeBoundariesTest {
 
         String mixed = " \tfirst\n    second\n    third\nlast";
         SourceCodeBoundaries mixedBoundaries = new SourceCodeBoundaries(mixed);
-        assertEquals(OptionalInt.of(mixed.indexOf("    third")), mixedBoundaries.preferredEnd(0, mixed.indexOf("last") - 1));
+        assertEquals(
+                OptionalInt.of(mixed.indexOf("    third")), mixedBoundaries.preferredEnd(0, mixed.indexOf("last") - 1));
     }
 
     @Test
@@ -84,7 +84,8 @@ class SourceCodeBoundariesTest {
         int second = text.indexOf("  second");
 
         assertEquals(OptionalInt.of(second), boundaries.preferredEnd(0, text.indexOf("last") - 1));
-        assertEquals(OptionalInt.of(text.indexOf("  third")), boundaries.preferredEnd(second, text.indexOf("last") - 1));
+        assertEquals(
+                OptionalInt.of(text.indexOf("  third")), boundaries.preferredEnd(second, text.indexOf("last") - 1));
     }
 
     @Test
@@ -193,7 +194,8 @@ class SourceCodeBoundariesTest {
                     assertTrue(end > minimum && end <= maximum);
 
                     if (end < text.length()) {
-                        assertFalse(Character.isHighSurrogate(text.charAt(end - 1)) && Character.isLowSurrogate(text.charAt(end)));
+                        assertFalse(Character.isHighSurrogate(text.charAt(end - 1))
+                                && Character.isLowSurrogate(text.charAt(end)));
                         assertFalse(text.charAt(end - 1) == '\r' && text.charAt(end) == '\n');
                     }
                 }

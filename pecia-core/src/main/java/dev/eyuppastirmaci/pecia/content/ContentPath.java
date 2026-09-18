@@ -2,9 +2,10 @@ package dev.eyuppastirmaci.pecia.content;
 
 import java.nio.file.Path;
 
+/** Validates source paths stored relative to a project root. */
 public final class ContentPath {
 
-    private ContentPath() { }
+    private ContentPath() {}
 
     /**
      * Validates a normalized source path within its project root.
@@ -26,7 +27,8 @@ public final class ContentPath {
         Path normalized = path.normalize();
 
         if (!normalized.equals(path) || normalized.startsWith("..")) {
-            throw new IllegalArgumentException("sourcePath must be normalized and stay inside the project root: " + path);
+            throw new IllegalArgumentException(
+                    "sourcePath must be normalized and stay inside the project root: " + path);
         }
 
         return path;

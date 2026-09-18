@@ -1,13 +1,12 @@
 package dev.eyuppastirmaci.pecia.chunking.text;
 
-import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
-
-import java.util.Arrays;
-import java.util.stream.IntStream;
-
 import static dev.eyuppastirmaci.pecia.chunking.internal.SourceText.isLineBreak;
 import static dev.eyuppastirmaci.pecia.chunking.internal.SourceText.isWhitespace;
 import static dev.eyuppastirmaci.pecia.chunking.internal.SourceText.nextOffset;
+
+import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
+import java.util.Arrays;
+import java.util.stream.IntStream;
 
 final class TextBoundaries {
 
@@ -26,7 +25,8 @@ final class TextBoundaries {
             int end = source.wordEnd(index);
             int wordEnd = end;
 
-            // Separate the word from its preserved whitespace suffix before applying prose-only boundary preferences.
+            // Separate the word from its preserved whitespace suffix before applying prose-only boundary
+            // preferences.
             while (wordEnd > 0 && isWhitespace(text.codePointBefore(wordEnd))) {
                 wordEnd -= Character.charCount(text.codePointBefore(wordEnd));
             }
@@ -72,7 +72,10 @@ final class TextBoundaries {
         return source.firstWordAfter(offset);
     }
 
-    /* Prefers the latest complete paragraph, then sentence, then line without sacrificing new source coverage. */
+    /**
+     * Prefers the latest complete paragraph, then sentence, then line without sacrificing new source
+     * coverage.
+     */
     int preferredEnd(int minimumExclusive, int maximumInclusive) {
         for (int[] candidates : new int[][] {paragraphEnds, sentenceEnds, lineEnds}) {
             int candidate = floor(candidates, maximumInclusive);
@@ -89,14 +92,20 @@ final class TextBoundaries {
         return source.lineAt(offset);
     }
 
-    /* Recognizes simple sentence-ending punctuation, allowing closing quotes and brackets after it. */
+    /**
+     * Recognizes simple sentence-ending punctuation, allowing closing quotes and brackets after it.
+     */
     private static boolean endsSentence(String text, int end) {
         while (end > 0) {
             int codePoint = text.codePointBefore(end);
 
             if ("\"')]}»”’".indexOf(codePoint) < 0) {
-                return codePoint == '.' || codePoint == '!' || codePoint == '?'
-                        || codePoint == '。' || codePoint == '！' || codePoint == '？';
+                return codePoint == '.'
+                        || codePoint == '!'
+                        || codePoint == '?'
+                        || codePoint == '。'
+                        || codePoint == '！'
+                        || codePoint == '？';
             }
 
             end -= Character.charCount(codePoint);

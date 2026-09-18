@@ -1,15 +1,20 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertChunk;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.sqlite.JDBC;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -19,9 +24,12 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.Properties;
 import java.util.stream.Stream;
-
-import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.*;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.sqlite.JDBC;
 
 class SqliteReadOnlyStorageTest {
 
@@ -53,7 +61,8 @@ class SqliteReadOnlyStorageTest {
             assertEquals(new LineRange(1, 2), hits.getFirst().sourceLocation());
             assertEquals(List.of("Authentication"), hits.getFirst().metadata().headingPath());
             assertEquals("JWT_SECRET İstanbul 😀", hits.getFirst().snippet());
-            assertTrue(storage.lexicalSearch().search(new SearchRequest("absent")).isEmpty());
+            assertTrue(
+                    storage.lexicalSearch().search(new SearchRequest("absent")).isEmpty());
             assertEquals(hits, storage.lexicalSearch().search(new SearchRequest("JWT_SECRET")));
             assertEquals(0, scalar(owned, "SELECT total_changes()"));
             assertEquals(0, scalar(owned, "SELECT count(*) FROM sqlite_temp_schema"));
@@ -78,14 +87,20 @@ class SqliteReadOnlyStorageTest {
             Connection connection = storage.connection();
             execute(connection, "PRAGMA query_only = OFF");
 
-            for (String sql : List.of("UPDATE chunks SET content = 'changed'",
-                    "CREATE TABLE unexpected(value TEXT)", "PRAGMA user_version = 99")) {
+            for (String sql : List.of(
+                    "UPDATE chunks SET content = 'changed'",
+                    "CREATE TABLE unexpected(value TEXT)",
+                    "PRAGMA user_version = 99")) {
                 SQLException failure = assertThrows(SQLException.class, () -> execute(connection, sql));
 
                 assertEquals(8, failure.getErrorCode() & 0xff, "Native SQLITE_READONLY must reject: " + sql);
             }
 
-            assertEquals(1, storage.lexicalSearch().search(new SearchRequest("JWT_SECRET")).size());
+            assertEquals(
+                    1,
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("JWT_SECRET"))
+                            .size());
             assertEquals(2, scalar(connection, "PRAGMA user_version"));
         }
 
@@ -98,8 +113,8 @@ class SqliteReadOnlyStorageTest {
         Path database = root.resolve(relativePath);
         List<Path> before = entries();
 
-        IndexAccessException failure = assertThrows(IndexAccessException.class,
-                () -> SqliteStorage.openReadOnly(database, root));
+        IndexAccessException failure =
+                assertThrows(IndexAccessException.class, () -> SqliteStorage.openReadOnly(database, root));
 
         assertEquals(IndexAccessException.Reason.NOT_FOUND, failure.reason());
         assertEquals(before, entries());
@@ -127,8 +142,8 @@ class SqliteReadOnlyStorageTest {
 
         byte[] before = Files.readAllBytes(database);
 
-        IndexAccessException failure = assertThrows(IndexAccessException.class,
-                () -> SqliteStorage.openReadOnly(database, root));
+        IndexAccessException failure =
+                assertThrows(IndexAccessException.class, () -> SqliteStorage.openReadOnly(database, root));
 
         assertEquals(IndexAccessException.Reason.MIGRATION_REQUIRED, failure.reason());
         assertTrue(failure.getMessage().contains("index"));
@@ -173,12 +188,10 @@ class SqliteReadOnlyStorageTest {
         Path database = root.resolve("index.db");
 
         if (versionOne) {
-
             try (Connection connection = openVersionOne(root)) {
                 populate(connection);
             }
         } else {
-
             try (SqliteStorage storage = SqliteStorage.open(database, root)) {
                 populate(storage.connection());
             }
@@ -190,8 +203,14 @@ class SqliteReadOnlyStorageTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"DROP TABLE chunk_attributes", "ALTER TABLE chunks RENAME COLUMN content TO wrong",
-            "DELETE FROM index_metadata", "DROP TRIGGER chunks_fts_insert", "DROP TABLE chunks_fts"})
+    @ValueSource(
+            strings = {
+                "DROP TABLE chunk_attributes",
+                "ALTER TABLE chunks RENAME COLUMN content TO wrong",
+                "DELETE FROM index_metadata",
+                "DROP TRIGGER chunks_fts_insert",
+                "DROP TABLE chunks_fts"
+            })
     void rejectsDamagedSchemaAndFtsStructuresWithoutRepairingThem(String damage) throws Exception {
         Path database = root.resolve("index.db");
 
@@ -207,8 +226,8 @@ class SqliteReadOnlyStorageTest {
         Path database = Files.writeString(root.resolve("index.db"), "this is not a SQLite database");
         byte[] before = Files.readAllBytes(database);
 
-        IndexAccessException failure = assertThrows(IndexAccessException.class,
-                () -> SqliteStorage.openReadOnly(database, root));
+        IndexAccessException failure =
+                assertThrows(IndexAccessException.class, () -> SqliteStorage.openReadOnly(database, root));
 
         assertEquals(IndexAccessException.Reason.CORRUPT_INDEX, failure.reason());
         assertInstanceOf(SQLException.class, failure.getCause());
@@ -219,13 +238,11 @@ class SqliteReadOnlyStorageTest {
     void readsCommittedWalContentWithoutCheckpointingOrIgnoringIt() throws Exception {
         Path database = root.resolve("index.db");
 
-        try (SqliteStorage ignored = SqliteStorage.open(database, root)) {
-        }
+        try (SqliteStorage ignored = SqliteStorage.open(database, root)) {}
 
         try (Connection writer = raw(database)) {
-
             try (Statement statement = writer.createStatement();
-                 ResultSet result = statement.executeQuery("PRAGMA journal_mode = WAL")) {
+                    ResultSet result = statement.executeQuery("PRAGMA journal_mode = WAL")) {
                 assertTrue(result.next());
                 assertEquals("wal", result.getString(1));
             }
@@ -239,7 +256,11 @@ class SqliteReadOnlyStorageTest {
             byte[] walBefore = Files.readAllBytes(wal);
 
             try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
-                assertEquals(1, storage.lexicalSearch().search(new SearchRequest("JWT_SECRET")).size());
+                assertEquals(
+                        1,
+                        storage.lexicalSearch()
+                                .search(new SearchRequest("JWT_SECRET"))
+                                .size());
             }
 
             assertArrayEquals(databaseBefore, Files.readAllBytes(database));
@@ -257,7 +278,7 @@ class SqliteReadOnlyStorageTest {
         }
 
         try (SqliteStorage reader = SqliteStorage.openReadOnly(database, root);
-             Connection writer = raw(database)) {
+                Connection writer = raw(database)) {
             Connection connection = reader.connection();
 
             try (Statement statement = connection.createStatement()) {
@@ -267,8 +288,10 @@ class SqliteReadOnlyStorageTest {
             execute(writer, "BEGIN EXCLUSIVE");
 
             try {
-                SQLException failure = assertThrows(SQLException.class,
-                        () -> SqliteSchemaInitializer.validateReadOnly(connection, root.toRealPath().toUri().toASCIIString()));
+                SQLException failure = assertThrows(
+                        SQLException.class,
+                        () -> SqliteSchemaInitializer.validateReadOnly(
+                                connection, root.toRealPath().toUri().toASCIIString()));
 
                 assertEquals(5, failure.getErrorCode() & 0xff, "The writer lock must remain a SQLITE_BUSY failure");
                 assertFalse(failure instanceof IndexAccessException, "A locked database is not a corrupt index");
@@ -276,18 +299,23 @@ class SqliteReadOnlyStorageTest {
                 execute(writer, "ROLLBACK");
             }
 
-            SqliteSchemaInitializer.validateReadOnly(connection, root.toRealPath().toUri().toASCIIString());
+            SqliteSchemaInitializer.validateReadOnly(
+                    connection, root.toRealPath().toUri().toASCIIString());
 
-            assertEquals(1, reader.lexicalSearch().search(new SearchRequest("JWT_SECRET")).size());
+            assertEquals(
+                    1,
+                    reader.lexicalSearch()
+                            .search(new SearchRequest("JWT_SECRET"))
+                            .size());
         }
     }
 
-    private void assertRejectedWithoutModification(Path database, Path projectRoot,
-                                                   IndexAccessException.Reason reason) throws Exception {
+    private void assertRejectedWithoutModification(Path database, Path projectRoot, IndexAccessException.Reason reason)
+            throws Exception {
         byte[] before = Files.readAllBytes(database);
         List<Path> entries = entries();
-        IndexAccessException failure = assertThrows(IndexAccessException.class,
-                () -> SqliteStorage.openReadOnly(database, projectRoot));
+        IndexAccessException failure =
+                assertThrows(IndexAccessException.class, () -> SqliteStorage.openReadOnly(database, projectRoot));
 
         assertEquals(reason, failure.reason());
         assertArrayEquals(before, Files.readAllBytes(database));
@@ -299,7 +327,6 @@ class SqliteReadOnlyStorageTest {
     }
 
     private static void assertExclusiveAccess(Connection connection) throws SQLException {
-
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA busy_timeout = 0");
         }
@@ -309,9 +336,7 @@ class SqliteReadOnlyStorageTest {
     }
 
     private List<Path> entries() throws Exception {
-
         try (Stream<Path> paths = Files.walk(root)) {
-
             return paths.sorted().toList();
         }
     }
@@ -323,9 +348,8 @@ class SqliteReadOnlyStorageTest {
     }
 
     private static int scalar(Connection connection, String sql) throws SQLException {
-
         try (Statement statement = connection.createStatement();
-             ResultSet result = statement.executeQuery(sql)) {
+                ResultSet result = statement.executeQuery(sql)) {
             assertTrue(result.next());
 
             return result.getInt(1);
@@ -333,7 +357,6 @@ class SqliteReadOnlyStorageTest {
     }
 
     private static Connection raw(Path database) throws SQLException {
-
         return JDBC.createConnection("jdbc:sqlite:" + database.toUri().toASCIIString(), new Properties());
     }
 }

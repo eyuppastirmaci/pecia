@@ -4,20 +4,27 @@ import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
 import dev.eyuppastirmaci.pecia.chunking.internal.ChunkingBudget;
 import dev.eyuppastirmaci.pecia.chunking.internal.SourceChunkFactory;
 import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
-
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
-
 import java.util.ArrayList;
 import java.util.List;
 
+/** Chunks plain text using paragraph, sentence, and word boundaries with bounded overlap. */
 public final class TextChunker implements DocumentChunker {
 
     private final TokenCounter tokenCounter;
     private final int contentBudget;
     private final int overlapTokens;
 
+    /**
+     * Creates a text chunker with a validated token budget and best-effort overlap.
+     *
+     * @param maxTokens model input limit including special tokens
+     * @param overlapTokens maximum shared content tokens between adjacent chunks
+     * @throws NullPointerException if the tokenizer or its identity is null
+     * @throws IllegalArgumentException if the token budget or overlap is invalid
+     */
     public TextChunker(TokenCounter tokenCounter, int maxTokens, int overlapTokens) {
         this.contentBudget = ChunkingBudget.validate(tokenCounter, maxTokens, overlapTokens);
         this.tokenCounter = tokenCounter;
@@ -25,12 +32,15 @@ public final class TextChunker implements DocumentChunker {
     }
 
     /**
-     * Splits extracted text into token-bounded original source slices with preferred text boundaries and optional overlap.
+     * Splits extracted text into token-bounded original source slices with preferred text boundaries
+     * and optional overlap.
      *
      * @param document extracted document whose text is split without normalization
-     * @return immutable source-ordered chunks with consecutive indices and UTF-16 offsets, or empty for whitespace-only text
+     * @return immutable source-ordered chunks with consecutive indices and UTF-16 offsets, or empty
+     *     for whitespace-only text
      * @throws NullPointerException if document is null
-     * @throws IllegalArgumentException if an indivisible source character cannot fit within the token budget
+     * @throws IllegalArgumentException if an indivisible source character cannot fit within the token
+     *     budget
      */
     @Override
     public List<Chunk> chunk(Document document) {
@@ -54,8 +64,7 @@ public final class TextChunker implements DocumentChunker {
                 end = findEnd(text, boundaries, start, coveredEnd);
             }
 
-            chunks.add(SourceChunkFactory.create(document, chunks.size(), start, end, coveredEnd,
-                    boundaries::lineAt));
+            chunks.add(SourceChunkFactory.create(document, chunks.size(), start, end, coveredEnd, boundaries::lineAt));
             coveredEnd = end;
 
             if (end < text.length()) {
@@ -66,7 +75,10 @@ public final class TextChunker implements DocumentChunker {
         return List.copyOf(chunks);
     }
 
-    /* Grows through whole words before choosing a preferred boundary whose exact token count is revalidated. */
+    /**
+     * Grows through whole words before choosing a preferred boundary whose exact token count is
+     * revalidated.
+     */
     private int findEnd(String text, TextBoundaries boundaries, int start, int coveredEnd) {
         int safeEnd = start;
         int first = boundaries.firstWordAfter(start);
@@ -97,7 +109,8 @@ public final class TextChunker implements DocumentChunker {
         int low = lastSafeIndex + 1;
         int high = probe - 1;
 
-        // Refine with verified slices; non-monotonic counts may leave spare budget but cannot produce oversized chunks.
+        // Refine with verified slices; non-monotonic counts may leave spare budget but cannot produce
+        // oversized chunks.
         while (low <= high) {
             int middle = low + (high - low) / 2;
             int candidate = boundaries.wordEnd(middle);
@@ -116,7 +129,8 @@ public final class TextChunker implements DocumentChunker {
 
         int preferred = boundaries.preferredEnd(Math.max(start, coveredEnd), safeEnd);
 
-        // WordPiece counts can decrease as text grows, so even a shorter preferred slice must be checked.
+        // WordPiece counts can decrease as text grows, so even a shorter preferred slice must be
+        // checked.
         if (preferred != safeEnd && fits(text, start, preferred)) {
             return preferred;
         }
@@ -124,7 +138,10 @@ public final class TextChunker implements DocumentChunker {
         return safeEnd;
     }
 
-    /* Scans safe character boundaries instead of assuming that token counts are monotonic for longer prefixes. */
+    /**
+     * Scans safe character boundaries instead of assuming that token counts are monotonic for longer
+     * prefixes.
+     */
     private int splitOversized(String text, int start, int limit) {
         int safeEnd = SourceText.skipWhitespace(text, start);
         int offset = safeEnd;
@@ -139,7 +156,8 @@ public final class TextChunker implements DocumentChunker {
             safeEnd = next;
             offset = next;
 
-            // Preserve a following whitespace run in one check instead of repeatedly scanning large blank regions.
+            // Preserve a following whitespace run in one check instead of repeatedly scanning large blank
+            // regions.
             int whitespaceEnd = SourceText.skipWhitespace(text, offset);
 
             if (whitespaceEnd > offset && fits(text, start, whitespaceEnd)) {
@@ -151,7 +169,10 @@ public final class TextChunker implements DocumentChunker {
         return safeEnd;
     }
 
-    /* Finds a verified word suffix with bounded probes, allowing less overlap when token counts are non-monotonic. */
+    /**
+     * Finds a verified word suffix with bounded probes, allowing less overlap when token counts are
+     * non-monotonic.
+     */
     private int overlapStart(String text, TextBoundaries boundaries, int start, int end) {
         if (overlapTokens == 0) {
             return end;
@@ -165,7 +186,8 @@ public final class TextChunker implements DocumentChunker {
             int middle = low + (high - low) / 2;
             int candidate = boundaries.wordEnd(middle);
 
-            // Only an explicitly counted suffix is eligible; finding the mathematically largest overlap is optional.
+            // Only an explicitly counted suffix is eligible; finding the mathematically largest overlap
+            // is optional.
             if (tokenCounter.count(text.substring(candidate, end)) <= overlapTokens) {
                 selected = candidate;
                 high = middle - 1;

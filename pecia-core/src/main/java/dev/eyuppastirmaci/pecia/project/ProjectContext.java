@@ -2,13 +2,18 @@ package dev.eyuppastirmaci.pecia.project;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.content.ContentPath;
-
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Set;
 
+/**
+ * Shared index/query context with normalized absolute paths and a target inside the project root.
+ */
 public record ProjectContext(Path target, LoadedConfig loadedConfig, Path databasePath) {
 
+    /**
+     * Rejects relative or unnormalized paths, an out-of-project target, or a missing database name.
+     */
     public ProjectContext {
         Objects.requireNonNull(loadedConfig, "loadedConfig");
         requireAbsoluteNormalized(target);
@@ -25,7 +30,6 @@ public record ProjectContext(Path target, LoadedConfig loadedConfig, Path databa
     }
 
     public Path projectRoot() {
-
         return loadedConfig.root();
     }
 
@@ -38,7 +42,6 @@ public record ProjectContext(Path target, LoadedConfig loadedConfig, Path databa
 
     /** Converts a target-relative discovery candidate to the domain/storage project-relative path. */
     public Path sourcePath(Path candidate) {
-
         return ContentPath.requireProjectRelative(projectRoot().relativize(absoluteSource(candidate)));
     }
 
@@ -46,12 +49,14 @@ public record ProjectContext(Path target, LoadedConfig loadedConfig, Path databa
     public Set<Path> storageFiles() {
         String name = databasePath.getFileName().toString();
 
-        return Set.of(databasePath, databasePath.resolveSibling(name + "-wal"),
-                      databasePath.resolveSibling(name + "-shm"), databasePath.resolveSibling(name + "-journal"));
+        return Set.of(
+                databasePath,
+                databasePath.resolveSibling(name + "-wal"),
+                databasePath.resolveSibling(name + "-shm"),
+                databasePath.resolveSibling(name + "-journal"));
     }
 
     private static void requireAbsoluteNormalized(Path path) {
-
         if (!path.isAbsolute() || !path.equals(path.normalize())) {
             throw new IllegalArgumentException("Context paths must be normalized and absolute: " + path);
         }

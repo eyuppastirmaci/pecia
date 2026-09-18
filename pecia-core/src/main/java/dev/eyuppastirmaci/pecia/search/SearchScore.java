@@ -2,8 +2,11 @@ package dev.eyuppastirmaci.pecia.search;
 
 import java.util.Objects;
 
+/** A finite retrieval score whose kind defines the ordering direction for the same query. */
 public record SearchScore(double value, Kind kind) {
     /**
+     * Validates the score value and its interpretation.
+     *
      * @throws NullPointerException if kind is null
      * @throws IllegalArgumentException if value is NaN or infinite
      */

@@ -1,7 +1,12 @@
 package dev.eyuppastirmaci.pecia.chunking.source;
 
-import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
@@ -11,10 +16,6 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
@@ -22,12 +23,9 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.ToIntFunction;
-
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SourceCodeChunkerTest {
 
@@ -93,7 +91,8 @@ class SourceCodeChunkerTest {
 
     @Test
     void keepsMarkdownLikeSourceRawWithoutHeadingMetadata() {
-        Document document = document("# shell comment\nconst node = <Panel title=\"# heading\">{value}</Panel>;\n```\n");
+        Document document =
+                document("# shell comment\nconst node = <Panel title=\"# heading\">{value}</Panel>;\n```\n");
         List<Chunk> chunks = new SourceCodeChunker(tokenizer, 64).chunk(document);
 
         assertEquals(1, chunks.size());
@@ -108,7 +107,8 @@ class SourceCodeChunkerTest {
 
         assertEquals(1, exact.size());
         assertEquals(4, tokenizer.countModelInput(exact.getFirst().content()));
-        assertEquals(List.of("one\n", "two"), smaller.stream().map(Chunk::content).toList());
+        assertEquals(
+                List.of("one\n", "two"), smaller.stream().map(Chunk::content).toList());
         verify(document, exact, tokenizer, 4);
         verify(document, smaller, tokenizer, 3);
     }
@@ -116,8 +116,17 @@ class SourceCodeChunkerTest {
     @ParameterizedTest
     @ValueSource(strings = {"\n", "\r\n", "\r"})
     void preservesWhitespaceUnicodeAndPhysicalLineLocations(String newline) {
-        Document document = document(newline + " \t" + newline + "😀 İ ç" + newline
-                + "\tsecond" + newline + "  third" + newline + "\u00a0\u2003" + newline);
+        Document document = document(newline
+                + " \t"
+                + newline
+                + "😀 İ ç"
+                + newline
+                + "\tsecond"
+                + newline
+                + "  third"
+                + newline
+                + "\u00a0\u2003"
+                + newline);
         List<Chunk> chunks = new SourceCodeChunker(tokenizer, 6).chunk(document);
 
         assertTrue(chunks.size() > 1);
@@ -125,12 +134,26 @@ class SourceCodeChunkerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Main.java", "main.py", "main.go", "view.jsx", "view.tsx", "run.sh",
-            "query.sql", "style.css", "Dockerfile", "Makefile"})
+    @ValueSource(
+            strings = {
+                "Main.java",
+                "main.py",
+                "main.go",
+                "view.jsx",
+                "view.tsx",
+                "run.sh",
+                "query.sql",
+                "style.css",
+                "Dockerfile",
+                "Makefile"
+            })
     void usesTheSameStrategyAcrossSourceFileNames(String filename) {
         Path path = Path.of("src", filename);
         String text = "first\n    nested\nend\nlast\nextra";
-        Document document = new Document(path, new FileTypeDetector().detect(path).orElseThrow(), text,
+        Document document = new Document(
+                path,
+                new FileTypeDetector().detect(path).orElseThrow(),
+                text,
                 ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
         List<Chunk> chunks = new SourceCodeChunker(tokenizer, 6).chunk(document);
 
@@ -143,7 +166,8 @@ class SourceCodeChunkerTest {
     void rechecksPreferredSlicesWhenTokenCountsAreNonMonotonic() {
         Document document = document("a\nb\n\nc\nd\ne\nf\ng");
         TokenCounter counter = counter(text -> text.equals("a\nb\n\n")
-                ? 9 : (int) text.chars().filter(Character::isLetter).count());
+                ? 9
+                : (int) text.chars().filter(Character::isLetter).count());
         List<Chunk> chunks = new SourceCodeChunker(counter, 6).chunk(document);
 
         assertEquals("a\nb\n\nc\nd\n", chunks.getFirst().content());
@@ -299,7 +323,8 @@ class SourceCodeChunkerTest {
     @ParameterizedTest
     @ValueSource(strings = {"\n", "\r\n", "\r"})
     void keepsFallbackAndOverlapOffsetsSafeAroundUnicodeAndLineTerminators(String newline) {
-        TokenCounter counter = counter(text -> (int) text.codePoints().filter(cp -> !Character.isWhitespace(cp)).count());
+        TokenCounter counter = counter(text -> (int)
+                text.codePoints().filter(cp -> !Character.isWhitespace(cp)).count());
         Document document = document("+😀+😀+😀" + newline + "\t+😀+😀+😀" + newline + "last");
         List<Chunk> chunks = new SourceCodeChunker(counter, 5, 1).chunk(document);
 
@@ -330,7 +355,8 @@ class SourceCodeChunkerTest {
     @Test
     void rechecksNonMonotonicSuffixesBeforeUsingThemAsOverlap() {
         TokenCounter counter = counter(text -> text.equals("c\nd\n")
-                ? 20 : (int) text.chars().filter(Character::isLetter).count());
+                ? 20
+                : (int) text.chars().filter(Character::isLetter).count());
         Document document = document("a\nb\nc\nd\ne\nf\ng\nh\ni");
         List<Chunk> chunks = new SourceCodeChunker(counter, 6, 2).chunk(document);
 
@@ -355,14 +381,15 @@ class SourceCodeChunkerTest {
         List<Chunk> chunks = new SourceCodeChunker(tokenizer, 6, 3).chunk(document);
 
         assertTrue(chunks.size() > 1);
-        assertTrue(chunks.size() <= document.content().codePointCount(0, document.content().length()));
+        assertTrue(chunks.size()
+                <= document.content().codePointCount(0, document.content().length()));
         verify(document, chunks, tokenizer, 6, 3, false);
     }
 
     @Test
     void preservesLargeWhitespaceAndZeroTokenRegionsDuringFallback() {
-        Document document = document(" \t".repeat(5000) + "\u200b ".repeat(5000)
-                + "hello world ".repeat(250) + "\r\n".repeat(5000));
+        Document document = document(
+                " \t".repeat(5000) + "\u200b ".repeat(5000) + "hello world ".repeat(250) + "\r\n".repeat(5000));
         List<Chunk> chunks = new SourceCodeChunker(tokenizer, 32, 8).chunk(document);
 
         assertTrue(chunks.size() > 1);
@@ -381,16 +408,32 @@ class SourceCodeChunkerTest {
         List<Chunk> chunks = new SourceCodeChunker(counter, 32, 8).chunk(document);
 
         assertTrue(chunks.size() > 1);
-        assertTrue(countedCharacters.get() < 50L * document.content().length(),
-                "Fallback should not recount the complete oversized suffix or every zero-token prefix per chunk");
+        assertTrue(
+                countedCharacters.get() < 50L * document.content().length(),
+                "Fallback should not recount the complete oversized suffix or every zero-token prefix per" + " chunk");
         verify(document, chunks, counter, 32, 8, false);
     }
 
     @Test
     void keepsMixedFallbackAndOverlapDeterministicWithoutGaps() {
         Random random = new Random(103);
-        String[] units = {"hello", "paymentValidation", "İçerik", "cafe\u0301", "世😀", "[CLS]", "+=!?;",
-                "a".repeat(101), " ", "\t", "\r\n", "\n\n", "\r", "\u00a0", "\u200b"};
+        String[] units = {
+            "hello",
+            "paymentValidation",
+            "İçerik",
+            "cafe\u0301",
+            "世😀",
+            "[CLS]",
+            "+=!?;",
+            "a".repeat(101),
+            " ",
+            "\t",
+            "\r\n",
+            "\n\n",
+            "\r",
+            "\u00a0",
+            "\u200b"
+        };
 
         for (int example = 0; example < 100; example++) {
             StringBuilder source = new StringBuilder();
@@ -403,8 +446,15 @@ class SourceCodeChunkerTest {
             int overlap = random.nextInt(limit - 2);
             Document document = document(source.toString());
             SourceCodeChunker chunker = new SourceCodeChunker(tokenizer, limit, overlap);
-            List<Chunk> chunks = assertDoesNotThrow(() -> chunker.chunk(document),
-                    "example=" + example + ", limit=" + limit + ", overlap=" + overlap + ", source="
+            List<Chunk> chunks = assertDoesNotThrow(
+                    () -> chunker.chunk(document),
+                    "example="
+                            + example
+                            + ", limit="
+                            + limit
+                            + ", overlap="
+                            + overlap
+                            + ", source="
                             + document.content().replace("\r", "\\r").replace("\n", "\\n"));
             assertEquals(chunks, chunker.chunk(document));
             verify(document, chunks, tokenizer, limit, overlap, false);
@@ -423,9 +473,12 @@ class SourceCodeChunkerTest {
         verify(document, chunks, counter, limit, 0, true);
     }
 
-    /* Reconstructs only newly covered source while independently checking overlap budgets, safe offsets, and physical line positions. */
-    private static void verify(Document document, List<Chunk> chunks, TokenCounter counter, int limit,
-                               int overlap, boolean wholeLines) {
+    /**
+     * Reconstructs only newly covered source while independently checking overlap budgets, safe offsets, and physical
+     * line positions.
+     */
+    private static void verify(
+            Document document, List<Chunk> chunks, TokenCounter counter, int limit, int overlap, boolean wholeLines) {
         StringBuilder reconstructed = new StringBuilder();
         int coveredEnd = 0;
         int previousStart = -1;
@@ -450,7 +503,8 @@ class SourceCodeChunkerTest {
             assertFalse(chunk.content().isBlank());
             assertEquals(List.of(), chunk.metadata().headingPath());
             assertTrue(counter.countModelInput(chunk.content()) <= limit);
-            assertEquals(new LineRange(lineAt(document.content(), start), lineAt(document.content(), end - 1)),
+            assertEquals(
+                    new LineRange(lineAt(document.content(), start), lineAt(document.content(), end - 1)),
                     chunk.sourceLocation());
 
             assertSafeBoundary(document.content(), start);
@@ -473,7 +527,8 @@ class SourceCodeChunkerTest {
 
     private static void assertSafeBoundary(String text, int offset) {
         if (offset > 0 && offset < text.length()) {
-            assertFalse(Character.isHighSurrogate(text.charAt(offset - 1)) && Character.isLowSurrogate(text.charAt(offset)));
+            assertFalse(Character.isHighSurrogate(text.charAt(offset - 1))
+                    && Character.isLowSurrogate(text.charAt(offset)));
             assertFalse(text.charAt(offset - 1) == '\r' && text.charAt(offset) == '\n');
         }
     }
@@ -523,7 +578,10 @@ class SourceCodeChunkerTest {
     }
 
     private static Document document(String text) {
-        return new Document(Path.of("src/Example.java"), DocumentType.SOURCE_CODE, text,
+        return new Document(
+                Path.of("src/Example.java"),
+                DocumentType.SOURCE_CODE,
+                text,
                 ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
     }
 }

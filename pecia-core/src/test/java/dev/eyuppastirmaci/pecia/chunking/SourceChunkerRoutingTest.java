@@ -1,17 +1,17 @@
 package dev.eyuppastirmaci.pecia.chunking;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import dev.eyuppastirmaci.pecia.chunking.markdown.MarkdownChunker;
 import dev.eyuppastirmaci.pecia.chunking.source.SourceCodeChunker;
 import dev.eyuppastirmaci.pecia.chunking.text.TextChunker;
-
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -19,11 +19,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SourceChunkerRoutingTest {
 
@@ -56,7 +54,17 @@ class SourceChunkerRoutingTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"main.py", "Dockerfile", "Containerfile", "Makefile", "Jenkinsfile", ".java", "file.", "code.java.txt"})
+    @ValueSource(
+            strings = {
+                "main.py",
+                "Dockerfile",
+                "Containerfile",
+                "Makefile",
+                "Jenkinsfile",
+                ".java",
+                "file.",
+                "code.java.txt"
+            })
     void fallsBackForUnregisteredOrMissingExtensions(String filename) {
         DocumentChunkerFactory factory = factory(Map.of("java", javaChunker));
 
@@ -110,7 +118,8 @@ class SourceChunkerRoutingTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"", ".", "..java", "*.java", "java ", " java", "java/go", "java\\go", "tar.gz", "java?", ".*"})
+    @ValueSource(
+            strings = {"", ".", "..java", "*.java", "java ", " java", "java/go", "java\\go", "tar.gz", "java?", ".*"})
     void rejectsBlankPathsGlobsAndCompoundRegistryKeys(String extension) {
         assertThrows(IllegalArgumentException.class, () -> factory(Map.of(extension, javaChunker)));
     }
@@ -135,14 +144,16 @@ class SourceChunkerRoutingTest {
 
     @Test
     void builtInFactoryCombinesOverridesWithTheExistingFallbacks() {
-        DocumentChunkerFactory factory = DocumentChunkerFactory.create(MiniLmTokenizer.bundled(), 256, 32,
-                Map.of(".java", javaChunker, ".go", goChunker));
+        DocumentChunkerFactory factory = DocumentChunkerFactory.create(
+                MiniLmTokenizer.bundled(), 256, 32, Map.of(".java", javaChunker, ".go", goChunker));
 
         assertSame(javaChunker, factory.getChunker(document("Example.java", DocumentType.SOURCE_CODE)));
         assertSame(goChunker, factory.getChunker(document("main.go", DocumentType.SOURCE_CODE)));
         assertInstanceOf(MarkdownChunker.class, factory.getChunker(document("guide.md", DocumentType.MARKDOWN)));
         assertInstanceOf(SourceCodeChunker.class, factory.getChunker(document("main.py", DocumentType.SOURCE_CODE)));
-        assertSame(factory.getChunker(DocumentType.SOURCE_CODE), factory.getChunker(document("Dockerfile", DocumentType.SOURCE_CODE)));
+        assertSame(
+                factory.getChunker(DocumentType.SOURCE_CODE),
+                factory.getChunker(document("Dockerfile", DocumentType.SOURCE_CODE)));
         assertInstanceOf(TextChunker.class, factory.getChunker(document("notes.txt", DocumentType.PLAIN_TEXT)));
         assertInstanceOf(TextChunker.class, factory.getChunker(document("config.json", DocumentType.STRUCTURED_TEXT)));
     }
@@ -156,8 +167,8 @@ class SourceChunkerRoutingTest {
             return List.of();
         };
         MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
-        DocumentChunkerFactory factory = DocumentChunkerFactory.create(tokenizer, 6, 1,
-                Map.of(".JAVA", override, "md", override, "json", override));
+        DocumentChunkerFactory factory = DocumentChunkerFactory.create(
+                tokenizer, 6, 1, Map.of(".JAVA", override, "md", override, "json", override));
         Document java = document("Example.java", DocumentType.SOURCE_CODE);
         Document python = document("main.py", DocumentType.SOURCE_CODE);
         DocumentChunker selected = factory.getChunker(java);
@@ -166,10 +177,18 @@ class SourceChunkerRoutingTest {
         assertEquals(List.of(), selected.chunk(java));
         assertEquals(List.of(java), received);
         assertSame(factory.getChunker(DocumentType.SOURCE_CODE), factory.getChunker(python));
-        assertEquals(new SourceCodeChunker(tokenizer, 6, 1).chunk(python), factory.getChunker(python).chunk(python));
-        assertSame(factory.getChunker(DocumentType.MARKDOWN), factory.getChunker(document("guide.md", DocumentType.MARKDOWN)));
-        assertSame(factory.getChunker(DocumentType.STRUCTURED_TEXT), factory.getChunker(document("config.json", DocumentType.STRUCTURED_TEXT)));
-        assertSame(factory.getChunker(DocumentType.PLAIN_TEXT), factory.getChunker(document("Example.java", DocumentType.PLAIN_TEXT)));
+        assertEquals(
+                new SourceCodeChunker(tokenizer, 6, 1).chunk(python),
+                factory.getChunker(python).chunk(python));
+        assertSame(
+                factory.getChunker(DocumentType.MARKDOWN),
+                factory.getChunker(document("guide.md", DocumentType.MARKDOWN)));
+        assertSame(
+                factory.getChunker(DocumentType.STRUCTURED_TEXT),
+                factory.getChunker(document("config.json", DocumentType.STRUCTURED_TEXT)));
+        assertSame(
+                factory.getChunker(DocumentType.PLAIN_TEXT),
+                factory.getChunker(document("Example.java", DocumentType.PLAIN_TEXT)));
         assertEquals(List.of(java), received);
     }
 
@@ -195,7 +214,8 @@ class SourceChunkerRoutingTest {
     private static Document document(String filename, DocumentType type) {
         String content = "source content";
 
-        return new Document(Path.of(filename), type, content, ContentHash.sha256(content.getBytes(StandardCharsets.UTF_8)));
+        return new Document(
+                Path.of(filename), type, content, ContentHash.sha256(content.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static DocumentChunker unusedStrategy(String name) {

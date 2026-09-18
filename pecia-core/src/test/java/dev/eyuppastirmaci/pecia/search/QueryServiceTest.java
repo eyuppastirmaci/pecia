@@ -1,15 +1,18 @@
 package dev.eyuppastirmaci.pecia.search;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -19,8 +22,10 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class QueryServiceTest {
 
@@ -58,7 +63,6 @@ class QueryServiceTest {
 
     @Test
     void honorsLimitAndLiteralSyntaxAndReturnsEmptyForValidNoMatchQueries() throws Exception {
-
         for (String name : List.of("a", "b", "c")) {
             Files.writeString(root.resolve(name + ".txt"), "alpha OR beta");
         }
@@ -75,9 +79,9 @@ class QueryServiceTest {
 
     @Test
     void reportsMissingIndexWithoutCreatingFilesEvenForPunctuation() throws Exception {
-
         for (String text : List.of("word", "!!!")) {
-            QueryException failure = assertThrows(QueryException.class, () -> service.search(root, new SearchRequest(text)));
+            QueryException failure =
+                    assertThrows(QueryException.class, () -> service.search(root, new SearchRequest(text)));
 
             assertEquals(QueryException.Reason.INDEX_NOT_FOUND, failure.reason());
             assertTrue(failure.getMessage().contains("index"));
@@ -122,7 +126,8 @@ class QueryServiceTest {
 
             return storage;
         });
-        QueryException failure = assertThrows(QueryException.class, () -> tracking.search(root, new SearchRequest("needle")));
+        QueryException failure =
+                assertThrows(QueryException.class, () -> tracking.search(root, new SearchRequest("needle")));
 
         assertEquals(QueryException.Reason.READ_FAILED, failure.reason());
         assertInstanceOf(SearchException.class, failure.getCause());
@@ -134,15 +139,19 @@ class QueryServiceTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"PRAGMA user_version = 77,INCOMPATIBLE_INDEX",
-            "UPDATE index_metadata SET index_format_version = 77,INCOMPATIBLE_INDEX",
-            "DROP TRIGGER chunks_fts_insert,CORRUPT_INDEX",
-            "UPDATE index_metadata SET project_root_uri = 'file:///elsewhere/',WRONG_PROJECT"})
-    void surfacesIndexValidationCategoriesWithoutChangingTheIndex(String mutation, QueryException.Reason reason) throws Exception {
+    @CsvSource({
+        "PRAGMA user_version = 77,INCOMPATIBLE_INDEX",
+        "UPDATE index_metadata SET index_format_version = 77,INCOMPATIBLE_INDEX",
+        "DROP TRIGGER chunks_fts_insert,CORRUPT_INDEX",
+        "UPDATE index_metadata SET project_root_uri = 'file:///elsewhere/',WRONG_PROJECT"
+    })
+    void surfacesIndexValidationCategoriesWithoutChangingTheIndex(String mutation, QueryException.Reason reason)
+            throws Exception {
         IndexResult indexed = new IndexService(loader).index(root);
         execute(indexed.context().databasePath(), mutation);
         byte[] before = Files.readAllBytes(indexed.context().databasePath());
-        QueryException failure = assertThrows(QueryException.class, () -> service.search(root, new SearchRequest("needle")));
+        QueryException failure =
+                assertThrows(QueryException.class, () -> service.search(root, new SearchRequest("needle")));
 
         assertEquals(reason, failure.reason());
         assertNotNull(failure.getCause());
@@ -160,9 +169,8 @@ class QueryServiceTest {
     }
 
     private static void execute(Path database, String sql) throws SQLException {
-
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database.toUri());
-             Statement statement = connection.createStatement()) {
+                Statement statement = connection.createStatement()) {
             statement.execute(sql);
         }
     }

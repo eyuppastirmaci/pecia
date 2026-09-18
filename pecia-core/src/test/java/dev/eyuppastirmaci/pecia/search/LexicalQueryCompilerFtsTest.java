@@ -1,9 +1,6 @@
 package dev.eyuppastirmaci.pecia.search;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.sqlite.JDBC;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -12,8 +9,10 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.sqlite.JDBC;
 
 class LexicalQueryCompilerFtsTest {
     private final LexicalQueryCompiler compiler = new LexicalQueryCompiler();
@@ -25,11 +24,11 @@ class LexicalQueryCompilerFtsTest {
 
         try (var statement = connection.createStatement()) {
             statement.executeUpdate("""
-                    CREATE VIRTUAL TABLE query_fixture USING fts5(
-                        content, headings, source_path,
-                        tokenize = 'unicode61 remove_diacritics 2', detail = full, columnsize = 1
-                    )
-                    """);
+                CREATE VIRTUAL TABLE query_fixture USING fts5(
+                    content, headings, source_path,
+                    tokenize = 'unicode61 remove_diacritics 2', detail = full, columnsize = 1
+                )
+                """);
         }
     }
 
@@ -199,7 +198,7 @@ class LexicalQueryCompilerFtsTest {
 
     private void insert(long id, String content, String headings, String path) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "INSERT INTO query_fixture(rowid, content, headings, source_path) VALUES (?, ?, ?, ?)")) {
+                "INSERT INTO query_fixture(rowid, content, headings, source_path) VALUES (?, ?, ?," + " ?)")) {
             statement.setLong(1, id);
             statement.setString(2, content);
             statement.setString(3, headings);

@@ -1,21 +1,21 @@
 package dev.eyuppastirmaci.pecia.content;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
-
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-
 import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.BINARY_CONTENT;
 import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.INVALID_UTF8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+
 class TextDocumentExtractorTest {
 
-    private static final Path FILE = Path.of("C:/fixtures/notes.txt").toAbsolutePath().normalize();
+    private static final Path FILE =
+            Path.of("C:/fixtures/notes.txt").toAbsolutePath().normalize();
     private final TextDocumentExtractor extractor = new TextDocumentExtractor();
 
     @ParameterizedTest
@@ -58,8 +58,8 @@ class TextDocumentExtractorTest {
     @Test
     void acceptsEmptyAndBomOnlyFiles() throws Exception {
         Document empty = extractor.extract(request(DocumentType.PLAIN_TEXT), content(new byte[0]));
-        Document bomOnly = extractor.extract(request(DocumentType.PLAIN_TEXT),
-                content("\uFEFF".getBytes(StandardCharsets.UTF_8)));
+        Document bomOnly =
+                extractor.extract(request(DocumentType.PLAIN_TEXT), content("\uFEFF".getBytes(StandardCharsets.UTF_8)));
 
         assertEquals("", empty.content());
         assertEquals("", bomOnly.content());
@@ -67,11 +67,12 @@ class TextDocumentExtractorTest {
 
     @Test
     void rejectsMalformedUtf8AndUtf16() {
-        ExtractionException malformed = assertThrows(ExtractionException.class,
-                () -> extractor.extract(request(DocumentType.PLAIN_TEXT), content(new byte[]{(byte) 0xC3, 0x28})));
+        ExtractionException malformed = assertThrows(
+                ExtractionException.class,
+                () -> extractor.extract(request(DocumentType.PLAIN_TEXT), content(new byte[] {(byte) 0xC3, 0x28})));
         byte[] utf16 = "hello".getBytes(StandardCharsets.UTF_16);
-        ExtractionException encodedDifferently = assertThrows(ExtractionException.class,
-                () -> extractor.extract(request(DocumentType.PLAIN_TEXT), content(utf16)));
+        ExtractionException encodedDifferently = assertThrows(
+                ExtractionException.class, () -> extractor.extract(request(DocumentType.PLAIN_TEXT), content(utf16)));
 
         assertEquals(INVALID_UTF8, malformed.reason());
         assertEquals(INVALID_UTF8, encodedDifferently.reason());
@@ -79,10 +80,13 @@ class TextDocumentExtractorTest {
 
     @Test
     void rejectsNulAndRepeatedBinaryControls() {
-        ExtractionException nul = assertThrows(ExtractionException.class,
-                () -> extractor.extract(request(DocumentType.PLAIN_TEXT), content("hello\0world".getBytes(StandardCharsets.UTF_8))));
-        ExtractionException controls = assertThrows(ExtractionException.class,
-                () -> extractor.extract(request(DocumentType.PLAIN_TEXT), content(new byte[]{1, 2, 3, 4, 'a'})));
+        ExtractionException nul = assertThrows(
+                ExtractionException.class,
+                () -> extractor.extract(
+                        request(DocumentType.PLAIN_TEXT), content("hello\0world".getBytes(StandardCharsets.UTF_8))));
+        ExtractionException controls = assertThrows(
+                ExtractionException.class,
+                () -> extractor.extract(request(DocumentType.PLAIN_TEXT), content(new byte[] {1, 2, 3, 4, 'a'})));
 
         assertEquals(BINARY_CONTENT, nul.reason());
         assertEquals(BINARY_CONTENT, controls.reason());
@@ -90,23 +94,22 @@ class TextDocumentExtractorTest {
 
     @Test
     void doesNotReadTheFilesystemAndRequiresMatchingInputs() throws Exception {
-        Document document = extractor.extract(request(DocumentType.PLAIN_TEXT), content("memory only".getBytes(StandardCharsets.UTF_8)));
+        Document document = extractor.extract(
+                request(DocumentType.PLAIN_TEXT), content("memory only".getBytes(StandardCharsets.UTF_8)));
 
         assertEquals("memory only", document.content());
 
-        FileContent other = new FileContent(Path.of("C:/fixtures/other.txt").toAbsolutePath().normalize(), new byte[0]);
+        FileContent other = new FileContent(
+                Path.of("C:/fixtures/other.txt").toAbsolutePath().normalize(), new byte[0]);
 
-        assertThrows(IllegalArgumentException.class,
-                () -> extractor.extract(request(DocumentType.PLAIN_TEXT), other));
+        assertThrows(IllegalArgumentException.class, () -> extractor.extract(request(DocumentType.PLAIN_TEXT), other));
     }
 
     private static ExtractionRequest request(DocumentType type) {
-
         return new ExtractionRequest(FILE, Path.of("notes.txt"), type);
     }
 
     private static FileContent content(byte[] bytes) {
-
         return new FileContent(FILE, bytes);
     }
 }

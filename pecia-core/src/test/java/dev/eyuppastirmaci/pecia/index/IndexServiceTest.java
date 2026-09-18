@@ -1,21 +1,20 @@
 package dev.eyuppastirmaci.pecia.index;
 
-import dev.eyuppastirmaci.pecia.config.PeciaConfig;
-import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
-import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import dev.eyuppastirmaci.pecia.config.PeciaConfig;
+import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
+import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class IndexServiceTest {
 
@@ -52,7 +51,8 @@ class IndexServiceTest {
         assertEquals(PeciaConfig.defaults(), preview.loadedConfig().config());
         assertEquals(List.of(Path.of("notes.md")), preview.walkResult().files());
         assertTrue(preview.walkResult().complete());
-        assertThrows(UnsupportedOperationException.class,
+        assertThrows(
+                UnsupportedOperationException.class,
                 () -> preview.walkResult().files().add(Path.of("other.md")));
         assertFalse(Files.exists(root.resolve(".pecia.toml")));
         assertFalse(Files.exists(root.resolve(".pecia")));
@@ -61,10 +61,10 @@ class IndexServiceTest {
     @Test
     void usesProjectRelativeConfigAndIgnoreRulesForAChildTarget() throws IOException {
         Files.writeString(root.resolve(".pecia.toml"), """
-                [index]
-                include = ["docs/*.md"]
-                exclude = ["docs/excluded.md"]
-                """);
+            [index]
+            include = ["docs/*.md"]
+            exclude = ["docs/excluded.md"]
+            """);
         Files.writeString(root.resolve(".gitignore"), "ignored.md\n");
         Files.writeString(root.resolve("outside.md"), "outside target");
         Path docs = Files.createDirectory(root.resolve("docs"));
@@ -143,18 +143,20 @@ class IndexServiceTest {
         assertEquals(1, preview.walkResult().issues().size());
         assertEquals(invalidIgnore, preview.walkResult().issues().getFirst().path());
         assertFalse(preview.walkResult().issues().getFirst().reason().isBlank());
-        assertThrows(UnsupportedOperationException.class, () -> preview.walkResult().issues().clear());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> preview.walkResult().issues().clear());
     }
 
     @Test
     void discoversCandidatesWithoutApplyingContentProcessingSettings() throws IOException {
         String config = """
-                [index]
-                include = ["**/*.md"]
-                max_file_bytes = 1
-                [chunk]
-                max_tokens = 512
-                """;
+            [index]
+            include = ["**/*.md"]
+            max_file_bytes = 1
+            [chunk]
+            max_tokens = 512
+            """;
         Files.writeString(root.resolve(".pecia.toml"), config);
         // The invalid UTF-8 and incompatible processing limits must not affect file discovery.
         byte[] content = {(byte) 0xc3, (byte) 0x28};

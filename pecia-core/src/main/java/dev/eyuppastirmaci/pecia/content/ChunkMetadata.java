@@ -11,6 +11,7 @@ public record ChunkMetadata(List<String> headingPath, Map<String, String> attrib
 
     private static final ChunkMetadata EMPTY = new ChunkMetadata(List.of(), Map.of());
 
+    /** Copies metadata, rejecting blank headings or attribute names and null attribute values. */
     public ChunkMetadata {
         Objects.requireNonNull(attributes, "attributes");
 
@@ -30,7 +31,8 @@ public record ChunkMetadata(List<String> headingPath, Map<String, String> attrib
             }
         }
 
-        // Defensive, sorted copies make metadata stable while chunks move through concurrent pipeline stages.
+        // Defensive, sorted copies make metadata stable while chunks move through concurrent pipeline
+        // stages.
         headingPath = List.copyOf(headingPath);
         attributes = Collections.unmodifiableMap(new TreeMap<>(attributes));
     }
@@ -41,7 +43,6 @@ public record ChunkMetadata(List<String> headingPath, Map<String, String> attrib
      * @return the empty chunk metadata
      */
     public static ChunkMetadata empty() {
-
         return EMPTY;
     }
 }

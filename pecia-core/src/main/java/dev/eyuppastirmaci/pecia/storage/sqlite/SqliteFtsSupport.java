@@ -9,13 +9,13 @@ import java.util.UUID;
 final class SqliteFtsSupport {
     static final String TOKENIZER = "unicode61 remove_diacritics 2";
 
-    private SqliteFtsSupport() { }
+    private SqliteFtsSupport() {}
 
     static void verify(Connection connection) throws SQLException {
         verify(connection, SqliteFtsSupport::probe);
     }
 
-    /* The seam allows deterministic runtime failures without substituting a different SQLite binary. */
+    // Allows deterministic runtime failures without substituting a different SQLite binary.
     static void verify(Connection connection, Probe probe) throws SQLException {
         // These identifiers contain only a fixed prefix and generated hexadecimal characters.
         String name = "pecia_fts_probe_" + UUID.randomUUID().toString().replace("-", "");
@@ -40,8 +40,11 @@ final class SqliteFtsSupport {
 
     private static void probe(Connection connection, String table) throws SQLException {
         try (var statement = connection.createStatement()) {
-            statement.execute("CREATE VIRTUAL TABLE temp." + table
-                    + " USING fts5(content, tokenize = '" + TOKENIZER + "', detail = full, columnsize = 1)");
+            statement.execute("CREATE VIRTUAL TABLE temp."
+                    + table
+                    + " USING fts5(content, tokenize = '"
+                    + TOKENIZER
+                    + "', detail = full, columnsize = 1)");
         }
 
         String content = "pecia fts capability";
@@ -66,10 +69,12 @@ final class SqliteFtsSupport {
     private static SQLException classify(SQLException failure) {
         String message = failure.getMessage();
 
-        if (message != null && (message.equals("no such module: fts5")
-                || message.endsWith("(no such module: fts5)"))) {
-            return new SQLException("SQLite FTS5 is unavailable; use a SQLite JDBC runtime built with FTS5 support",
-                    failure.getSQLState(), failure.getErrorCode(), failure);
+        if (message != null && (message.equals("no such module: fts5") || message.endsWith("(no such module: fts5)"))) {
+            return new SQLException(
+                    "SQLite FTS5 is unavailable; use a SQLite JDBC runtime built with FTS5 support",
+                    failure.getSQLState(),
+                    failure.getErrorCode(),
+                    failure);
         }
 
         return failure;

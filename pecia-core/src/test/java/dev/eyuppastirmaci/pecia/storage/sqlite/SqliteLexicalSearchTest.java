@@ -1,17 +1,26 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import dev.eyuppastirmaci.pecia.content.*;
-import dev.eyuppastirmaci.pecia.search.*;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.content.Chunk;
+import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
+import dev.eyuppastirmaci.pecia.content.ContentHash;
+import dev.eyuppastirmaci.pecia.content.Document;
+import dev.eyuppastirmaci.pecia.content.DocumentType;
+import dev.eyuppastirmaci.pecia.content.LineRange;
+import dev.eyuppastirmaci.pecia.search.SearchException;
+import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class SqliteLexicalSearchTest {
     @TempDir
@@ -22,10 +31,9 @@ class SqliteLexicalSearchTest {
         try (var storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             var path = Path.of("src/Auth.java");
             var text = "JWT_SECRET authentication middleware";
-            var document = new Document(path, DocumentType.SOURCE_CODE, text,
-                    ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
-            var chunk = new Chunk(path, document.type(), 0, text,
-                    new LineRange(1, 1), ChunkMetadata.empty());
+            var document = new Document(
+                    path, DocumentType.SOURCE_CODE, text, ContentHash.sha256(text.getBytes(StandardCharsets.UTF_8)));
+            var chunk = new Chunk(path, document.type(), 0, text, new LineRange(1, 1), ChunkMetadata.empty());
             storage.replaceFile(document, List.of(chunk));
             var hits = storage.lexicalSearch().search(new SearchRequest("JWT_SECRET"));
             assertEquals(1, hits.size());
@@ -38,17 +46,34 @@ class SqliteLexicalSearchTest {
     @Test
     void searchesMixedCorpusLiterallyAndPreservesImmutableRankedResults() throws Exception {
         try (var storage = SqliteStorage.open(root.resolve("index.db"), root)) {
-            put(storage, "src/Auth.java", DocumentType.SOURCE_CODE,
-                    "JWT_SECRET authentication middleware UserRepository.findByEmail", "Auth");
-            put(storage, "docs/guide.md", DocumentType.MARKDOWN,
-                    "authentication guide café İstanbul", "Guide");
+            put(
+                    storage,
+                    "src/Auth.java",
+                    DocumentType.SOURCE_CODE,
+                    "JWT_SECRET authentication middleware UserRepository.findByEmail",
+                    "Auth");
+            put(storage, "docs/guide.md", DocumentType.MARKDOWN, "authentication guide café İstanbul", "Guide");
             put(storage, "notes.txt", DocumentType.PLAIN_TEXT, "authentication OR middleware", "Notes");
             var search = storage.lexicalSearch();
-            assertEquals(Path.of("src/Auth.java"), search.search(new SearchRequest("JWT_SECRET")).getFirst().sourcePath());
-            assertEquals(1, search.search(new SearchRequest("UserRepository.findByEmail")).size());
-            assertEquals(Path.of("docs/guide.md"), search.search(new SearchRequest("café İstanbul")).getFirst().sourcePath());
-            assertEquals(2, search.search(new SearchRequest("authentication middleware")).size());
-            assertEquals(Path.of("notes.txt"), search.search(new SearchRequest("authentication OR middleware")).getFirst().sourcePath());
+            assertEquals(
+                    Path.of("src/Auth.java"),
+                    search.search(new SearchRequest("JWT_SECRET")).getFirst().sourcePath());
+            assertEquals(
+                    1,
+                    search.search(new SearchRequest("UserRepository.findByEmail"))
+                            .size());
+            assertEquals(
+                    Path.of("docs/guide.md"),
+                    search.search(new SearchRequest("café İstanbul")).getFirst().sourcePath());
+            assertEquals(
+                    2,
+                    search.search(new SearchRequest("authentication middleware"))
+                            .size());
+            assertEquals(
+                    Path.of("notes.txt"),
+                    search.search(new SearchRequest("authentication OR middleware"))
+                            .getFirst()
+                            .sourcePath());
             var hits = search.search(new SearchRequest("authentication"));
             assertEquals(3, hits.size());
             assertEquals(hits, search.search(new SearchRequest("authentication")));
@@ -72,8 +97,10 @@ class SqliteLexicalSearchTest {
             assertThrows(IllegalArgumentException.class, () -> search.search(new SearchRequest("needle", 0)));
             assertThrows(IllegalArgumentException.class, () -> search.search(new SearchRequest("word ".repeat(65))));
         }
-        assertInstanceOf(SQLException.class,
-                assertThrows(SearchException.class, () -> search.search(new SearchRequest("needle"))).getCause());
+        assertInstanceOf(
+                SQLException.class,
+                assertThrows(SearchException.class, () -> search.search(new SearchRequest("needle")))
+                        .getCause());
         assertTrue(search.search(new SearchRequest("!!!")).isEmpty());
         assertThrows(NullPointerException.class, () -> search.search(null));
     }
@@ -99,7 +126,8 @@ class SqliteLexicalSearchTest {
             storage.replaceFile(document(path, DocumentType.PLAIN_TEXT, "newword"), List.of());
             assertTrue(search.search(new SearchRequest("newword")).isEmpty());
             put(storage, "a.txt", DocumentType.PLAIN_TEXT, "deletedword", "Delete");
-            storage.files().delete(storage.files().findByPath(path).orElseThrow().id());
+            storage.files()
+                    .delete(storage.files().findByPath(path).orElseThrow().id());
             assertTrue(search.search(new SearchRequest("deletedword")).isEmpty());
         }
     }
@@ -140,10 +168,12 @@ class SqliteLexicalSearchTest {
             storage.connection().setAutoCommit(false);
             try (var statement = storage.connection().createStatement()) {
                 statement.executeUpdate("UPDATE chunk_headings SET position = 2");
-                var failure = assertThrows(SearchException.class,
-                        () -> storage.lexicalSearch().search(new SearchRequest("needle")));
+                var failure = assertThrows(
+                        SearchException.class, () -> storage.lexicalSearch().search(new SearchRequest("needle")));
                 assertInstanceOf(SQLException.class, failure.getCause());
-                assertEquals("Non-contiguous stored heading positions", failure.getCause().getMessage());
+                assertEquals(
+                        "Non-contiguous stored heading positions",
+                        failure.getCause().getMessage());
                 assertFalse(storage.connection().getAutoCommit());
                 try (var rows = statement.executeQuery("SELECT position FROM chunk_headings")) {
                     assertTrue(rows.next());
@@ -152,7 +182,9 @@ class SqliteLexicalSearchTest {
             }
             storage.connection().rollback();
             storage.connection().setAutoCommit(true);
-            assertEquals(1, storage.lexicalSearch().search(new SearchRequest("needle")).size());
+            assertEquals(
+                    1,
+                    storage.lexicalSearch().search(new SearchRequest("needle")).size());
         }
     }
 
@@ -163,7 +195,14 @@ class SqliteLexicalSearchTest {
     private static void put(SqliteStorage storage, String path, DocumentType type, String content, String heading)
             throws SQLException {
         var document = document(Path.of(path), type, content);
-        storage.replaceFile(document, List.of(new Chunk(document.sourcePath(), type, 0, content,
-                new LineRange(2, 5), new ChunkMetadata(List.of(heading), Map.of("language", "test")))));
+        storage.replaceFile(
+                document,
+                List.of(new Chunk(
+                        document.sourcePath(),
+                        type,
+                        0,
+                        content,
+                        new LineRange(2, 5),
+                        new ChunkMetadata(List.of(heading), Map.of("language", "test")))));
     }
 }

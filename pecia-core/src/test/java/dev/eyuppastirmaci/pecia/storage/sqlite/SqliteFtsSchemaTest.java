@@ -1,11 +1,22 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.sqlite.JDBC;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.V2_RESOURCE;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.applyFts;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.applyScript;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertConsistent;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertMatches;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertChunk;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.resource;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.rows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.FtsRow;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -14,9 +25,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-
-import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.*;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.sqlite.JDBC;
 
 class SqliteFtsSchemaTest {
     @TempDir
@@ -30,7 +43,7 @@ class SqliteFtsSchemaTest {
             assertEquals(List.of("content", "headings", "source_path"), columnNames(connection));
 
             try (var statement = connection.createStatement();
-                 var result = statement.executeQuery("SELECT sql FROM sqlite_schema WHERE name = 'chunks_fts'")) {
+                    var result = statement.executeQuery("SELECT sql FROM sqlite_schema WHERE name = 'chunks_fts'")) {
                 assertTrue(result.next());
                 String ddl = result.getString(1);
                 assertTrue(ddl.contains("USING fts5("));
@@ -51,7 +64,8 @@ class SqliteFtsSchemaTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void backfillsAllFieldsWithoutChangingSourceRecordsAndPreservesThemOnReopen(boolean reverseUnordered) throws Exception {
+    void backfillsAllFieldsWithoutChangingSourceRecordsAndPreservesThemOnReopen(boolean reverseUnordered)
+            throws Exception {
         String path = "docs/pathonly 'quoted';-- İstanbul.md";
         String content = "bodyonly café\r\nİstanbul 😀 e\u0301";
         List<FtsRow> expected = List.of(
@@ -87,9 +101,10 @@ class SqliteFtsSchemaTest {
             assertEquals(1, scalar(connection, "SELECT index_format_version FROM index_metadata"));
         }
 
-        // Read the script-only fixture directly: the SQL resource deliberately leaves version markers with its caller.
-        try (Connection connection = JDBC.createConnection("jdbc:sqlite:" + root.resolve("index.db").toUri().toASCIIString(),
-                new Properties())) {
+        // Read the script-only fixture directly: the SQL resource deliberately leaves version markers
+        // with its caller.
+        try (Connection connection = JDBC.createConnection(
+                "jdbc:sqlite:" + root.resolve("index.db").toUri().toASCIIString(), new Properties())) {
             assertEquals(source, sourceSnapshot(connection));
             assertEquals(expected, rows(connection));
             assertBackfilledMatches(connection);
@@ -107,7 +122,8 @@ class SqliteFtsSchemaTest {
             insertHeading(connection, 23, 1, "Repeated");
             applyFts(connection);
             var backfilled = rows(connection);
-            assertEquals(List.of(new FtsRow(23, "identitybody", "Top Repeated Repeated", "docs/identity.md")), backfilled);
+            assertEquals(
+                    List.of(new FtsRow(23, "identitybody", "Top Repeated Repeated", "docs/identity.md")), backfilled);
 
             execute(connection, "DELETE FROM chunks WHERE id = 23");
             assertMatches(connection, "identitybody");
@@ -132,11 +148,16 @@ class SqliteFtsSchemaTest {
             var source = sourceSnapshot(connection);
             var schema = schemaSnapshot(connection);
 
-            assertThrows(SQLException.class, () -> applyScript(connection,
-                    resource(V2_RESOURCE) + "\nINSERT INTO missing_backfill_target VALUES (1);"));
+            assertThrows(
+                    SQLException.class,
+                    () -> applyScript(
+                            connection, resource(V2_RESOURCE) + "\nINSERT INTO missing_backfill_target VALUES (1);"));
 
             assertEquals(source, sourceSnapshot(connection));
-            assertEquals(schema, schemaSnapshot(connection), "Rollback must remove the virtual table, shadow tables and triggers");
+            assertEquals(
+                    schema,
+                    schemaSnapshot(connection),
+                    "Rollback must remove the virtual table, shadow tables and triggers");
             assertEquals(1, scalar(connection, "PRAGMA user_version"));
             applyFts(connection);
             assertMatches(connection, "retrybody", 9);
@@ -182,7 +203,8 @@ class SqliteFtsSchemaTest {
 
     private static List<String> columnNames(Connection connection) throws SQLException {
         List<String> result = new ArrayList<>();
-        try (var statement = connection.createStatement(); var rows = statement.executeQuery("PRAGMA table_info(chunks_fts)")) {
+        try (var statement = connection.createStatement();
+                var rows = statement.executeQuery("PRAGMA table_info(chunks_fts)")) {
             while (rows.next()) {
                 result.add(rows.getString("name"));
             }
@@ -204,7 +226,8 @@ class SqliteFtsSchemaTest {
 
     private static List<List<String>> queryRows(Connection connection, String sql) throws SQLException {
         List<List<String>> result = new ArrayList<>();
-        try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
+        try (var statement = connection.createStatement();
+                var rows = statement.executeQuery(sql)) {
             while (rows.next()) {
                 List<String> values = new ArrayList<>();
                 for (int column = 1; column <= rows.getMetaData().getColumnCount(); column++) {
@@ -217,7 +240,8 @@ class SqliteFtsSchemaTest {
     }
 
     private static int scalar(Connection connection, String sql) throws SQLException {
-        try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
+        try (var statement = connection.createStatement();
+                var rows = statement.executeQuery(sql)) {
             assertTrue(rows.next());
             return rows.getInt(1);
         }

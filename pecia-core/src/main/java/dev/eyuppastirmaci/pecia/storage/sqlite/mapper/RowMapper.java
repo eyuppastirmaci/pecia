@@ -3,6 +3,7 @@ package dev.eyuppastirmaci.pecia.storage.sqlite.mapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
+/** Maps a positioned JDBC result row to a domain value without owning the result cursor. */
 @FunctionalInterface
 public interface RowMapper<T> {
     /**

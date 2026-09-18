@@ -1,24 +1,36 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import dev.eyuppastirmaci.pecia.content.*;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertConsistent;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertMatches;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.rows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import dev.eyuppastirmaci.pecia.content.Chunk;
+import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
+import dev.eyuppastirmaci.pecia.content.ContentHash;
+import dev.eyuppastirmaci.pecia.content.DocumentType;
+import dev.eyuppastirmaci.pecia.content.LineRange;
+import dev.eyuppastirmaci.pecia.content.SourceLocation;
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.FtsRow;
+import java.nio.file.Path;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.nio.file.Path;
-import java.sql.SQLException;
-import java.util.List;
-import java.util.Map;
-
-import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.*;
-import static org.junit.jupiter.api.Assertions.*;
-
 class SqliteChunkRepositoryTest {
     @TempDir
     Path root;
+
     private static final Path SOURCE = Path.of("docs", "İstanbul.md");
-    private static final ChunkMetadata META = new ChunkMetadata(List.of("Başlık", "Başlık", "Alt 😀"),
+    private static final ChunkMetadata META = new ChunkMetadata(
+            List.of("Başlık", "Başlık", "Alt 😀"),
             Map.of("startOffset", "10", "endOffset", "20", "empty", "", "custom", "'\"\n\r\tİ😀"));
 
     @Test
@@ -36,22 +48,37 @@ class SqliteChunkRepositoryTest {
 
         try (var storage = SqliteStorage.open(database, root)) {
             var chunks = storage.chunks().findByFileId(fileId);
-            assertEquals(List.of(chunk(0, ChunkMetadata.empty()), chunk(1, META), chunk(2, META)),
+            assertEquals(
+                    List.of(chunk(0, ChunkMetadata.empty()), chunk(1, META), chunk(2, META)),
                     chunks.stream().map(stored -> stored.chunk()).toList());
             assertTrue(chunks.stream().allMatch(stored -> stored.id() > 0 && stored.fileId() == fileId));
             assertThrows(UnsupportedOperationException.class, chunks::clear);
-            assertMatches(storage.connection(), "content: son", chunks.stream().mapToLong(value -> value.id()).sorted().toArray());
-            assertMatches(storage.connection(), "headings: başlık",
-                    chunks.stream().filter(value -> !value.chunk().metadata().headingPath().isEmpty())
-                            .mapToLong(value -> value.id()).sorted().toArray());
-            assertMatches(storage.connection(), "source_path: docs", chunks.stream().mapToLong(value -> value.id()).sorted().toArray());
+            assertMatches(
+                    storage.connection(),
+                    "content: son",
+                    chunks.stream().mapToLong(value -> value.id()).sorted().toArray());
+            assertMatches(
+                    storage.connection(),
+                    "headings: başlık",
+                    chunks.stream()
+                            .filter(value ->
+                                    !value.chunk().metadata().headingPath().isEmpty())
+                            .mapToLong(value -> value.id())
+                            .sorted()
+                            .toArray());
+            assertMatches(
+                    storage.connection(),
+                    "source_path: docs",
+                    chunks.stream().mapToLong(value -> value.id()).sorted().toArray());
             assertConsistent(storage.connection());
             assertEquals(3, storage.chunks().deleteByFileId(fileId));
             assertTrue(storage.chunks().findByFileId(fileId).isEmpty());
             assertTrue(storage.files().findByPath(SOURCE).isPresent());
 
             try (var statement = storage.connection().createStatement();
-                 var rows = statement.executeQuery("SELECT (SELECT count(*) FROM chunk_headings) + (SELECT count(*) FROM chunk_attributes)")) {
+                    var rows = statement.executeQuery(
+                            "SELECT (SELECT count(*) FROM chunk_headings) + (SELECT count(*) FROM"
+                                    + " chunk_attributes)")) {
                 assertTrue(rows.next());
                 assertEquals(0, rows.getInt(1));
             }
@@ -72,10 +99,24 @@ class SqliteChunkRepositoryTest {
             var original = storage.chunks().insert(id, chunk(0, META));
             assertThrows(SQLException.class, () -> storage.chunks().insert(id, chunk(0, META)));
             assertThrows(SQLException.class, () -> storage.chunks().insert(id + 1, chunk(1, META)));
-            assertThrows(SQLException.class, () -> storage.chunks().insert(id,
-                    new Chunk(Path.of("other.md"), DocumentType.MARKDOWN, 1, "text", new LineRange(1, 1), META)));
-            assertThrows(SQLException.class, () -> storage.chunks().insert(id,
-                    new Chunk(SOURCE, DocumentType.PLAIN_TEXT, 1, "text", new LineRange(1, 1), META)));
+            assertThrows(
+                    SQLException.class,
+                    () -> storage.chunks()
+                            .insert(
+                                    id,
+                                    new Chunk(
+                                            Path.of("other.md"),
+                                            DocumentType.MARKDOWN,
+                                            1,
+                                            "text",
+                                            new LineRange(1, 1),
+                                            META)));
+            assertThrows(
+                    SQLException.class,
+                    () -> storage.chunks()
+                            .insert(
+                                    id,
+                                    new Chunk(SOURCE, DocumentType.PLAIN_TEXT, 1, "text", new LineRange(1, 1), META)));
             assertEquals(List.of(original), storage.chunks().findByFileId(id));
             assertMatches(storage.connection(), "content: son", original.id());
             assertMatches(storage.connection(), "headings: başlık", original.id());
@@ -85,12 +126,22 @@ class SqliteChunkRepositoryTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"chunk_headings WHEN NEW.position = 1 AND NEW.chunk_id IN (SELECT id FROM chunks WHERE chunk_index = 1)",
-            "chunk_attributes WHEN NEW.chunk_id IN (SELECT id FROM chunks WHERE chunk_index = 1)"})
+    @ValueSource(
+            strings = {
+                "chunk_headings WHEN NEW.position = 1 AND NEW.chunk_id IN (SELECT id FROM chunks WHERE"
+                        + " chunk_index = 1)",
+                "chunk_attributes WHEN NEW.chunk_id IN (SELECT id FROM chunks WHERE chunk_index = 1)"
+            })
     void metadataFailureRollsBackChunkAndHeadingsAndAllowsRetry(String failurePoint) throws Exception {
         Path database = root.resolve("index.db");
-        Chunk candidate = new Chunk(SOURCE, DocumentType.MARKDOWN, 1, "candidatebody", new LineRange(4, 5),
-                new ChunkMetadata(List.of("Candidateheading", "Candidatechild"), Map.of("custom", "candidateattribute")));
+        Chunk candidate = new Chunk(
+                SOURCE,
+                DocumentType.MARKDOWN,
+                1,
+                "candidatebody",
+                new LineRange(4, 5),
+                new ChunkMetadata(
+                        List.of("Candidateheading", "Candidatechild"), Map.of("custom", "candidateattribute")));
         long id;
         try (var storage = SqliteStorage.open(database, root)) {
             id = file(storage);
@@ -98,7 +149,8 @@ class SqliteChunkRepositoryTest {
             var before = rows(storage.connection());
 
             try (var statement = storage.connection().createStatement()) {
-                statement.executeUpdate("CREATE TRIGGER fail_metadata BEFORE INSERT ON " + failurePoint
+                statement.executeUpdate("CREATE TRIGGER fail_metadata BEFORE INSERT ON "
+                        + failurePoint
                         + " BEGIN SELECT RAISE(ABORT, 'injected'); END;");
                 assertThrows(SQLException.class, () -> storage.chunks().insert(id, candidate));
                 assertEquals(List.of(retained), storage.chunks().findByFileId(id));
@@ -110,10 +162,13 @@ class SqliteChunkRepositoryTest {
                 assertConsistent(storage.connection());
                 statement.executeUpdate("DROP TRIGGER fail_metadata");
             }
-
         }
         try (var storage = SqliteStorage.open(database, root)) {
-            assertEquals(List.of(chunk(0, META)), storage.chunks().findByFileId(id).stream().map(value -> value.chunk()).toList());
+            assertEquals(
+                    List.of(chunk(0, META)),
+                    storage.chunks().findByFileId(id).stream()
+                            .map(value -> value.chunk())
+                            .toList());
             assertMatches(storage.connection(), "candidatebody OR candidateheading OR candidatechild");
             assertConsistent(storage.connection());
             var saved = storage.chunks().insert(id, candidate);
@@ -125,11 +180,23 @@ class SqliteChunkRepositoryTest {
         }
         try (var storage = SqliteStorage.open(database, root)) {
             var saved = storage.chunks().findByFileId(id);
-            assertEquals(List.of(chunk(0, META), candidate), saved.stream().map(value -> value.chunk()).toList());
+            assertEquals(
+                    List.of(chunk(0, META), candidate),
+                    saved.stream().map(value -> value.chunk()).toList());
             assertMatches(storage.connection(), "content: son", saved.getFirst().id());
-            assertMatches(storage.connection(), "content: candidatebody", saved.getLast().id());
-            assertMatches(storage.connection(), "headings: \"candidateheading candidatechild\"", saved.getLast().id());
-            assertMatches(storage.connection(), "source_path: docs", saved.getFirst().id(), saved.getLast().id());
+            assertMatches(
+                    storage.connection(),
+                    "content: candidatebody",
+                    saved.getLast().id());
+            assertMatches(
+                    storage.connection(),
+                    "headings: \"candidateheading candidatechild\"",
+                    saved.getLast().id());
+            assertMatches(
+                    storage.connection(),
+                    "source_path: docs",
+                    saved.getFirst().id(),
+                    saved.getLast().id());
             assertConsistent(storage.connection());
         }
     }
@@ -163,9 +230,19 @@ class SqliteChunkRepositoryTest {
         try (var storage = SqliteStorage.open(database, root)) {
             id = file(storage);
             var saved = storage.chunks().insert(id, chunk(0, META));
-            var other = storage.files().insert(Path.of("retained.md"), DocumentType.MARKDOWN, ContentHash.sha256(new byte[0]));
-            retainedId = storage.chunks().insert(other.id(), new Chunk(other.sourcePath(), other.documentType(),
-                    0, "retainedbody", new LineRange(1, 1), new ChunkMetadata(List.of("Retainedheading"), Map.of()))).id();
+            var other = storage.files()
+                    .insert(Path.of("retained.md"), DocumentType.MARKDOWN, ContentHash.sha256(new byte[0]));
+            retainedId = storage.chunks()
+                    .insert(
+                            other.id(),
+                            new Chunk(
+                                    other.sourcePath(),
+                                    other.documentType(),
+                                    0,
+                                    "retainedbody",
+                                    new LineRange(1, 1),
+                                    new ChunkMetadata(List.of("Retainedheading"), Map.of())))
+                    .id();
             var before = rows(storage.connection());
             storage.connection().setAutoCommit(false);
             assertEquals(1, storage.chunks().deleteByFileId(id));
@@ -184,7 +261,9 @@ class SqliteChunkRepositoryTest {
         }
         try (var storage = SqliteStorage.open(database, root)) {
             var chunks = storage.chunks().findByFileId(id);
-            assertEquals(commit ? List.of() : List.of(chunk(0, META)), chunks.stream().map(value -> value.chunk()).toList());
+            assertEquals(
+                    commit ? List.of() : List.of(chunk(0, META)),
+                    chunks.stream().map(value -> value.chunk()).toList());
             long[] ids = chunks.stream().mapToLong(value -> value.id()).toArray();
             assertMatches(storage.connection(), "content: son", ids);
             assertMatches(storage.connection(), "headings: başlık", ids);
@@ -207,9 +286,19 @@ class SqliteChunkRepositoryTest {
             chunkId = storage.chunks().insert(fileId, chunk(0, META)).id();
             before = rows(storage.connection());
             execute(storage.connection(), "UPDATE chunks SET start_line = 10, end_line = 12 WHERE id = ?", chunkId);
-            execute(storage.connection(), "UPDATE chunk_attributes SET value = 'attributeonlytoken' WHERE chunk_id = ? AND name = 'custom'", chunkId);
-            execute(storage.connection(), "UPDATE chunk_attributes SET value = '30' WHERE chunk_id = ? AND name = 'startOffset'", chunkId);
-            execute(storage.connection(), "UPDATE chunk_attributes SET value = '40' WHERE chunk_id = ? AND name = 'endOffset'", chunkId);
+            execute(
+                    storage.connection(),
+                    "UPDATE chunk_attributes SET value = 'attributeonlytoken' WHERE chunk_id = ? AND name ="
+                            + " 'custom'",
+                    chunkId);
+            execute(
+                    storage.connection(),
+                    "UPDATE chunk_attributes SET value = '30' WHERE chunk_id = ? AND name = 'startOffset'",
+                    chunkId);
+            execute(
+                    storage.connection(),
+                    "UPDATE chunk_attributes SET value = '40' WHERE chunk_id = ? AND name = 'endOffset'",
+                    chunkId);
             assertEquals(before, rows(storage.connection()));
             assertMatches(storage.connection(), "attributeonlytoken");
             assertConsistent(storage.connection());
@@ -248,20 +337,29 @@ class SqliteChunkRepositoryTest {
     void isolatesFilesAndHandlesEmptyOrMissingFiles() throws Exception {
         try (var storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             long id = file(storage);
-            long other = storage.files().insert(Path.of("other.md"), DocumentType.MARKDOWN, ContentHash.sha256(new byte[0])).id();
+            long other = storage.files()
+                    .insert(Path.of("other.md"), DocumentType.MARKDOWN, ContentHash.sha256(new byte[0]))
+                    .id();
             storage.chunks().insert(id, chunk(0, META));
             assertTrue(storage.chunks().findByFileId(other).isEmpty());
             assertTrue(storage.chunks().findByFileId(999).isEmpty());
             assertEquals(0, storage.chunks().deleteByFileId(other));
             assertEquals(1, storage.chunks().findByFileId(id).size());
             assertThrows(IllegalArgumentException.class, () -> storage.chunks().findByFileId(0));
-            assertThrows(IllegalArgumentException.class, () -> storage.chunks().insert(id,
-                    new Chunk(SOURCE, DocumentType.MARKDOWN, 1, "text", new SourceLocation() { }, META)));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> storage.chunks()
+                            .insert(
+                                    id,
+                                    new Chunk(
+                                            SOURCE, DocumentType.MARKDOWN, 1, "text", new SourceLocation() {}, META)));
         }
     }
 
     private static long file(SqliteStorage storage) throws SQLException {
-        return storage.files().insert(SOURCE, DocumentType.MARKDOWN, ContentHash.sha256(new byte[0])).id();
+        return storage.files()
+                .insert(SOURCE, DocumentType.MARKDOWN, ContentHash.sha256(new byte[0]))
+                .id();
     }
 
     private static Chunk chunk(int index, ChunkMetadata metadata) {

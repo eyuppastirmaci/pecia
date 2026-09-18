@@ -6,7 +6,6 @@ import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -14,11 +13,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+/** Coordinates project discovery and per-file extraction, chunking, and storage replacement. */
 public final class IndexService {
 
     private final ProjectContextResolver contextResolver;
     private final StorageOpener storageOpener;
 
+    /** Creates an indexing service that opens SQLite storage for each resolved project. */
     public IndexService(PeciaConfigLoader configLoader) {
         this(configLoader, context -> SqliteStorage.open(context.databasePath(), context.projectRoot()));
     }
@@ -29,12 +30,15 @@ public final class IndexService {
     }
 
     /**
-     * Discovers candidate files using project configuration without processing their contents or writing index data.
+     * Discovers candidate files using project configuration without processing their contents or
+     * writing index data.
      *
      * @param target directory whose descendants are scanned
-     * @return the normalized absolute target, loaded configuration, and target-relative files with recoverable scan issues
+     * @return the normalized absolute target, loaded configuration, and target-relative files with
+     *     recoverable scan issues
      * @throws NullPointerException if target is null
-     * @throws IOException if configuration cannot be read, the target is invalid, or traversal cannot start
+     * @throws IOException if configuration cannot be read, the target is invalid, or traversal cannot
+     *     start
      * @throws IllegalArgumentException if configuration or glob patterns are invalid
      */
     public IndexPreview preview(Path target) throws IOException {
@@ -46,14 +50,17 @@ public final class IndexService {
 
     /**
      * Indexes admitted files in deterministic order, atomically replacing each file independently.
-     * Every candidate is reprocessed; missing or excluded old records are not deleted.
-     * Content rejection/read errors retain old data and produce a PARTIAL result; storage failures abort.
-     * A valid empty directory creates a queryable empty index. This service owns and closes storage.
+     * Every candidate is reprocessed; missing or excluded old records are not deleted. Content
+     * rejection/read errors retain old data and produce a PARTIAL result; storage failures abort. A
+     * valid empty directory creates a queryable empty index. This service owns and closes storage.
      *
-     * @throws IOException if target/configuration resolution or initial discovery fails, before storage is opened
-     * @throws IllegalArgumentException if configuration, paths, globs or tokenizer budgets are invalid
+     * @throws IOException if target/configuration resolution or initial discovery fails, before
+     *     storage is opened
+     * @throws IllegalArgumentException if configuration, paths, globs or tokenizer budgets are
+     *     invalid
      * @throws NullPointerException if target is null
-     * @throws IndexException if discovery is incomplete or storage fails; includes completed work and the cause
+     * @throws IndexException if discovery is incomplete or storage fails; includes completed work and
+     *     the cause
      */
     public IndexResult index(Path target) throws IOException, IndexException {
         ProjectContext context = contextResolver.resolve(target);
@@ -65,20 +72,17 @@ public final class IndexService {
     }
 
     private void requireCompleteScan(ProjectContext context, WalkResult scanResult) throws IndexException {
-
         if (scanResult.complete()) {
-
             return;
         }
 
-        IndexResult result = new IndexResult(context, IndexResult.Status.INCOMPLETE_SCAN,
-                                             scanResult.files().size(), 0, 0, List.of());
+        IndexResult result = new IndexResult(
+                context, IndexResult.Status.INCOMPLETE_SCAN, scanResult.files().size(), 0, 0, List.of());
 
         throw new IndexException("Indexing requires a complete scan", null, result, scanResult.issues());
     }
 
     private IndexResult indexFiles(ProjectContext context, List<Path> candidates) throws IndexException {
-
         // Constructing the file pipeline validates the real tokenizer budget before opening storage.
         FileIndexer indexer = new FileIndexer(context);
         int indexedFiles = 0;
@@ -86,9 +90,7 @@ public final class IndexService {
         List<IndexResult.FileIssue> issues = new ArrayList<>();
 
         try (SqliteStorage storage = storageOpener.open(context)) {
-
             for (Path candidate : candidates) {
-
                 try {
                     FileIndexer.Result result = indexer.index(candidate, storage);
                     indexedFiles++;
@@ -101,8 +103,8 @@ public final class IndexService {
                 }
             }
         } catch (IOException | SQLException failure) {
-            IndexResult result = new IndexResult(context, IndexResult.Status.FAILED,
-                                                 candidates.size(), indexedFiles, writtenChunks, issues);
+            IndexResult result = new IndexResult(
+                    context, IndexResult.Status.FAILED, candidates.size(), indexedFiles, writtenChunks, issues);
 
             throw new IndexException("Index storage operation failed", failure, result, List.of());
         }

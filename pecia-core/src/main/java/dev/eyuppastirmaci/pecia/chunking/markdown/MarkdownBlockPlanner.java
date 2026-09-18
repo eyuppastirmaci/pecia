@@ -1,8 +1,11 @@
 package dev.eyuppastirmaci.pecia.chunking.markdown;
 
 import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
-
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 import org.commonmark.node.BlockQuote;
 import org.commonmark.node.Heading;
 import org.commonmark.node.ListBlock;
@@ -11,14 +14,10 @@ import org.commonmark.node.Node;
 import org.commonmark.parser.IncludeSourceSpans;
 import org.commonmark.parser.Parser;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.List;
-
 final class MarkdownBlockPlanner {
 
-    private final Parser parser = Parser.builder().includeSourceSpans(IncludeSourceSpans.BLOCKS).build();
+    private final Parser parser =
+            Parser.builder().includeSourceSpans(IncludeSourceSpans.BLOCKS).build();
     private final TokenCounter tokenCounter;
     private final int contentBudget;
 
@@ -27,24 +26,28 @@ final class MarkdownBlockPlanner {
         this.tokenCounter = tokenCounter;
 
         if (maxTokens <= identity.specialTokenCount() || maxTokens > identity.maxInputTokens()) {
-            throw new IllegalArgumentException("maxTokens must be greater than " + identity.specialTokenCount()
-                    + " and at most " + identity.maxInputTokens() + ", including special tokens");
+            throw new IllegalArgumentException("maxTokens must be greater than "
+                    + identity.specialTokenCount()
+                    + " and at most "
+                    + identity.maxInputTokens()
+                    + ", including special tokens");
         }
 
         contentBudget = maxTokens - identity.specialTokenCount();
     }
 
-    /* Packs intact top-level blocks within the token budget and flags oversized single blocks for later splitting. */
+    /**
+     * Packs intact top-level blocks within the token budget and flags oversized single blocks for
+     * later splitting.
+     */
     List<MarkdownBlockGroup> plan(String text) {
         return plan(text, false);
     }
 
-    /* Refines oversized containers at item and child-block boundaries while leaving oversized leaves for text fallback. */
-    List<MarkdownBlockGroup> planWithContainerSplitting(String text) {
-        return plan(text, true);
-    }
-
-    /* Counts exact source slices while optionally refining containers without reparsing fragments outside their original context. */
+    /**
+     * Counts exact source slices while optionally refining containers without reparsing fragments
+     * outside their original context.
+     */
     private List<MarkdownBlockGroup> plan(String text, boolean splitContainers) {
         if (SourceText.skipWhitespace(text, 0) == text.length()) {
             return List.of();
@@ -56,7 +59,8 @@ final class MarkdownBlockPlanner {
         int groupStart = 0;
         int blockStart = 0;
 
-        // Whole top-level blocks are preferred; only oversized containers are eligible for structural refinement.
+        // Whole top-level blocks are preferred; only oversized containers are eligible for structural
+        // refinement.
         for (int index = 0; index < blocks.size(); index++) {
             Node block = blocks.get(index);
             int blockEnd = index + 1 == blocks.size() ? text.length() : lineStart(blocks.get(index + 1));
@@ -82,13 +86,25 @@ final class MarkdownBlockPlanner {
         }
 
         if (groupStart < text.length()) {
-            groups.add(new MarkdownBlockGroup(groupStart, text.length(), exceedsBudget(text, groupStart, text.length())));
+            groups.add(
+                    new MarkdownBlockGroup(groupStart, text.length(), exceedsBudget(text, groupStart, text.length())));
         }
 
         return List.copyOf(groups);
     }
 
-    /* Walks oversized containers iteratively so fitting nested blocks stay intact and original list or quote markers are retained. */
+    /**
+     * Refines oversized containers at item and child-block boundaries while leaving oversized leaves
+     * for text fallback.
+     */
+    List<MarkdownBlockGroup> planWithContainerSplitting(String text) {
+        return plan(text, true);
+    }
+
+    /**
+     * Walks oversized containers iteratively so fitting nested blocks stay intact and original list
+     * or quote markers are retained.
+     */
     private void splitContainer(String text, Node block, int start, int end, List<MarkdownBlockGroup> groups) {
         Deque<SourceBlock> pending = new ArrayDeque<>();
         pending.push(new SourceBlock(block, start, end));
@@ -113,7 +129,8 @@ final class MarkdownBlockPlanner {
                 continue;
             }
 
-            // Reverse insertion preserves source order while each first child inherits its container's original prefix.
+            // Reverse insertion preserves source order while each first child inherits its container's
+            // original prefix.
             for (int index = children.size() - 1; index >= 0; index--) {
                 Node child = children.get(index);
                 int childStart = index == 0 ? current.start() : lineStart(child);
@@ -123,7 +140,10 @@ final class MarkdownBlockPlanner {
         }
     }
 
-    /* Omits whitespace-only parser nodes from split boundaries without removing their characters from the emitted source ranges. */
+    /**
+     * Omits whitespace-only parser nodes from split boundaries without removing their characters from
+     * the emitted source ranges.
+     */
     private static List<Node> contentChildren(String text, Node parent) {
         List<Node> children = new ArrayList<>();
 
@@ -144,13 +164,15 @@ final class MarkdownBlockPlanner {
         return tokenCounter.count(text.substring(start, end)) > contentBudget;
     }
 
-    /* Includes the next block's indentation while leaving inter-block whitespace attached to the preceding block. */
+    /**
+     * Includes the next block's indentation while leaving inter-block whitespace attached to the
+     * preceding block.
+     */
     private static int lineStart(Node block) {
         var span = block.getSourceSpans().getFirst();
 
         return span.getInputIndex() - span.getColumnIndex();
     }
 
-    private record SourceBlock(Node node, int start, int end) {
-    }
+    private record SourceBlock(Node node, int start, int end) {}
 }

@@ -10,6 +10,7 @@ public record ContentHash(String value) {
 
     private static final int HEX_LENGTH = 64;
 
+    /** Rejects values that are not lowercase, 64-character hexadecimal digests. */
     public ContentHash {
         if (value.length() != HEX_LENGTH || !value.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("value must be a lowercase 64-character SHA-256 digest");
@@ -32,7 +33,6 @@ public record ContentHash(String value) {
 
             return new ContentHash(HexFormat.of().formatHex(digest.digest(bytes)));
         } catch (NoSuchAlgorithmException impossible) {
-
             throw new IllegalStateException("SHA-256 is unavailable in this Java runtime", impossible);
         }
     }

@@ -1,12 +1,11 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.NullSource;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.sqlite.JDBC;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -14,8 +13,13 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.sqlite.JDBC;
 
 class SqliteFtsSupportTest {
     @TempDir
@@ -27,7 +31,9 @@ class SqliteFtsSupportTest {
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             Connection connection = storage.connection();
-            execute(connection, "INSERT INTO files VALUES (1, 'docs/original.md', 'MARKDOWN', '" + "a".repeat(64) + "')");
+            execute(
+                    connection,
+                    "INSERT INTO files VALUES (1, 'docs/original.md', 'MARKDOWN', '" + "a".repeat(64) + "')");
             execute(connection, "INSERT INTO chunks VALUES (1, 1, 0, 'Original İstanbul content', 1, 2)");
             execute(connection, "INSERT INTO chunk_headings VALUES (1, 0, 'Original heading')");
             execute(connection, "INSERT INTO chunk_attributes VALUES (1, 'startOffset', '0')");
@@ -59,7 +65,8 @@ class SqliteFtsSupportTest {
             assertEquals(2, scalar(storage.connection(), "PRAGMA user_version"));
             assertEquals(1, storage.chunks().findByFileId(1).size());
             List<String> mainSchema = schema(storage.connection(), "main");
-            for (String table : List.of("files", "chunks", "chunk_headings", "chunk_attributes", "index_metadata", "chunks_fts")) {
+            for (String table :
+                    List.of("files", "chunks", "chunk_headings", "chunk_attributes", "index_metadata", "chunks_fts")) {
                 assertTrue(mainSchema.stream().anyMatch(value -> value.startsWith("table|" + table + "|")), table);
             }
             SqliteFtsTestSupport.assertMatches(storage.connection(), "headings: heading", 1);
@@ -71,7 +78,8 @@ class SqliteFtsSupportTest {
     void preservesOuterTransactionsAndSavepointsOnSuccessAndFailure(String mode, boolean fail) throws Exception {
         Path database = root.resolve("transaction.db");
 
-        try (Connection connection = raw(database); Connection observer = raw(database)) {
+        try (Connection connection = raw(database);
+                Connection observer = raw(database)) {
             execute(connection, "CREATE TABLE caller_data(value TEXT)");
 
             if (mode.equals("jdbc")) {
@@ -87,8 +95,9 @@ class SqliteFtsSupportTest {
 
             if (fail) {
                 SQLException original = new SQLException("injected probe write failure", "test", 7);
-                SQLException failure = assertThrows(SQLException.class, () -> SqliteFtsSupport.verify(connection,
-                        (owned, table) -> {
+                SQLException failure = assertThrows(
+                        SQLException.class,
+                        () -> SqliteFtsSupport.verify(connection, (owned, table) -> {
                             createAndWriteTempFts(owned, table);
                             throw original;
                         }));
@@ -102,7 +111,8 @@ class SqliteFtsSupportTest {
             assertEquals(autoCommit, connection.getAutoCommit());
             assertEquals(List.of(), schema(connection, "temp"));
             assertEquals(2, scalar(connection, "SELECT count(*) FROM caller_data"));
-            assertEquals(0, scalar(observer, "SELECT count(*) FROM caller_data"), "The probe must not commit caller writes");
+            assertEquals(
+                    0, scalar(observer, "SELECT count(*) FROM caller_data"), "The probe must not commit caller writes");
             execute(connection, "ROLLBACK TO caller_boundary");
             execute(connection, "RELEASE caller_boundary");
             assertEquals(1, scalar(connection, "SELECT count(*) FROM caller_data"));
@@ -118,12 +128,16 @@ class SqliteFtsSupportTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"no such module: fts5", "[SQLITE_ERROR] SQL error or missing database (no such module: fts5)"})
+    @ValueSource(
+            strings = {"no such module: fts5", "[SQLITE_ERROR] SQL error or missing database (no such module: fts5)"})
     void reportsMissingFts5WithTheOriginalCauseAndAllowsRetry(String message) throws Exception {
         try (Connection connection = raw(root.resolve("missing.db"))) {
             SQLException original = new SQLException(message, "runtime", 1);
-            SQLException failure = assertThrows(SQLException.class,
-                    () -> SqliteFtsSupport.verify(connection, (owned, table) -> { throw original; }));
+            SQLException failure = assertThrows(
+                    SQLException.class,
+                    () -> SqliteFtsSupport.verify(connection, (owned, table) -> {
+                        throw original;
+                    }));
 
             assertTrue(failure.getMessage().contains("FTS5 is unavailable"));
             assertTrue(failure.getMessage().contains("SQLite JDBC runtime"));
@@ -140,39 +154,53 @@ class SqliteFtsSupportTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void permitsSubsequentMainSchemaCreationInTheSameTransactionAfterSuccessOrFailure(boolean failProbe) throws Exception {
+    void permitsSubsequentMainSchemaCreationInTheSameTransactionAfterSuccessOrFailure(boolean failProbe)
+            throws Exception {
         try (Connection connection = raw(root.resolve("schema-after-probe.db"))) {
             execute(connection, "BEGIN IMMEDIATE");
             if (failProbe) {
                 SQLException original = new SQLException("injected failure after temp virtual table creation");
-                assertSame(original, assertThrows(SQLException.class, () -> SqliteFtsSupport.verify(connection,
-                        (owned, table) -> {
-                            createAndWriteTempFts(owned, table);
-                            throw original;
-                        })));
+                assertSame(
+                        original,
+                        assertThrows(
+                                SQLException.class,
+                                () -> SqliteFtsSupport.verify(connection, (owned, table) -> {
+                                    createAndWriteTempFts(owned, table);
+                                    throw original;
+                                })));
             } else {
                 SqliteFtsSupport.verify(connection);
             }
 
-            execute(connection, "CREATE TABLE later_source(value TEXT); CREATE VIRTUAL TABLE later_fts USING fts5(content);");
+            execute(
+                    connection,
+                    "CREATE TABLE later_source(value TEXT); CREATE VIRTUAL TABLE later_fts USING" + " fts5(content);");
             execute(connection, "INSERT INTO later_source VALUES ('later'); INSERT INTO later_fts VALUES ('later');");
             assertEquals(1, scalar(connection, "SELECT count(*) FROM later_fts WHERE later_fts MATCH 'later'"));
             assertEquals(List.of(), schema(connection, "temp"));
             execute(connection, "ROLLBACK");
-            assertEquals(List.of(), schema(connection, "main"), "The probe must leave the outer transaction rollbackable");
+            assertEquals(
+                    List.of(), schema(connection, "main"), "The probe must leave the outer transaction rollbackable");
         }
     }
 
     @ParameterizedTest
     @NullSource
-    @ValueSource(strings = {"database is locked", "no such module: fts50", "no such module: another",
-            "[SQLITE_ERROR] SQL error or missing database (no such module: fts50)",
-            "no such tokenizer: unicode61", "fts5: syntax error near MATCH"})
+    @ValueSource(
+            strings = {
+                "database is locked",
+                "no such module: fts50",
+                "no such module: another",
+                "[SQLITE_ERROR] SQL error or missing database (no such module: fts50)",
+                "no such tokenizer: unicode61",
+                "fts5: syntax error near MATCH"
+            })
     void preservesUnrelatedSqlFailuresAndCleansPartiallyCreatedTempObjects(String message) throws Exception {
         try (Connection connection = raw(root.resolve("failure.db"))) {
             SQLException original = new SQLException(message, "other", 5);
-            SQLException failure = assertThrows(SQLException.class, () -> SqliteFtsSupport.verify(connection,
-                    (owned, table) -> {
+            SQLException failure = assertThrows(
+                    SQLException.class,
+                    () -> SqliteFtsSupport.verify(connection, (owned, table) -> {
                         createAndWriteTempFts(owned, table);
                         throw original;
                     }));
@@ -190,8 +218,9 @@ class SqliteFtsSupportTest {
     void cleansTempObjectsAfterAnUncheckedFailure() throws Exception {
         try (Connection connection = raw(root.resolve("unchecked.db"))) {
             RuntimeException original = new IllegalStateException("injected unchecked failure");
-            RuntimeException failure = assertThrows(IllegalStateException.class, () -> SqliteFtsSupport.verify(connection,
-                    (owned, table) -> {
+            RuntimeException failure = assertThrows(
+                    IllegalStateException.class,
+                    () -> SqliteFtsSupport.verify(connection, (owned, table) -> {
                         createAndWriteTempFts(owned, table);
                         throw original;
                     }));
@@ -207,10 +236,12 @@ class SqliteFtsSupportTest {
         try (Connection connection = raw(root.resolve("rollback.db"))) {
             execute(connection, "CREATE TABLE unique_values(value TEXT UNIQUE)");
             execute(connection, "INSERT INTO unique_values VALUES ('duplicate')");
-            SQLException failure = assertThrows(SQLException.class, () -> SqliteFtsSupport.verify(connection,
-                    (owned, table) -> {
+            SQLException failure = assertThrows(
+                    SQLException.class,
+                    () -> SqliteFtsSupport.verify(connection, (owned, table) -> {
                         createAndWriteTempFts(owned, table);
-                        // ROLLBACK conflict handling removes our savepoint before the helper can clean it up.
+                        // ROLLBACK conflict handling removes our savepoint before the helper can
+                        // clean it up.
                         execute(owned, "INSERT OR ROLLBACK INTO unique_values VALUES ('duplicate')");
                     }));
 
@@ -227,16 +258,23 @@ class SqliteFtsSupportTest {
     void doesNotAttemptCleanupWhenTheConnectionIsAlreadyClosed() throws Exception {
         Connection connection = raw(root.resolve("closed.db"));
         connection.close();
-        SQLException failure = assertThrows(SQLException.class, () -> SqliteFtsSupport.verify(connection,
-                (owned, table) -> fail("The probe must not run without a savepoint")));
+        SQLException failure = assertThrows(
+                SQLException.class,
+                () -> SqliteFtsSupport.verify(
+                        connection, (owned, table) -> fail("The probe must not run without a savepoint")));
 
         assertEquals(0, failure.getSuppressed().length);
         assertFalse(failure.getMessage().contains("FTS5 is unavailable"));
     }
 
     private static void createAndWriteTempFts(Connection connection, String table) throws SQLException {
-        execute(connection, "CREATE VIRTUAL TABLE temp." + table
-                + " USING fts5(content, tokenize = '" + SqliteFtsSupport.TOKENIZER + "')");
+        execute(
+                connection,
+                "CREATE VIRTUAL TABLE temp."
+                        + table
+                        + " USING fts5(content, tokenize = '"
+                        + SqliteFtsSupport.TOKENIZER
+                        + "')");
         execute(connection, "INSERT INTO temp." + table + " VALUES ('partially written')");
     }
 
@@ -244,7 +282,8 @@ class SqliteFtsSupportTest {
         List<String> result = new ArrayList<>();
 
         try (var statement = connection.createStatement();
-             var rows = statement.executeQuery("SELECT type, name, sql FROM " + schema + ".sqlite_schema ORDER BY name")) {
+                var rows = statement.executeQuery(
+                        "SELECT type, name, sql FROM " + schema + ".sqlite_schema ORDER BY name")) {
             while (rows.next()) {
                 result.add(rows.getString(1) + "|" + rows.getString(2) + "|" + rows.getString(3));
             }
@@ -264,7 +303,8 @@ class SqliteFtsSupportTest {
     }
 
     private static int scalar(Connection connection, String sql) throws SQLException {
-        try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
+        try (var statement = connection.createStatement();
+                var rows = statement.executeQuery(sql)) {
             assertTrue(rows.next());
             return rows.getInt(1);
         }

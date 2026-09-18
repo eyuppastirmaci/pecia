@@ -1,5 +1,9 @@
 package dev.eyuppastirmaci.pecia.chunking.markdown;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 import org.commonmark.node.Code;
 import org.commonmark.node.HardLineBreak;
 import org.commonmark.node.Heading;
@@ -9,16 +13,15 @@ import org.commonmark.node.Text;
 import org.commonmark.parser.IncludeSourceSpans;
 import org.commonmark.parser.Parser;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.List;
-
 final class MarkdownSectionParser {
 
-    private final Parser parser = Parser.builder().includeSourceSpans(IncludeSourceSpans.BLOCKS).build();
+    private final Parser parser =
+            Parser.builder().includeSourceSpans(IncludeSourceSpans.BLOCKS).build();
 
-    /* Partitions the unchanged source at document-level headings, carrying the active hierarchy into each section. */
+    /**
+     * Partitions the unchanged source at document-level headings, carrying the active hierarchy into
+     * each section.
+     */
     List<MarkdownSection> parse(String text) {
         Node document = parser.parse(text);
         List<MarkdownSection> sections = new ArrayList<>();
@@ -26,7 +29,8 @@ final class MarkdownSectionParser {
         List<String> headingPath = List.of();
         int start = 0;
 
-        // Only direct children define document sections; headings inside lists and quotes remain local to those blocks.
+        // Only direct children define document sections; headings inside lists and quotes remain local
+        // to those blocks.
         for (Node block = document.getFirstChild(); block != null; block = block.getNext()) {
             if (!(block instanceof Heading heading)) {
                 continue;
@@ -65,7 +69,10 @@ final class MarkdownSectionParser {
         return List.copyOf(sections);
     }
 
-    /* Collects visible inline text without link destinations or HTML tags using iterative traversal to avoid deep recursion. */
+    /**
+     * Collects visible inline text without link destinations or HTML tags using iterative traversal
+     * to avoid deep recursion.
+     */
     private static String titleOf(Heading heading) {
         StringBuilder title = new StringBuilder();
         Deque<Node> pending = new ArrayDeque<>();

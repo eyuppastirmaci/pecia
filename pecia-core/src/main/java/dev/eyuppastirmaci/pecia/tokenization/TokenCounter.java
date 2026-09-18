@@ -28,7 +28,6 @@ public interface TokenCounter {
      * @throws ArithmeticException if the token count exceeds the integer range
      */
     default int countModelInput(String text) {
-
         return Math.addExact(count(text), identity().specialTokenCount());
     }
 
@@ -41,7 +40,6 @@ public interface TokenCounter {
      * @throws ArithmeticException if the token count exceeds the integer range
      */
     default boolean fitsModelInput(String text) {
-
         return countModelInput(text) <= identity().maxInputTokens();
     }
 }

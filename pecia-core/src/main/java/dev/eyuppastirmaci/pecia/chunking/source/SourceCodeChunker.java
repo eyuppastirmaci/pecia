@@ -4,26 +4,34 @@ import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
 import dev.eyuppastirmaci.pecia.chunking.internal.ChunkingBudget;
 import dev.eyuppastirmaci.pecia.chunking.internal.SourceChunkFactory;
 import dev.eyuppastirmaci.pecia.chunking.internal.SourceText;
-
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
-
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 import java.util.function.IntUnaryOperator;
 
+/** Chunks source code using line and indentation boundaries without language-specific parsing. */
 public final class SourceCodeChunker implements DocumentChunker {
 
     private final TokenCounter tokenCounter;
     private final int contentBudget;
     private final int overlapTokens;
 
+    /** Creates a source chunker with no overlap; the input limit includes special tokens. */
     public SourceCodeChunker(TokenCounter tokenCounter, int maxTokens) {
         this(tokenCounter, maxTokens, 0);
     }
 
+    /**
+     * Creates a source chunker with a validated token budget and best-effort overlap.
+     *
+     * @param maxTokens model input limit including special tokens
+     * @param overlapTokens maximum shared content tokens between adjacent chunks
+     * @throws NullPointerException if the tokenizer or its identity is null
+     * @throws IllegalArgumentException if the token budget or overlap is invalid
+     */
     public SourceCodeChunker(TokenCounter tokenCounter, int maxTokens, int overlapTokens) {
         this.contentBudget = ChunkingBudget.validate(tokenCounter, maxTokens, overlapTokens);
         this.tokenCounter = tokenCounter;
@@ -31,14 +39,17 @@ public final class SourceCodeChunker implements DocumentChunker {
     }
 
     /**
-     * Splits source text at language-independent boundaries with token-bounded intra-line fallback and best-effort overlap.
+     * Splits source text at language-independent boundaries with token-bounded intra-line fallback
+     * and best-effort overlap.
      *
-     * @param document extracted document whose text, source path, type, and raw-byte content hash remain unchanged
-     * @return immutable source-ordered chunks with consecutive zero-based indices, empty heading paths, zero-based UTF-16
-     *         startOffset and exclusive endOffset attributes into the extracted text, and one-based inclusive line ranges,
-     *         or empty for whitespace-only text
+     * @param document extracted document whose text, source path, type, and raw-byte content hash
+     *     remain unchanged
+     * @return immutable source-ordered chunks with consecutive zero-based indices, empty heading
+     *     paths, zero-based UTF-16 startOffset and exclusive endOffset attributes into the extracted
+     *     text, and one-based inclusive line ranges, or empty for whitespace-only text
      * @throws NullPointerException if document is null
-     * @throws IllegalArgumentException if an indivisible source character cannot fit within the token budget
+     * @throws IllegalArgumentException if an indivisible source character cannot fit within the token
+     *     budget
      */
     @Override
     public List<Chunk> chunk(Document document) {
@@ -65,13 +76,15 @@ public final class SourceCodeChunker implements DocumentChunker {
             }
 
             // Keep trailing blank lines with the final non-blank slice after an intra-line split.
-            if (end > coveredEnd && end < text.length() && SourceText.skipWhitespace(text, end) == text.length()
+            if (end > coveredEnd
+                    && end < text.length()
+                    && SourceText.skipWhitespace(text, end) == text.length()
                     && !exceedsBudget(text, start, text.length())) {
                 end = text.length();
             }
 
-            chunks.add(SourceChunkFactory.create(document, chunks.size(), start, end, coveredEnd,
-                    offset -> boundaries.firstLineAfter(offset) + 1));
+            chunks.add(SourceChunkFactory.create(
+                    document, chunks.size(), start, end, coveredEnd, offset -> boundaries.firstLineAfter(offset) + 1));
             coveredEnd = end;
 
             if (end < text.length()) {
@@ -82,20 +95,31 @@ public final class SourceCodeChunker implements DocumentChunker {
         return List.copyOf(chunks);
     }
 
-    /* Preserves fitting lines before falling back inside the next uncovered line without choosing prose boundaries. */
-    private int findEnd(String text, SourceCodeBoundaries boundaries, SourceText words, BitSet oversizedWords,
-                        int start, int coveredEnd) {
+    /**
+     * Preserves fitting lines before falling back inside the next uncovered line without choosing
+     * prose boundaries.
+     */
+    private int findEnd(
+            String text,
+            SourceCodeBoundaries boundaries,
+            SourceText words,
+            BitSet oversizedWords,
+            int start,
+            int coveredEnd) {
         int firstContent = SourceText.skipWhitespace(text, start);
         int uncoveredLine = boundaries.firstLineAfter(coveredEnd);
         boolean atLineStart = boundaries.lineStart(uncoveredLine) == coveredEnd;
 
-        // A continued oversized line uses token windows directly instead of recounting its entire remaining suffix.
+        // A continued oversized line uses token windows directly instead of recounting its entire
+        // remaining suffix.
         if (atLineStart) {
-            int safeEnd = growEnd(text, start, boundaries.firstLineAfter(start), boundaries.lineCount() - 1,
-                    boundaries::lineEnd);
+            int safeEnd = growEnd(
+                    text, start, boundaries.firstLineAfter(start), boundaries.lineCount() - 1, boundaries::lineEnd);
 
             if (safeEnd > Math.max(firstContent, coveredEnd)) {
-                int preferred = boundaries.preferredEnd(Math.max(firstContent, coveredEnd), safeEnd).orElse(safeEnd);
+                int preferred = boundaries
+                        .preferredEnd(Math.max(firstContent, coveredEnd), safeEnd)
+                        .orElse(safeEnd);
 
                 // A shorter preferred slice may have more tokens than the verified longer slice.
                 if (preferred != safeEnd && exceedsBudget(text, start, preferred)) {
@@ -118,12 +142,14 @@ public final class SourceCodeChunker implements DocumentChunker {
         int first = words.firstWordAfter(start);
         int last = words.firstWordAfter(limit - 1);
 
-        // Already oversized units use bounded character probes rather than recounting every complete remaining suffix.
+        // Already oversized units use bounded character probes rather than recounting every complete
+        // remaining suffix.
         if (oversizedWords.get(first) && words.wordEnd(first) > firstContent) {
             int unitEnd = Math.min(limit, words.wordEnd(first));
             int end = splitOversizedUnit(text, start, start, unitEnd);
 
-            // Recheck the complete suffix before declaring failure because a longer WordPiece input can be cheaper.
+            // Recheck the complete suffix before declaring failure because a longer WordPiece input can
+            // be cheaper.
             if (end <= Math.max(firstContent, coveredEnd) && !exceedsBudget(text, start, unitEnd)) {
                 return unitEnd;
             }
@@ -146,14 +172,18 @@ public final class SourceCodeChunker implements DocumentChunker {
         return splitOversizedUnit(text, start, safeEnd, unitEnd);
     }
 
-    /* Grows and refines exactly counted source slices with bounded probes without assuming additive or monotonic token counts. */
+    /**
+     * Grows and refines exactly counted source slices with bounded probes without assuming additive
+     * or monotonic token counts.
+     */
     private int growEnd(String text, int start, int first, int last, IntUnaryOperator candidateEnd) {
         int safeEnd = start;
         int probe = first;
         int lastSafeIndex = probe - 1;
         int stride = 1;
 
-        // Growing batches avoid repeatedly counting every prefix of large regions that normalize to zero tokens.
+        // Growing batches avoid repeatedly counting every prefix of large regions that normalize to
+        // zero tokens.
         while (probe <= last) {
             int candidate = candidateEnd.applyAsInt(probe);
 
@@ -176,7 +206,8 @@ public final class SourceCodeChunker implements DocumentChunker {
         int low = lastSafeIndex + 1;
         int high = probe - 1;
 
-        // Every retained slice is counted directly; non-monotonic token counts may leave some budget unused.
+        // Every retained slice is counted directly; non-monotonic token counts may leave some budget
+        // unused.
         while (low <= high) {
             int middle = low + (high - low) / 2;
             int candidate = candidateEnd.applyAsInt(middle);
@@ -192,12 +223,18 @@ public final class SourceCodeChunker implements DocumentChunker {
         return safeEnd;
     }
 
-    /* Grows verified character windows without repeatedly rescanning prefixes that contain large zero-token regions. */
+    /**
+     * Grows verified character windows without repeatedly rescanning prefixes that contain large
+     * zero-token regions.
+     */
     private int splitOversizedUnit(String text, int start, int safeEnd, int limit) {
         return Math.max(safeEnd, growEnd(text, start, safeEnd + 1, limit, offset -> safeOffset(text, offset)));
     }
 
-    /* Prefers complete trailing lines, then word suffixes, then safe character suffixes without reusing the previous start. */
+    /**
+     * Prefers complete trailing lines, then word suffixes, then safe character suffixes without
+     * reusing the previous start.
+     */
     private int overlapStart(String text, SourceCodeBoundaries boundaries, SourceText words, int start, int end) {
         if (overlapTokens == 0) {
             return end;
@@ -206,16 +243,16 @@ public final class SourceCodeChunker implements DocumentChunker {
         int lastLine = boundaries.firstLineAfter(end - 1);
 
         if (boundaries.lineEnd(lastLine) == end) {
-            int selected = findOverlap(text, end, boundaries.firstLineAfter(start) + 1, lastLine,
-                    boundaries::lineStart);
+            int selected =
+                    findOverlap(text, end, boundaries.firstLineAfter(start) + 1, lastLine, boundaries::lineStart);
 
             if (selected < end) {
                 return selected;
             }
         }
 
-        int selected = findOverlap(text, end, words.firstWordAfter(start), words.firstWordAfter(end - 1) - 1,
-                words::wordEnd);
+        int selected =
+                findOverlap(text, end, words.firstWordAfter(start), words.firstWordAfter(end - 1) - 1, words::wordEnd);
 
         if (selected < end) {
             return selected;
@@ -224,7 +261,10 @@ public final class SourceCodeChunker implements DocumentChunker {
         return characterOverlapStart(text, start, end);
     }
 
-    /* Selects only explicitly counted suffixes, allowing less than maximal overlap when token counts are non-monotonic. */
+    /**
+     * Selects only explicitly counted suffixes, allowing less than maximal overlap when token counts
+     * are non-monotonic.
+     */
     private int findOverlap(String text, int end, int low, int high, IntUnaryOperator candidateStart) {
         int selected = end;
 
@@ -243,7 +283,10 @@ public final class SourceCodeChunker implements DocumentChunker {
         return selected;
     }
 
-    /* Searches safe suffix starts with bounded probes when a partial identifier or long line has no fitting word suffix. */
+    /**
+     * Searches safe suffix starts with bounded probes when a partial identifier or long line has no
+     * fitting word suffix.
+     */
     private int characterOverlapStart(String text, int start, int end) {
         int low = SourceText.nextOffset(text, start);
         int high = end - 1;
@@ -266,11 +309,15 @@ public final class SourceCodeChunker implements DocumentChunker {
         return selected;
     }
 
-    /* Moves an offset past a split surrogate pair or CRLF sequence while keeping all other source positions unchanged. */
+    /**
+     * Moves an offset past a split surrogate pair or CRLF sequence while keeping all other source
+     * positions unchanged.
+     */
     private static int safeOffset(String text, int offset) {
-        if (offset > 0 && offset < text.length()
+        if (offset > 0
+                && offset < text.length()
                 && (Character.isLowSurrogate(text.charAt(offset)) && Character.isHighSurrogate(text.charAt(offset - 1))
-                || text.charAt(offset) == '\n' && text.charAt(offset - 1) == '\r')) {
+                        || text.charAt(offset) == '\n' && text.charAt(offset - 1) == '\r')) {
             return offset + 1;
         }
 

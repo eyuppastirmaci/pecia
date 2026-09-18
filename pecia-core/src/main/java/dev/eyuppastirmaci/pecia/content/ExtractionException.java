@@ -9,10 +9,12 @@ public final class ExtractionException extends Exception {
     private final Reason reason;
     private final Path path;
 
+    /** Creates a classified failure without an underlying cause. */
     public ExtractionException(Reason reason, Path path, String message) {
         this(reason, path, message, null);
     }
 
+    /** Creates a failure with a non-null category and path, and an optional underlying cause. */
     public ExtractionException(Reason reason, Path path, String message, Throwable cause) {
         super(message, cause);
         this.reason = Objects.requireNonNull(reason, "reason");
@@ -25,7 +27,6 @@ public final class ExtractionException extends Exception {
      * @return the failure reason
      */
     public Reason reason() {
-
         return reason;
     }
 
@@ -35,10 +36,10 @@ public final class ExtractionException extends Exception {
      * @return the failing source path
      */
     public Path path() {
-
         return path;
     }
 
+    /** Stable categories for rejected files and extraction failures. */
     public enum Reason {
         NOT_REGULAR_FILE,
         TOO_LARGE,

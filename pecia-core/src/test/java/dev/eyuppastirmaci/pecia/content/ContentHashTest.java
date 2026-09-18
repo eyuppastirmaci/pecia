@@ -1,12 +1,11 @@
 package dev.eyuppastirmaci.pecia.content;
 
-import org.junit.jupiter.api.Test;
-
-import java.nio.charset.StandardCharsets;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.nio.charset.StandardCharsets;
+import org.junit.jupiter.api.Test;
 
 class ContentHashTest {
 

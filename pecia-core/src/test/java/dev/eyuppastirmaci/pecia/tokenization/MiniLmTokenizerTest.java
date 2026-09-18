@@ -1,14 +1,13 @@
 package dev.eyuppastirmaci.pecia.tokenization;
 
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 class MiniLmTokenizerTest {
 
@@ -22,8 +21,7 @@ class MiniLmTokenizerTest {
         assertEquals("sentence-transformers/all-MiniLM-L6-v2", identity.modelId());
         assertEquals("1110a243fdf4706b3f48f1d95db1a4f5529b4d41", identity.revision());
         assertEquals("bert-uncased-wordpiece-v1", identity.algorithm());
-        assertEquals("07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
-                identity.vocabularySha256());
+        assertEquals("07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3", identity.vocabularySha256());
         assertEquals(30_522, identity.vocabularySize());
         assertEquals(256, identity.maxInputTokens());
         assertEquals(2, identity.specialTokenCount());
@@ -33,15 +31,16 @@ class MiniLmTokenizerTest {
     void matchesPinnedReferenceWordPieceFixtures() {
         assertEquals(List.of("hello", ",", "world", "!"), tokenizer.tokenize("Hello, world!"));
         assertEquals(List.of("una", "##ffa", "##ble"), tokenizer.tokenize("unaffable"));
-        assertEquals(List.of("payment", "##val", "##ida", "##tion"),
-                tokenizer.tokenize("paymentValidation"));
+        assertEquals(List.of("payment", "##val", "##ida", "##tion"), tokenizer.tokenize("paymentValidation"));
     }
 
     @Test
     void matchesPinnedTurkishAndMarkdownReferenceFixtures() {
-        assertEquals(List.of("istanbul", "'", "da", "ode", "##me", "dog", "##ru", "##lam", "##a"),
+        assertEquals(
+                List.of("istanbul", "'", "da", "ode", "##me", "dog", "##ru", "##lam", "##a"),
                 tokenizer.tokenize("İstanbul'da ödeme doğrulama"));
-        assertEquals(List.of("#", "bas", "##l", "##ı", "##k", "ice", "##rik", "bu", "##rada", "."),
+        assertEquals(
+                List.of("#", "bas", "##l", "##ı", "##k", "ice", "##rik", "bu", "##rada", "."),
                 tokenizer.tokenize("# Başlık\n\nİçerik burada."));
     }
 

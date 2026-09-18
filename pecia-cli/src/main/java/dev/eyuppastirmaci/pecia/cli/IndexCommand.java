@@ -3,28 +3,27 @@ package dev.eyuppastirmaci.pecia.cli;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
-import dev.eyuppastirmaci.pecia.index.IndexPreview;
-import dev.eyuppastirmaci.pecia.index.IndexService;
-import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexException;
+import dev.eyuppastirmaci.pecia.index.IndexPreview;
+import dev.eyuppastirmaci.pecia.index.IndexResult;
+import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.index.WalkResult;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
-
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.Parameters;
 
+/** Builds a folder's lexical index or previews candidate discovery. */
 @Command(
         name = "index",
         description = "Builds a local lexical index from a folder of text files.",
-        mixinStandardHelpOptions = true
-)
+        mixinStandardHelpOptions = true)
 public class IndexCommand implements Callable<Integer> {
 
     @Parameters(index = "0", defaultValue = ".", description = "Folder to index (default: current directory).")
@@ -38,6 +37,7 @@ public class IndexCommand implements Callable<Integer> {
 
     private final IndexService indexService;
 
+    /** Creates a command using the supplied non-null indexing service. */
     public IndexCommand(IndexService indexService) {
         this.indexService = Objects.requireNonNull(indexService, "indexService");
     }
@@ -45,13 +45,12 @@ public class IndexCommand implements Callable<Integer> {
     /**
      * Indexes a folder or previews discovery without processing content.
      *
-     * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan or storage failure
+     * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan or
+     *     storage failure
      */
     @Override
     public Integer call() {
-
         try {
-
             if (!dryRun) {
                 IndexResult result = indexService.index(path);
                 reportIndex(result);
@@ -68,7 +67,9 @@ public class IndexCommand implements Callable<Integer> {
             }
 
             if (!result.complete()) {
-                spec.commandLine().getErr().println("pecia index: incomplete scan; listed files are only partial results");
+                spec.commandLine()
+                        .getErr()
+                        .println("pecia index: incomplete scan; listed files are only partial results");
 
                 return 1;
             }
@@ -81,7 +82,8 @@ public class IndexCommand implements Callable<Integer> {
                 spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.reason());
             }
 
-            String detail = failure.getCause() == null ? "" : ": " + failure.getCause().getMessage();
+            String detail =
+                    failure.getCause() == null ? "" : ": " + failure.getCause().getMessage();
             spec.commandLine().getErr().println("pecia index: " + failure.getMessage() + detail);
 
             return 1;
@@ -103,8 +105,14 @@ public class IndexCommand implements Callable<Integer> {
         out.println("failed: " + result.failedFiles());
 
         for (IndexResult.FileIssue issue : result.issues()) {
-            spec.commandLine().getErr().println("warning: " + FileWalker.portablePath(issue.sourcePath())
-                    + ": " + issue.reason() + ": " + issue.message());
+            spec.commandLine()
+                    .getErr()
+                    .println("warning: "
+                            + FileWalker.portablePath(issue.sourcePath())
+                            + ": "
+                            + issue.reason()
+                            + ": "
+                            + issue.message());
         }
     }
 

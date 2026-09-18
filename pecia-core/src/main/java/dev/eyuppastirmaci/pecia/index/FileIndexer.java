@@ -14,13 +14,14 @@ import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
-
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 
-/** Processes admitted discovery candidates, borrowing storage owned by the enclosing indexing run. */
+/**
+ * Processes admitted discovery candidates, borrowing storage owned by the enclosing indexing run.
+ */
 final class FileIndexer {
 
     private final ProjectContext context;
@@ -58,8 +59,8 @@ final class FileIndexer {
             throw new IllegalArgumentException("Index storage cannot be a source candidate: " + candidate);
         }
 
-        ExtractionRequest request = new ExtractionRequest(absolute, context.sourcePath(candidate),
-                                                          types.typeForCandidate(candidate));
+        ExtractionRequest request =
+                new ExtractionRequest(absolute, context.sourcePath(candidate), types.typeForCandidate(candidate));
         Document document = extraction.extract(request);
         List<Chunk> chunks = chunkers.getChunker(document).chunk(document);
         StoredFile file = storage.replaceFile(document, chunks);

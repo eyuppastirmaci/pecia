@@ -3,23 +3,25 @@ package dev.eyuppastirmaci.pecia.index;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
+/** Discovers filtered files with inherited gitignore rules without following symbolic links. */
 public final class FileWalker {
 
     private static final Set<String> ALWAYS_SKIPPED_DIRS = Set.of(".git", ".pecia");
 
     private final GlobFilter filter;
 
+    /** Creates a walker using the supplied non-null candidate filter. */
     public FileWalker(GlobFilter filter) {
         this.filter = Objects.requireNonNull(filter, "filter");
     }
@@ -74,9 +76,9 @@ public final class FileWalker {
         for (Path dir = project; !dir.equals(normalizedRoot); ) {
             validateDirectory(dir);
 
-            if (isReserved(dir) || filter.excludesDirectory(project.relativize(dir))
+            if (isReserved(dir)
+                    || filter.excludesDirectory(project.relativize(dir))
                     || gitignore.isIgnored(dir, true)) {
-
                 return new WalkResult(files, issues);
             }
 
@@ -96,10 +98,9 @@ public final class FileWalker {
 
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-
-                if (isReserved(dir) || filter.excludesDirectory(project.relativize(dir))
+                if (isReserved(dir)
+                        || filter.excludesDirectory(project.relativize(dir))
                         || gitignore.isIgnored(dir, true)) {
-
                     return FileVisitResult.SKIP_SUBTREE;
                 }
 
@@ -116,14 +117,11 @@ public final class FileWalker {
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-
                 if (!attrs.isRegularFile() || excluded.contains(file)) {
-
                     return FileVisitResult.CONTINUE;
                 }
 
                 if (gitignore.isIgnored(file, false)) {
-
                     return FileVisitResult.CONTINUE;
                 }
 
@@ -138,7 +136,6 @@ public final class FileWalker {
 
             @Override
             public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
-
                 if (file.equals(normalizedRoot)) {
                     throw exc;
                 }
@@ -167,7 +164,6 @@ public final class FileWalker {
     }
 
     private static boolean isReserved(Path path) {
-
         return path.getFileName() != null
                 && ALWAYS_SKIPPED_DIRS.contains(path.getFileName().toString().toLowerCase(Locale.ROOT));
     }
@@ -180,18 +176,20 @@ public final class FileWalker {
      * @throws NullPointerException if path is null
      */
     public static String portablePath(Path path) {
-
         // Join individual path components so display and sorting do not depend on the host separator.
-        return String.join("/", java.util.stream.StreamSupport.stream(path.spliterator(), false)
-                                                              .map(Path::toString).toList());
+        return String.join(
+                "/",
+                java.util.stream.StreamSupport.stream(path.spliterator(), false)
+                        .map(Path::toString)
+                        .toList());
     }
 
-    /* Verifies that a traversal root is a real directory reached without any symbolic-link component. */
+    /**
+     * Verifies that a traversal root is a real directory reached without symbolic-link components.
+     */
     private static void validateDirectory(Path path) throws IOException {
-
         // Reject links anywhere in the supplied path, including an intermediate linked directory.
         for (Path part = path; part != null; part = part.getParent()) {
-
             if (Files.isSymbolicLink(part)) {
                 throw new IOException("Symbolic-link targets are not supported: " + part);
             }

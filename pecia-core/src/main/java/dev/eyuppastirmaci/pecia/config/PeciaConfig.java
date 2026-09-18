@@ -2,6 +2,13 @@ package dev.eyuppastirmaci.pecia.config;
 
 import java.util.List;
 
+/**
+ * Validated settings for candidate discovery, chunking, embedding, and storage.
+ *
+ * @param include project-relative globs; an empty list accepts every candidate
+ * @param exclude project-relative globs that take precedence over includes
+ * @param storePath database path, resolved against the project root when relative
+ */
 public record PeciaConfig(
         List<String> include,
         List<String> exclude,
@@ -9,15 +16,14 @@ public record PeciaConfig(
         int maxTokens,
         int overlapTokens,
         int embedConcurrency,
-        String storePath
-) {
+        String storePath) {
 
+    /** Copies filter lists and rejects invalid limits or a blank storage path. */
     public PeciaConfig {
         include = List.copyOf(include);
         exclude = List.copyOf(exclude);
 
         if (maxFileBytes <= 0) {
-
             throw new IllegalArgumentException("index.max_file_bytes must be positive, got " + maxFileBytes);
         }
 
@@ -26,7 +32,8 @@ public record PeciaConfig(
         }
 
         if (overlapTokens < 0 || overlapTokens >= maxTokens) {
-            throw new IllegalArgumentException("chunk.overlap_tokens must be between 0 and max_tokens, got " + overlapTokens);
+            throw new IllegalArgumentException(
+                    "chunk.overlap_tokens must be between 0 and max_tokens, got " + overlapTokens);
         }
 
         if (embedConcurrency < 1) {
@@ -44,7 +51,6 @@ public record PeciaConfig(
      * @return the default configuration
      */
     public static PeciaConfig defaults() {
-
         return new PeciaConfig(
                 DefaultFileRules.includes(),
                 DefaultFileRules.excludes(),
@@ -52,7 +58,6 @@ public record PeciaConfig(
                 256,
                 32,
                 2,
-                ".pecia/index.db"
-        );
+                ".pecia/index.db");
     }
 }

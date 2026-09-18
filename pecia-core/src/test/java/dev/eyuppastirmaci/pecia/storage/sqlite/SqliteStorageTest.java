@@ -1,10 +1,10 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.sqlite.JDBC;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,8 +15,11 @@ import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.sqlite.JDBC;
 
 class SqliteStorageTest {
     @TempDir
@@ -41,7 +44,8 @@ class SqliteStorageTest {
             assertEquals(2, scalar(owned, "PRAGMA user_version"));
             assertEquals(2, scalar(owned, "SELECT index_format_version FROM index_metadata"));
             assertEquals(1, scalar(owned, "PRAGMA foreign_keys"));
-            for (String table : List.of("files", "chunks", "chunk_headings", "chunk_attributes", "index_metadata", "chunks_fts")) {
+            for (String table :
+                    List.of("files", "chunks", "chunk_headings", "chunk_attributes", "index_metadata", "chunks_fts")) {
                 try (var query = owned.prepareStatement("SELECT type FROM sqlite_schema WHERE name = ?")) {
                     query.setString(1, table);
                     try (var row = query.executeQuery()) {
@@ -71,12 +75,18 @@ class SqliteStorageTest {
             execute(connection, "INSERT INTO chunks VALUES (1, 1, 0, 'İstanbul 😀', 1, 2)");
             execute(connection, "INSERT INTO chunk_headings VALUES (1, 0, 'Başlık')");
             execute(connection, "INSERT INTO chunk_attributes VALUES (1, 'startOffset', '0')");
-            assertThrows(SQLException.class, () -> execute(connection, "INSERT INTO chunks VALUES (2, 99, 0, 'orphan', 1, 1)"));
-            assertThrows(SQLException.class, () -> execute(connection, "INSERT INTO chunks VALUES (2, 1, 0, 'duplicate', 1, 1)"));
-            assertThrows(SQLException.class, () -> execute(connection, "INSERT INTO chunks VALUES (2, 1, 1, 'bad range', 2, 1)"));
+            assertThrows(
+                    SQLException.class,
+                    () -> execute(connection, "INSERT INTO chunks VALUES (2, 99, 0, 'orphan', 1, 1)"));
+            assertThrows(
+                    SQLException.class,
+                    () -> execute(connection, "INSERT INTO chunks VALUES (2, 1, 0, 'duplicate', 1, 1)"));
+            assertThrows(
+                    SQLException.class,
+                    () -> execute(connection, "INSERT INTO chunks VALUES (2, 1, 1, 'bad range', 2, 1)"));
             execute(connection, "DELETE FROM files WHERE id = 1");
 
-            for (String table : new String[]{"chunks", "chunk_headings", "chunk_attributes"}) {
+            for (String table : new String[] {"chunks", "chunk_headings", "chunk_attributes"}) {
                 assertEquals(0, scalar(connection, "SELECT count(*) FROM " + table));
             }
         }
@@ -115,8 +125,7 @@ class SqliteStorageTest {
     void rejectsAnotherProjectAndReleasesTheFailedConnection() throws Exception {
         Path database = root.resolve("index.db");
 
-        try (SqliteStorage ignored = SqliteStorage.open(database, root)) {
-        }
+        try (SqliteStorage ignored = SqliteStorage.open(database, root)) {}
 
         Path other = Files.createDirectory(root.resolve("other"));
         byte[] before = Files.readAllBytes(database);
@@ -132,8 +141,13 @@ class SqliteStorageTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"DROP TABLE chunk_attributes", "ALTER TABLE chunks RENAME COLUMN content TO wrong",
-            "DELETE FROM index_metadata", "UPDATE index_metadata SET index_format_version = 3"})
+    @ValueSource(
+            strings = {
+                "DROP TABLE chunk_attributes",
+                "ALTER TABLE chunks RENAME COLUMN content TO wrong",
+                "DELETE FROM index_metadata",
+                "UPDATE index_metadata SET index_format_version = 3"
+            })
     void rejectsIncompleteOrIncompatibleCurrentDatabases(String damage) throws Exception {
         Path database = root.resolve("index.db");
 
@@ -151,9 +165,12 @@ class SqliteStorageTest {
         Path database = root.resolve("index.db");
 
         try (Connection connection = raw(database)) {
-            assertThrows(SQLException.class, () -> SqliteSchemaInitializer.initialize(connection,
-                    root.toRealPath().toUri().toASCIIString(),
-                    "CREATE TABLE partial(value TEXT); PRAGMA user_version = 1; INVALID SQL;"));
+            assertThrows(
+                    SQLException.class,
+                    () -> SqliteSchemaInitializer.initialize(
+                            connection,
+                            root.toRealPath().toUri().toASCIIString(),
+                            "CREATE TABLE partial(value TEXT); PRAGMA user_version = 1; INVALID SQL;"));
             assertEquals(0, scalar(connection, "PRAGMA user_version"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema"));
         }
@@ -168,8 +185,13 @@ class SqliteStorageTest {
         Path database = root.resolve("index.db");
 
         try (Connection connection = raw(database)) {
-            assertThrows(SQLException.class, () -> SqliteSchemaInitializer.initialize(connection, "root",
-                    "CREATE TABLE index_metadata(singleton INTEGER CHECK(singleton = 2), project_root_uri TEXT, index_format_version INTEGER);"));
+            assertThrows(
+                    SQLException.class,
+                    () -> SqliteSchemaInitializer.initialize(
+                            connection,
+                            "root",
+                            "CREATE TABLE index_metadata(singleton INTEGER CHECK(singleton = 2),"
+                                    + " project_root_uri TEXT, index_format_version INTEGER);"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema"));
             assertEquals(0, scalar(connection, "PRAGMA user_version"));
         }
@@ -220,7 +242,8 @@ class SqliteStorageTest {
     }
 
     private static int scalar(Connection connection, String sql) throws SQLException {
-        try (var statement = connection.createStatement(); var result = statement.executeQuery(sql)) {
+        try (var statement = connection.createStatement();
+                var result = statement.executeQuery(sql)) {
             assertTrue(result.next());
 
             return result.getInt(1);

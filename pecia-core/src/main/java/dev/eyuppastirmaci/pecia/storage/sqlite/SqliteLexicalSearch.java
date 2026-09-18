@@ -3,7 +3,6 @@ package dev.eyuppastirmaci.pecia.storage.sqlite;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.search.SearchException;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
-
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;

@@ -1,16 +1,22 @@
 package dev.eyuppastirmaci.pecia.search;
 
+/** A literal text query with a result limit from 1 through {@link #MAX_LIMIT}, inclusive. */
 public record SearchRequest(String query, int limit) {
+    /** Default maximum number of returned hits. */
     public static final int DEFAULT_LIMIT = 10;
+
+    /** Largest supported result limit. */
     public static final int MAX_LIMIT = 100;
+
+    /** Maximum query length in Unicode code points. */
     public static final int MAX_QUERY_CODE_POINTS = 4096;
 
     /**
      * Validates the request without interpreting or changing its text.
      *
      * @throws NullPointerException if query is null
-     * @throws IllegalArgumentException if query is blank, contains NUL, exceeds the length bound,
-     *                                  or limit is outside the supported range
+     * @throws IllegalArgumentException if query is blank, contains NUL, exceeds the length bound, or
+     *     limit is outside the supported range
      */
     public SearchRequest {
         if (query.codePointCount(0, query.length()) > MAX_QUERY_CODE_POINTS) {
@@ -31,8 +37,8 @@ public record SearchRequest(String query, int limit) {
     }
 
     /**
-     * Creates a request for at most {@value #DEFAULT_LIMIT} hits with the same validation as
-     * {@link #SearchRequest(String, int)}.
+     * Creates a request for at most {@value #DEFAULT_LIMIT} hits with the same validation as {@link
+     * #SearchRequest(String, int)}.
      *
      * @param query the original plain-text query
      */

@@ -1,11 +1,20 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.sqlite.JDBC;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertConsistent;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.assertMatches;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.execute;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertChunk;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.rows;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.FtsRow;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -18,9 +27,11 @@ import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-
-import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.*;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.sqlite.JDBC;
 
 class SqliteFtsMigrationTest {
     private static final String DOCUMENT_PATH = "docs/pathneedle 'quoted';-- İstanbul.md";
@@ -55,7 +66,8 @@ class SqliteFtsMigrationTest {
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             assertVersionTwo(storage.connection());
-            assertEquals(List.of(new FtsRow(19, "freshbody", "Freshheading", "docs/freshpath.md")),
+            assertEquals(
+                    List.of(new FtsRow(19, "freshbody", "Freshheading", "docs/freshpath.md")),
                     rows(storage.connection()));
             assertMatches(storage.connection(), "freshbody", 19);
         }
@@ -93,12 +105,19 @@ class SqliteFtsMigrationTest {
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             Connection connection = storage.connection();
             assertVersionTwo(connection);
-            assertEquals(before, sourceSnapshot(connection),
-                    "Migration must preserve IDs, hashes, types, text, line ranges, heading order and every attribute");
+            assertEquals(
+                    before,
+                    sourceSnapshot(connection),
+                    "Migration must preserve IDs, hashes, types, text, line ranges, heading order and every"
+                            + " attribute");
             assertEquals(EXPECTED_FTS, rows(connection));
             assertMigratedMatches(connection);
             assertConsistent(connection);
-            assertEquals(List.of(31L, 11L), storage.chunks().findByFileId(4).stream().map(chunk -> chunk.id()).toList());
+            assertEquals(
+                    List.of(31L, 11L),
+                    storage.chunks().findByFileId(4).stream()
+                            .map(chunk -> chunk.id())
+                            .toList());
             assertTrue(storage.chunks().findByFileId(42).isEmpty());
         }
 
@@ -133,7 +152,8 @@ class SqliteFtsMigrationTest {
                 assertMigratedMatches(connection);
             }
 
-            // A capability probe may write TEMP objects; reopening must not rebuild or write the main database.
+            // A capability probe may write TEMP objects; reopening must not rebuild or write the main
+            // database.
             assertArrayEquals(migratedDatabase, Files.readAllBytes(database), "Read-only reopen attempt " + attempt);
         }
     }
@@ -180,8 +200,7 @@ class SqliteFtsMigrationTest {
         byte[] originalDatabase = Files.readAllBytes(database);
 
         SQLException failure = assertThrows(SQLException.class, () -> {
-            try (SqliteStorage ignored = SqliteStorage.open(database, anotherProject)) {
-            }
+            try (SqliteStorage ignored = SqliteStorage.open(database, anotherProject)) {}
         });
         assertTrue(failure.getMessage().contains("another project root"));
         assertArrayEquals(originalDatabase, Files.readAllBytes(database));
@@ -201,9 +220,14 @@ class SqliteFtsMigrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"DROP TABLE chunk_attributes", "ALTER TABLE chunks RENAME COLUMN content TO wrong",
-            "DELETE FROM index_metadata", "UPDATE index_metadata SET index_format_version = 2",
-            "UPDATE index_metadata SET index_format_version = 99"})
+    @ValueSource(
+            strings = {
+                "DROP TABLE chunk_attributes",
+                "ALTER TABLE chunks RENAME COLUMN content TO wrong",
+                "DELETE FROM index_metadata",
+                "UPDATE index_metadata SET index_format_version = 2",
+                "UPDATE index_metadata SET index_format_version = 99"
+            })
     void refusesMalformedOrFormatIncompatibleVersionOneWithoutChangingIt(String damage) throws Exception {
         Path database = root.resolve("index.db");
         try (Connection connection = openVersionOne(root)) {
@@ -213,8 +237,7 @@ class SqliteFtsMigrationTest {
         byte[] damagedDatabase = Files.readAllBytes(database);
 
         assertThrows(SQLException.class, () -> {
-            try (SqliteStorage ignored = SqliteStorage.open(database, root)) {
-            }
+            try (SqliteStorage ignored = SqliteStorage.open(database, root)) {}
         });
 
         assertArrayEquals(damagedDatabase, Files.readAllBytes(database));
@@ -236,7 +259,8 @@ class SqliteFtsMigrationTest {
 
     private void assertSourceFilesAbsent() {
         for (String path : List.of(DOCUMENT_PATH, SOURCE_PATH, EMPTY_PATH)) {
-            assertFalse(Files.exists(root.resolve(path)), "The migration fixture deliberately has no source file: " + path);
+            assertFalse(
+                    Files.exists(root.resolve(path)), "The migration fixture deliberately has no source file: " + path);
         }
     }
 
@@ -245,8 +269,14 @@ class SqliteFtsMigrationTest {
         insertFile(connection, 9, SOURCE_PATH);
         insertFile(connection, 42, EMPTY_PATH);
         execute(connection, "UPDATE files SET content_hash = ? WHERE id = 4", "b".repeat(64));
-        execute(connection, "UPDATE files SET document_type = 'SOURCE_CODE', content_hash = ? WHERE id = 9", "c".repeat(64));
-        execute(connection, "UPDATE files SET document_type = 'PLAIN_TEXT', content_hash = ? WHERE id = 42", "d".repeat(64));
+        execute(
+                connection,
+                "UPDATE files SET document_type = 'SOURCE_CODE', content_hash = ? WHERE id = 9",
+                "c".repeat(64));
+        execute(
+                connection,
+                "UPDATE files SET document_type = 'PLAIN_TEXT', content_hash = ? WHERE id = 42",
+                "d".repeat(64));
         insertChunk(connection, 31, 4, 0, DOCUMENT_CONTENT);
         insertChunk(connection, 11, 4, 1, "Second unchanged chunk.");
         insertChunk(connection, 97, 9, 0, "class PaymentService { }");
@@ -258,7 +288,12 @@ class SqliteFtsMigrationTest {
         insertHeading(connection, 31, 1, "Repeated");
         insertHeading(connection, 97, 0, "Payment service");
         execute(connection, "INSERT INTO chunk_attributes VALUES (?, ?, ?)", 31, "startOffset", "12");
-        execute(connection, "INSERT INTO chunk_attributes VALUES (?, ?, ?)", 31, "endOffset", Integer.toString(12 + DOCUMENT_CONTENT.length()));
+        execute(
+                connection,
+                "INSERT INTO chunk_attributes VALUES (?, ?, ?)",
+                31,
+                "endOffset",
+                Integer.toString(12 + DOCUMENT_CONTENT.length()));
         execute(connection, "INSERT INTO chunk_attributes VALUES (?, ?, ?)", 31, "custom", "hiddenneedle ' \n\r\t😀");
         execute(connection, "INSERT INTO chunk_attributes VALUES (?, ?, ?)", 31, "empty", "");
         execute(connection, "INSERT INTO chunk_attributes VALUES (?, ?, ?)", 97, "language", "java");
@@ -294,7 +329,8 @@ class SqliteFtsMigrationTest {
 
     private static List<List<String>> queryRows(Connection connection, String sql) throws SQLException {
         List<List<String>> result = new ArrayList<>();
-        try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
+        try (var statement = connection.createStatement();
+                var rows = statement.executeQuery(sql)) {
             int columns = rows.getMetaData().getColumnCount();
             while (rows.next()) {
                 List<String> values = new ArrayList<>();
@@ -308,7 +344,8 @@ class SqliteFtsMigrationTest {
     }
 
     private static int scalar(Connection connection, String sql) throws SQLException {
-        try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
+        try (var statement = connection.createStatement();
+                var rows = statement.executeQuery(sql)) {
             assertTrue(rows.next());
             return rows.getInt(1);
         }

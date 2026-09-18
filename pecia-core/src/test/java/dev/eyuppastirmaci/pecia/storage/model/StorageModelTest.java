@@ -1,23 +1,22 @@
 package dev.eyuppastirmaci.pecia.storage.model;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.content.SourceLocation;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class StorageModelTest {
     private static final Path SOURCE = Path.of("docs", "İstanbul.md");
@@ -34,8 +33,8 @@ class StorageModelTest {
 
     @Test
     void retainsTheExistingChunkIncludingUnicodeOffsetsAndMetadata() {
-        ChunkMetadata metadata = new ChunkMetadata(List.of("Başlık", "Alt"),
-                Map.of("startOffset", "9", "endOffset", "14", "custom", "\"Türkçe\"\n"));
+        ChunkMetadata metadata = new ChunkMetadata(
+                List.of("Başlık", "Alt"), Map.of("startOffset", "9", "endOffset", "14", "custom", "\"Türkçe\"\n"));
         Chunk chunk = new Chunk(SOURCE, DocumentType.MARKDOWN, 2, "😀 é", new LineRange(3, 3), metadata);
         StoredChunk stored = new StoredChunk(7, 1, chunk);
 
@@ -59,13 +58,14 @@ class StorageModelTest {
     @ParameterizedTest
     @ValueSource(strings = {"", ".", "../outside.md", "docs/../file.md"})
     void sharesTheCoreSourcePathContract(String path) {
-        assertThrows(IllegalArgumentException.class,
-                () -> new StoredFile(1, Path.of(path), DocumentType.MARKDOWN, HASH));
+        assertThrows(
+                IllegalArgumentException.class, () -> new StoredFile(1, Path.of(path), DocumentType.MARKDOWN, HASH));
     }
 
     @Test
     void rejectsAbsoluteSourcePaths() {
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> new StoredFile(1, SOURCE.toAbsolutePath(), DocumentType.MARKDOWN, HASH));
     }
 
@@ -79,7 +79,8 @@ class StorageModelTest {
 
     @Test
     void rejectsLocationsTheInitialSchemaCannotRepresent() {
-        Chunk chunk = new Chunk(SOURCE, DocumentType.MARKDOWN, 0, "text", new SourceLocation() { }, ChunkMetadata.empty());
+        Chunk chunk =
+                new Chunk(SOURCE, DocumentType.MARKDOWN, 0, "text", new SourceLocation() {}, ChunkMetadata.empty());
 
         assertThrows(IllegalArgumentException.class, () -> new StoredChunk(1, 1, chunk));
     }

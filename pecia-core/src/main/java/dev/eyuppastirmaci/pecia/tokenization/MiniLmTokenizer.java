@@ -37,8 +37,7 @@ public final class MiniLmTokenizer implements TokenCounter {
             "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
             30_522,
             256,
-            2
-    );
+            2);
 
     private final Map<String, Integer> vocabulary;
 
@@ -53,7 +52,6 @@ public final class MiniLmTokenizer implements TokenCounter {
      * @throws IllegalStateException if the bundled vocabulary is missing, corrupt, or incompatible
      */
     public static MiniLmTokenizer bundled() {
-
         return Holder.INSTANCE;
     }
 
@@ -64,7 +62,6 @@ public final class MiniLmTokenizer implements TokenCounter {
      */
     @Override
     public TokenizerIdentity identity() {
-
         return IDENTITY;
     }
 
@@ -77,11 +74,13 @@ public final class MiniLmTokenizer implements TokenCounter {
      */
     @Override
     public int count(String text) {
-
         return tokenize(text).size();
     }
 
-    /* Applies BERT basic tokenization before greedily decomposing each token with the pinned vocabulary. */
+    /**
+     * Applies BERT basic tokenization before greedily decomposing each token with the pinned
+     * vocabulary.
+     */
     List<String> tokenize(String text) {
         List<String> pieces = new ArrayList<>();
 
@@ -100,7 +99,10 @@ public final class MiniLmTokenizer implements TokenCounter {
         return List.copyOf(pieces);
     }
 
-    /* Normalizes whitespace, Chinese boundaries, case, accents, and punctuation as BERT BasicTokenizer does. */
+    /**
+     * Normalizes whitespace, Chinese boundaries, case, accents, and punctuation as BERT
+     * BasicTokenizer does.
+     */
     private static List<String> basicTokenize(String text) {
         StringBuilder cleaned = new StringBuilder(text.length());
 
@@ -112,9 +114,10 @@ public final class MiniLmTokenizer implements TokenCounter {
             String normalized = Normalizer.normalize(token.toLowerCase(Locale.ROOT), Normalizer.Form.NFD);
             StringBuilder accentsRemoved = new StringBuilder(normalized.length());
 
-            normalized.codePoints()
-                      .filter(codePoint -> Character.getType(codePoint) != Character.NON_SPACING_MARK)
-                      .forEach(accentsRemoved::appendCodePoint);
+            normalized
+                    .codePoints()
+                    .filter(codePoint -> Character.getType(codePoint) != Character.NON_SPACING_MARK)
+                    .forEach(accentsRemoved::appendCodePoint);
 
             splitPunctuation(accentsRemoved.toString(), tokens);
         }
@@ -122,7 +125,10 @@ public final class MiniLmTokenizer implements TokenCounter {
         return tokens;
     }
 
-    /* Separates literal model special tokens before basic tokenization so they keep their reserved identities. */
+    /**
+     * Separates literal model special tokens before basic tokenization so they keep their reserved
+     * identities.
+     */
     private static List<String> splitSpecialTokens(String text) {
         List<String> segments = new ArrayList<>();
         int cursor = 0;
@@ -158,9 +164,7 @@ public final class MiniLmTokenizer implements TokenCounter {
     }
 
     private static void appendCleaned(StringBuilder cleaned, int codePoint) {
-
         if (codePoint == 0 || codePoint == 0xFFFD) {
-
             return;
         }
 
@@ -171,7 +175,6 @@ public final class MiniLmTokenizer implements TokenCounter {
         }
 
         if (isControl(codePoint)) {
-
             return;
         }
 
@@ -188,7 +191,6 @@ public final class MiniLmTokenizer implements TokenCounter {
         String trimmed = text.trim();
 
         if (trimmed.isEmpty()) {
-
             return List.of();
         }
 
@@ -199,9 +201,7 @@ public final class MiniLmTokenizer implements TokenCounter {
         StringBuilder current = new StringBuilder(token.length());
 
         token.codePoints().forEach(codePoint -> {
-
             if (isPunctuation(codePoint)) {
-
                 if (!current.isEmpty()) {
                     output.add(current.toString());
                     current.setLength(0);
@@ -218,7 +218,10 @@ public final class MiniLmTokenizer implements TokenCounter {
         }
     }
 
-    /* Uses longest-match-first WordPiece segmentation and replaces an indivisible token with one unknown token. */
+    /**
+     * Uses longest-match-first WordPiece segmentation and replaces an indivisible token with one
+     * unknown token.
+     */
     private void wordPiece(String token, List<String> output) {
         int[] offsets = codePointOffsets(token);
 
@@ -280,8 +283,10 @@ public final class MiniLmTokenizer implements TokenCounter {
     }
 
     private static boolean isWhitespace(int codePoint) {
-
-        return codePoint == ' ' || codePoint == '\t' || codePoint == '\n' || codePoint == '\r'
+        return codePoint == ' '
+                || codePoint == '\t'
+                || codePoint == '\n'
+                || codePoint == '\r'
                 || Character.getType(codePoint) == Character.SPACE_SEPARATOR;
     }
 
@@ -292,23 +297,25 @@ public final class MiniLmTokenizer implements TokenCounter {
     }
 
     private static boolean isPunctuation(int codePoint) {
-
-        if ((codePoint >= 33 && codePoint <= 47) || (codePoint >= 58 && codePoint <= 64)
-                || (codePoint >= 91 && codePoint <= 96) || (codePoint >= 123 && codePoint <= 126)) {
-
+        if ((codePoint >= 33 && codePoint <= 47)
+                || (codePoint >= 58 && codePoint <= 64)
+                || (codePoint >= 91 && codePoint <= 96)
+                || (codePoint >= 123 && codePoint <= 126)) {
             return true;
         }
 
         int type = Character.getType(codePoint);
 
-        return type == Character.CONNECTOR_PUNCTUATION || type == Character.DASH_PUNCTUATION
-                || type == Character.START_PUNCTUATION || type == Character.END_PUNCTUATION
-                || type == Character.INITIAL_QUOTE_PUNCTUATION || type == Character.FINAL_QUOTE_PUNCTUATION
+        return type == Character.CONNECTOR_PUNCTUATION
+                || type == Character.DASH_PUNCTUATION
+                || type == Character.START_PUNCTUATION
+                || type == Character.END_PUNCTUATION
+                || type == Character.INITIAL_QUOTE_PUNCTUATION
+                || type == Character.FINAL_QUOTE_PUNCTUATION
                 || type == Character.OTHER_PUNCTUATION;
     }
 
     private static boolean isChinese(int codePoint) {
-
         return codePoint >= 0x4E00 && codePoint <= 0x9FFF
                 || codePoint >= 0x3400 && codePoint <= 0x4DBF
                 || codePoint >= 0x20000 && codePoint <= 0x2A6DF
@@ -319,13 +326,13 @@ public final class MiniLmTokenizer implements TokenCounter {
                 || codePoint >= 0x2F800 && codePoint <= 0x2FA1F;
     }
 
-    /* Verifies the exact asset bytes and required token IDs before exposing the vocabulary to callers. */
+    /**
+     * Verifies the exact asset bytes and required token IDs before exposing the vocabulary to
+     * callers.
+     */
     private static Map<String, Integer> loadVocabulary() {
-
         try (InputStream input = MiniLmTokenizer.class.getResourceAsStream(VOCABULARY_RESOURCE)) {
-
             if (input == null) {
-
                 throw new IllegalStateException("Bundled tokenizer vocabulary is missing: " + VOCABULARY_RESOURCE);
             }
 
@@ -333,14 +340,12 @@ public final class MiniLmTokenizer implements TokenCounter {
             String actualHash = sha256(bytes);
 
             if (!IDENTITY.vocabularySha256().equals(actualHash)) {
-
                 throw new IllegalStateException("Bundled tokenizer vocabulary checksum mismatch: " + actualHash);
             }
 
             Map<String, Integer> vocabulary = parseVocabulary(bytes);
 
             if (vocabulary.size() != IDENTITY.vocabularySize()) {
-
                 throw new IllegalStateException("Bundled tokenizer vocabulary size mismatch: " + vocabulary.size());
             }
 
@@ -350,7 +355,6 @@ public final class MiniLmTokenizer implements TokenCounter {
 
             return vocabulary;
         } catch (IOException failure) {
-
             throw new IllegalStateException("Could not read bundled tokenizer vocabulary", failure);
         }
     }
@@ -358,13 +362,12 @@ public final class MiniLmTokenizer implements TokenCounter {
     private static Map<String, Integer> parseVocabulary(byte[] bytes) throws IOException {
         Map<String, Integer> vocabulary = new HashMap<>();
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                new java.io.ByteArrayInputStream(bytes), StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new java.io.ByteArrayInputStream(bytes), StandardCharsets.UTF_8))) {
             String token;
             int tokenId = 0;
 
             while ((token = reader.readLine()) != null) {
-
                 if (vocabulary.put(token, tokenId) != null) {
                     throw new IllegalStateException("Duplicate token in bundled vocabulary: " + token);
                 }
@@ -380,20 +383,16 @@ public final class MiniLmTokenizer implements TokenCounter {
         Integer actualId = vocabulary.get(token);
 
         if (actualId == null || actualId != expectedId) {
-
-            throw new IllegalStateException(
-                    "Bundled tokenizer token ID mismatch for " + token + ": " + actualId);
+            throw new IllegalStateException("Bundled tokenizer token ID mismatch for " + token + ": " + actualId);
         }
     }
 
     private static String sha256(byte[] bytes) {
-
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
             return HexFormat.of().formatHex(digest.digest(bytes));
         } catch (NoSuchAlgorithmException impossible) {
-
             throw new IllegalStateException("SHA-256 is unavailable in this Java runtime", impossible);
         }
     }
@@ -401,6 +400,6 @@ public final class MiniLmTokenizer implements TokenCounter {
     private static final class Holder {
         private static final MiniLmTokenizer INSTANCE = new MiniLmTokenizer(loadVocabulary());
 
-        private Holder() { }
+        private Holder() {}
     }
 }

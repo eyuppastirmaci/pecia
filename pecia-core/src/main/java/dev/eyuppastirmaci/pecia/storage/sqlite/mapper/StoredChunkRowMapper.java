@@ -6,14 +6,15 @@ import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqlitePath;
-
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Map;
 
+/** Maps joined SQLite chunk rows and preloaded metadata to validated stored chunks. */
 public final class StoredChunkRowMapper implements RowMapper<StoredChunk> {
     private final Map<Long, ChunkMetadata> metadata;
 
+    /** Copies chunk metadata loaded in the same snapshot as the rows to be mapped. */
     public StoredChunkRowMapper(Map<Long, ChunkMetadata> metadata) {
         this.metadata = Map.copyOf(metadata);
     }
@@ -29,9 +30,12 @@ public final class StoredChunkRowMapper implements RowMapper<StoredChunk> {
     public StoredChunk map(ResultSet row) throws SQLException {
         try {
             long id = row.getLong("id");
-            Chunk chunk = new Chunk(SqlitePath.decode(row.getString("source_path")),
-                    DocumentType.valueOf(row.getString("document_type")), row.getInt("chunk_index"),
-                    row.getString("content"), new LineRange(row.getInt("start_line"), row.getInt("end_line")),
+            Chunk chunk = new Chunk(
+                    SqlitePath.decode(row.getString("source_path")),
+                    DocumentType.valueOf(row.getString("document_type")),
+                    row.getInt("chunk_index"),
+                    row.getString("content"),
+                    new LineRange(row.getInt("start_line"), row.getInt("end_line")),
                     metadata.getOrDefault(id, ChunkMetadata.empty()));
 
             return new StoredChunk(id, row.getLong("file_id"), chunk);

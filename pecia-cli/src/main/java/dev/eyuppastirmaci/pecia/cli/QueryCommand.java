@@ -6,29 +6,31 @@ import dev.eyuppastirmaci.pecia.search.QueryException;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
-import picocli.CommandLine;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
-
 import java.io.PrintWriter;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import picocli.CommandLine;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.Parameters;
 
+/** Searches a project's existing lexical index and prints ranked source locations. */
 @Command(
         name = "query",
         description = "Searches the local index using BM25 lexical ranking.",
-        mixinStandardHelpOptions = true
-)
+        mixinStandardHelpOptions = true)
 public class QueryCommand implements Callable<Integer> {
 
     @Parameters(index = "0", description = "Plain text to search for (quote multiple words).")
     String text;
 
-    @Option(names = "--root", defaultValue = ".", description = "Project context directory (default: current directory).")
+    @Option(
+            names = "--root",
+            defaultValue = ".",
+            description = "Project context directory (default: current directory).")
     Path root;
 
     @Option(names = "--limit", description = "Maximum results (default: ${DEFAULT-VALUE}).")
@@ -39,14 +41,17 @@ public class QueryCommand implements Callable<Integer> {
 
     private final QueryService queryService;
 
+    /** Creates a command using the supplied non-null query service. */
     public QueryCommand(QueryService queryService) {
         this.queryService = Objects.requireNonNull(queryService, "queryService");
     }
 
-    /** Searches the stored index; returns 0 for successful queries and 1 for core validation/access failures. */
+    /**
+     * Searches the stored index; returns 0 for successful queries and 1 for core validation/access
+     * failures.
+     */
     @Override
     public Integer call() {
-
         try {
             List<SearchHit> hits = queryService.search(root, new SearchRequest(text, limit));
             PrintWriter out = spec.commandLine().getOut();
@@ -54,7 +59,6 @@ public class QueryCommand implements Callable<Integer> {
             if (hits.isEmpty()) {
                 out.println("No results.");
             } else {
-
                 for (SearchHit hit : hits) {
                     printHit(out, hit);
                 }
@@ -64,13 +68,15 @@ public class QueryCommand implements Callable<Integer> {
         } catch (QueryException failure) {
             PrintWriter err = spec.commandLine().getErr();
             String detail = failure.reason() == QueryException.Reason.READ_FAILED && failure.getCause() != null
-                    ? ": " + failure.getCause().getMessage() : "";
+                    ? ": " + failure.getCause().getMessage()
+                    : "";
             err.println("pecia query: " + failure.reason() + ": " + failure.getMessage() + detail);
 
             if (failure.reason() == QueryException.Reason.INDEX_NOT_FOUND
                     || failure.reason() == QueryException.Reason.MIGRATION_REQUIRED) {
-
-                err.println("Run: java -jar " + shellQuote(launcherJar()) + " index "
+                err.println("Run: java -jar "
+                        + shellQuote(launcherJar())
+                        + " index "
                         + shellQuote(root.toAbsolutePath().normalize().toString()));
             }
 
@@ -101,9 +107,12 @@ public class QueryCommand implements Callable<Integer> {
     }
 
     private static String launcherJar() {
-
         try {
-            Path source = Path.of(QueryCommand.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            Path source = Path.of(QueryCommand.class
+                    .getProtectionDomain()
+                    .getCodeSource()
+                    .getLocation()
+                    .toURI());
 
             if (source.toString().endsWith(".jar")) {
                 return source.toString();
@@ -116,7 +125,6 @@ public class QueryCommand implements Callable<Integer> {
     }
 
     private static String shellQuote(String value) {
-
         return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 }

@@ -1,15 +1,14 @@
 package dev.eyuppastirmaci.pecia.chunking.markdown;
 
-import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Random;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
+import java.util.List;
+import java.util.Random;
+import org.junit.jupiter.api.Test;
 
 class MarkdownBlockPlannerTest {
 
@@ -37,7 +36,9 @@ class MarkdownBlockPlannerTest {
 
     @Test
     void preservesOrderedNestedAndLooseListsAsSingleUnits() {
-        for (String list : List.of("1. one\n2. two\n", "- one\n  - nested\n  - child\n- two\n",
+        for (String list : List.of(
+                "1. one\n2. two\n",
+                "- one\n  - nested\n  - child\n- two\n",
                 "- first paragraph\n\n  second paragraph\n\n- next item\n")) {
             String prefix = "intro\n\n";
             String text = prefix + list;
@@ -86,8 +87,8 @@ class MarkdownBlockPlannerTest {
 
     @Test
     void preservesContainersWithEmbeddedFences() {
-        for (String container : List.of("- item\n\n  ```java\n  code\n  ```\n\n- next\n",
-                "> quoted\n>\n> ```\n> code\n> ```\n")) {
+        for (String container :
+                List.of("- item\n\n  ```java\n  code\n  ```\n\n- next\n", "> quoted\n>\n> ```\n> code\n> ```\n")) {
             String text = "intro\n\n" + container;
             List<MarkdownBlockGroup> groups = verify(text, tokenizer.countModelInput(container));
 
@@ -116,8 +117,10 @@ class MarkdownBlockPlannerTest {
 
     @Test
     void isolatesOversizedListsFencesAndParagraphsForLaterSplitting() {
-        for (String oversized : List.of("- hello world\n".repeat(100) + "\n",
-                "```\n" + "code\n".repeat(100) + "```\n\n", "word ".repeat(100) + "\n\n",
+        for (String oversized : List.of(
+                "- hello world\n".repeat(100) + "\n",
+                "```\n" + "code\n".repeat(100) + "```\n\n",
+                "word ".repeat(100) + "\n\n",
                 "    code\n".repeat(100) + "\n")) {
             String prefix = "before\n\n";
             String suffix = "after";
@@ -125,7 +128,9 @@ class MarkdownBlockPlannerTest {
             List<MarkdownBlockGroup> groups = verify(text, 16);
 
             assertEquals(List.of(prefix, oversized, suffix), slices(text, groups));
-            assertEquals(List.of(false, true, false), groups.stream().map(MarkdownBlockGroup::requiresSplit).toList());
+            assertEquals(
+                    List.of(false, true, false),
+                    groups.stream().map(MarkdownBlockGroup::requiresSplit).toList());
         }
     }
 
@@ -195,7 +200,8 @@ class MarkdownBlockPlannerTest {
         assertThrows(IllegalArgumentException.class, () -> new MarkdownBlockPlanner(tokenizer, 2));
         assertThrows(IllegalArgumentException.class, () -> new MarkdownBlockPlanner(tokenizer, 257));
         assertThrows(NullPointerException.class, () -> new MarkdownBlockPlanner(tokenizer, 256).plan(null));
-        assertThrows(UnsupportedOperationException.class, () -> verify("hello", 256).clear());
+        assertThrows(
+                UnsupportedOperationException.class, () -> verify("hello", 256).clear());
         assertThrows(IllegalArgumentException.class, () -> new MarkdownBlockGroup(-1, 1, false));
         assertThrows(IllegalArgumentException.class, () -> new MarkdownBlockGroup(1, 1, false));
         assertThrows(IllegalArgumentException.class, () -> new MarkdownBlockGroup(2, 1, false));
@@ -204,10 +210,19 @@ class MarkdownBlockPlannerTest {
     @Test
     void maintainsCoverageAndBudgetsAcrossSeededMixedBlocks() {
         Random random = new Random(92);
-        String[] blocks = {"# Title\n\n", "hello world\n\n", "- one\n- two\n\n",
-                "1. item\n2. item\n\n", "```\n# code\n\ncode\n```\n\n", "~~~\ncode\n~~~\n\n",
-                "> quoted\n\n", "[ref]: https://example.com\n\n", "<!--\n# hidden\n-->\n\n",
-                "😀 İçerik\r\n\r\n", "- hello\n".repeat(100) + "\n"};
+        String[] blocks = {
+            "# Title\n\n",
+            "hello world\n\n",
+            "- one\n- two\n\n",
+            "1. item\n2. item\n\n",
+            "```\n# code\n\ncode\n```\n\n",
+            "~~~\ncode\n~~~\n\n",
+            "> quoted\n\n",
+            "[ref]: https://example.com\n\n",
+            "<!--\n# hidden\n-->\n\n",
+            "😀 İçerik\r\n\r\n",
+            "- hello\n".repeat(100) + "\n"
+        };
 
         for (int example = 0; example < 60; example++) {
             StringBuilder text = new StringBuilder();
@@ -222,10 +237,13 @@ class MarkdownBlockPlannerTest {
 
     private static List<String> slices(String text, List<MarkdownBlockGroup> groups) {
         return groups.stream()
-                     .map(group -> text.substring(group.startOffset(), group.endOffset())).toList();
+                .map(group -> text.substring(group.startOffset(), group.endOffset()))
+                .toList();
     }
 
-    /* Reconstructs the exact source and verifies every normal group fits while every flagged group exceeds the budget. */
+    /**
+     * Reconstructs the exact source and verifies every normal group fits while every flagged group exceeds the budget.
+     */
     private List<MarkdownBlockGroup> verify(String text, int limit) {
         MarkdownBlockPlanner planner = new MarkdownBlockPlanner(tokenizer, limit);
         List<MarkdownBlockGroup> groups = planner.plan(text);

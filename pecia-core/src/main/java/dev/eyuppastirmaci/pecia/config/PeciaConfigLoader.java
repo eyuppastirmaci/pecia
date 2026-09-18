@@ -5,10 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 
+/** Loads the nearest project configuration, falling back to defaults when no file exists. */
 public final class PeciaConfigLoader {
 
     private final PeciaConfigParser parser;
 
+    /** Creates a loader using the supplied non-null parser. */
     public PeciaConfigLoader(PeciaConfigParser parser) {
         this.parser = Objects.requireNonNull(parser, "parser");
     }
@@ -17,7 +19,8 @@ public final class PeciaConfigLoader {
      * Finds and parses the nearest .pecia.toml, searching from the start directory upward.
      *
      * @param startDir directory the search starts in
-     * @return the config and its directory; without config, defaults rooted at the nearest Git root or start directory
+     * @return the config and its directory; without config, defaults rooted at the nearest Git root
+     *     or start directory
      * @throws NullPointerException if startDir is null
      * @throws IOException if a found config file cannot be read
      * @throws IllegalArgumentException if a found config file is malformed
@@ -28,7 +31,6 @@ public final class PeciaConfigLoader {
 
         // Walk up toward the filesystem root until a .pecia.toml is found.
         for (Path dir = start; dir != null; dir = dir.getParent()) {
-
             if (gitRoot == null && Files.exists(dir.resolve(".git"))) {
                 gitRoot = dir;
             }
@@ -45,6 +47,7 @@ public final class PeciaConfigLoader {
         return new LoadedConfig(PeciaConfig.defaults(), gitRoot == null ? start : gitRoot, false);
     }
 
+    /** Configuration with its project root and whether it came from a file rather than defaults. */
     public record LoadedConfig(PeciaConfig config, Path root, boolean fromFile) {
         public LoadedConfig {
             Objects.requireNonNull(config, "config");

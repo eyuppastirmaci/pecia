@@ -1,19 +1,18 @@
 package dev.eyuppastirmaci.pecia.search;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.content.SourceLocation;
-import org.junit.jupiter.api.Test;
-
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.Test;
 
 class SearchHitTest {
     private static final SearchScore SCORE = new SearchScore(-0.25, SearchScore.Kind.SQLITE_BM25);
@@ -47,8 +46,12 @@ class SearchHitTest {
 
         assertEquals(List.of("Payments", "Setup"), hit.metadata().headingPath());
         assertEquals(Map.of("language", "java"), hit.metadata().attributes());
-        assertThrows(UnsupportedOperationException.class, () -> hit.metadata().headingPath().add("changed"));
-        assertThrows(UnsupportedOperationException.class, () -> hit.metadata().attributes().put("new", "value"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> hit.metadata().headingPath().add("changed"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> hit.metadata().attributes().put("new", "value"));
     }
 
     @Test
@@ -61,45 +64,60 @@ class SearchHitTest {
 
     @Test
     void reusesExtensibleSourceLocations() {
-        record PageLocation(int page) implements SourceLocation { }
+        record PageLocation(int page) implements SourceLocation {}
         SourceLocation location = new PageLocation(2);
-        SearchHit hit = new SearchHit(1, 0, PATH, DocumentType.PLAIN_TEXT, location,
-                ChunkMetadata.empty(), SCORE, "excerpt");
+        SearchHit hit =
+                new SearchHit(1, 0, PATH, DocumentType.PLAIN_TEXT, location, ChunkMetadata.empty(), SCORE, "excerpt");
 
         assertEquals(location, hit.sourceLocation());
     }
 
     @Test
     void rejectsInvalidDatabaseIdentityAndChunkPosition() {
-        for (long id : new long[]{Long.MIN_VALUE, -1, 0}) {
-            assertThrows(IllegalArgumentException.class,
-                    () -> new SearchHit(id, 0, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text"));
+        for (long id : new long[] {Long.MIN_VALUE, -1, 0}) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new SearchHit(
+                            id, 0, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text"));
         }
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> new SearchHit(1, -1, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text"));
     }
 
     @Test
     void rejectsNonProjectRelativeOrUnnormalizedPaths() {
-        for (Path path : List.of(Path.of(""), Path.of("."), Path.of(".."), Path.of("../outside.md"),
-                Path.of("docs/../notes.md"), PATH.toAbsolutePath())) {
-            assertThrows(IllegalArgumentException.class,
-                    () -> new SearchHit(1, 0, path, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text"));
+        for (Path path : List.of(
+                Path.of(""),
+                Path.of("."),
+                Path.of(".."),
+                Path.of("../outside.md"),
+                Path.of("docs/../notes.md"),
+                PATH.toAbsolutePath())) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new SearchHit(
+                            1, 0, path, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text"));
         }
     }
 
     @Test
     void requiresAllReferenceComponents() {
-        assertThrows(NullPointerException.class,
+        assertThrows(
+                NullPointerException.class,
                 () -> new SearchHit(1, 0, null, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text"));
-        assertThrows(NullPointerException.class,
+        assertThrows(
+                NullPointerException.class,
                 () -> new SearchHit(1, 0, PATH, null, LINES, ChunkMetadata.empty(), SCORE, "text"));
-        assertThrows(NullPointerException.class,
+        assertThrows(
+                NullPointerException.class,
                 () -> new SearchHit(1, 0, PATH, DocumentType.MARKDOWN, null, ChunkMetadata.empty(), SCORE, "text"));
-        assertThrows(NullPointerException.class,
+        assertThrows(
+                NullPointerException.class,
                 () -> new SearchHit(1, 0, PATH, DocumentType.MARKDOWN, LINES, null, SCORE, "text"));
-        assertThrows(NullPointerException.class,
+        assertThrows(
+                NullPointerException.class,
                 () -> new SearchHit(1, 0, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), null, "text"));
         assertThrows(NullPointerException.class, () -> hit(ChunkMetadata.empty(), null));
     }
@@ -110,7 +128,8 @@ class SearchHitTest {
 
         assertEquals(boundary, hit(ChunkMetadata.empty(), boundary).snippet());
         assertThrows(IllegalArgumentException.class, () -> hit(ChunkMetadata.empty(), boundary + "x"));
-        assertEquals("x".repeat(400), hit(ChunkMetadata.empty(), "x".repeat(400)).snippet());
+        assertEquals(
+                "x".repeat(400), hit(ChunkMetadata.empty(), "x".repeat(400)).snippet());
         assertThrows(IllegalArgumentException.class, () -> hit(ChunkMetadata.empty(), "x".repeat(401)));
     }
 
