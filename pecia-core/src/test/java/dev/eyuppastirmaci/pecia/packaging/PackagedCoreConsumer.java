@@ -16,12 +16,16 @@ import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
+import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchScore;
 import dev.eyuppastirmaci.pecia.search.SearchException;
+import dev.eyuppastirmaci.pecia.search.QueryService;
+import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.storage.sqlite.IndexAccessException;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
@@ -420,6 +424,73 @@ public final class PackagedCoreConsumer {
 
     private record FtsRow(long id, String content, String headings, String sourcePath) { }
 
+    public static void verifyFolderIndex(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Files.writeString(root.resolve("Auth.java"), "class Auth { String JWT_SECRET; }");
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nİstanbul documentationneedle\n");
+        Files.writeString(root.resolve("empty.txt"), "");
+        IndexService service = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
+        IndexResult result = service.index(root);
+
+        check(result.status() == IndexResult.Status.COMPLETE, "Packaged folder index must complete");
+        check(result.candidateCount() == 3 && result.indexedFiles() == 3 && result.writtenChunks() == 2,
+                "Packaged folder counters must include empty files");
+        check(result.equals(service.index(root)), "Repeated folder indexing must replace existing chunks");
+
+        try (SqliteStorage storage = SqliteStorage.open(result.context().databasePath(), root)) {
+            check(storage.files().findAll().size() == 3, "Packaged manifest must persist all admitted files");
+
+            List<SearchHit> code = storage.lexicalSearch().search(new SearchRequest("JWT_SECRET"));
+
+            check(code.size() == 1 && code.getFirst().sourcePath().equals(Path.of("Auth.java")),
+                    "Packaged indexed code must be searchable");
+
+            List<SearchHit> markdown = storage.lexicalSearch().search(new SearchRequest("documentationneedle"));
+
+            check(markdown.size() == 1 && markdown.getFirst().metadata().headingPath().equals(List.of("Guide")),
+                    "Packaged indexing must preserve Markdown headings");
+        }
+    }
+
+    public static void verifyReadOnlyQuery(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Files.writeString(root.resolve(".pecia.toml"), "[store]\npath = 'cache/search.db'\n");
+        Files.writeString(root.resolve("Auth.java"), "class Auth { String JWT_SECRET; }");
+        Path child = Files.createDirectory(root.resolve("docs"));
+        Files.writeString(child.resolve("guide.md"), "# Guide\n\nİstanbul documentationneedle\n");
+        PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
+        IndexResult indexed = new IndexService(loader).index(root);
+        byte[] before = Files.readAllBytes(indexed.context().databasePath());
+        Files.delete(root.resolve("Auth.java"));
+        Files.delete(child.resolve("guide.md"));
+        QueryService query = new QueryService(loader);
+        List<SearchHit> code = query.search(child, new SearchRequest("JWT_SECRET", 1));
+
+        check(code.size() == 1 && code.getFirst().sourcePath().equals(Path.of("Auth.java")),
+                "Packaged query must search the stored project index from a child context");
+        check(code.getFirst().sourceLocation().equals(new LineRange(1, 1)), "Packaged query must preserve source lines");
+
+        List<SearchHit> markdown = query.search(root, new SearchRequest("İstanbul documentationneedle"));
+
+        check(markdown.size() == 1 && markdown.getFirst().metadata().headingPath().equals(List.of("Guide")),
+                "Packaged query must preserve Unicode and headings after source deletion");
+        check(markdown.getFirst().snippet().contains("documentationneedle"), "Packaged query must expose the stored snippet");
+        check(query.search(root, new SearchRequest("absent")).isEmpty(), "No match is a successful empty query");
+        check(Arrays.equals(before, Files.readAllBytes(indexed.context().databasePath())),
+                "Query must not mutate the packaged index");
+
+        Files.delete(indexed.context().databasePath());
+
+        try {
+            query.search(root, new SearchRequest("needle"));
+            throw new AssertionError("Missing packaged index must fail");
+        } catch (QueryException failure) {
+            check(failure.reason() == QueryException.Reason.INDEX_NOT_FOUND, "Missing index must be classified");
+        }
+
+        check(!Files.exists(indexed.context().databasePath()), "Query must not recreate a missing packaged index");
+    }
+
     public static void verifyLexicalSearch(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
         verifyArchiveOrigins(coreJar, runtimeDirectory);
         Path database = root.resolve("lexical.db");
@@ -464,7 +535,8 @@ public final class PackagedCoreConsumer {
                 PeciaConfigParser.class, DocumentExtractionService.class, Document.class, FileContentLoader.class,
                 TextDocumentExtractor.class, FileTypeDetector.class, MiniLmTokenizer.class,
                 DocumentChunkerFactory.class, MarkdownChunker.class, Chunk.class, SqliteStorage.class,
-                LexicalSearch.class, SearchRequest.class, SearchHit.class, SearchScore.class, SearchException.class)) {
+                LexicalSearch.class, SearchRequest.class, SearchHit.class, SearchScore.class, SearchException.class,
+                QueryService.class, QueryException.class, IndexAccessException.class)) {
             Path origin = Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
             check(Files.isSameFile(coreJar, origin), type.getName() + " must load from the packaged core JAR: " + origin);
         }

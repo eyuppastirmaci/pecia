@@ -3,6 +3,8 @@ package dev.eyuppastirmaci.pecia.cli;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
+import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -140,14 +142,120 @@ class IndexCommandTest {
     }
 
     @Test
-    void realIndexingIsStillNotImplemented() throws IOException {
+    void realIndexingReportsMalformedConfigBeforeCreatingAnIndex() throws IOException {
         Files.writeString(root.resolve(".pecia.toml"), "[index\ninclude =");
 
         int exitCode = run(root.toString());
 
         assertEquals(1, exitCode);
-        assertEquals("pecia index: only --dry-run is implemented yet" + System.lineSeparator(), err.toString());
+        assertTrue(err.toString().startsWith("pecia index: Invalid .pecia.toml:"));
         assertEquals("", out.toString());
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void indexesAndReportsCountersThroughCommandWriters() throws Exception {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        Files.writeString(root.resolve("empty.txt"), "");
+
+        assertEquals(0, run(root.toString()));
+        assertEquals("", err.toString());
+        assertEquals(String.join(System.lineSeparator(),
+                "index: " + root.resolve(".pecia/index.db"), "candidates: 2", "indexed: 2",
+                "chunks: 1", "rejected: 0", "failed: 0", ""), out.toString());
+
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(root.resolve(".pecia/index.db"), root)) {
+            assertEquals(1, storage.lexicalSearch().search(new SearchRequest("needle")).size());
+        }
+    }
+
+    @Test
+    void emptyProjectIsSuccessful() {
+        assertEquals(0, run(root.toString()));
+        assertTrue(out.toString().contains("indexed: 0"));
+        assertEquals("", err.toString());
+        assertTrue(Files.isRegularFile(root.resolve(".pecia/index.db")));
+    }
+
+    @Test
+    void fileRejectionReportsPartialCountersAndReasonWithoutStackTrace() throws IOException {
+        Files.writeString(root.resolve("good.txt"), "good");
+        Files.writeString(root.resolve("bad.txt"), "binary\0");
+
+        assertEquals(1, run(root.toString()));
+        assertTrue(out.toString().contains("candidates: 2"));
+        assertTrue(out.toString().contains("indexed: 1"));
+        assertTrue(out.toString().contains("rejected: 1"));
+        assertTrue(err.toString().contains("warning: bad.txt: BINARY_CONTENT:"));
+        assertFalse(out.toString().contains("warning:"));
+        assertFalse(err.toString().contains("\tat "));
+    }
+
+    @Test
+    void incompleteRealScanReportsIssuesWithoutCreatingStorage() throws IOException {
+        Path bad = Files.createDirectories(root.resolve("bad/.gitignore"));
+        Files.writeString(root.resolve("good.txt"), "good");
+
+        assertEquals(1, run(root.toString()));
+        assertTrue(out.toString().contains("indexed: 0"));
+        assertTrue(err.toString().contains("warning: " + bad));
+        assertTrue(err.toString().contains("pecia index: Indexing requires a complete scan"));
+        assertFalse(err.toString().contains("\tat "));
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void storageFailureIncludesUsefulCauseWithoutStackTrace() throws IOException {
+        Path database = root.resolve(".pecia/index.db");
+        Files.createDirectory(database.getParent());
+        byte[] corrupt = "not a database".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Files.write(database, corrupt);
+
+        assertEquals(1, run(root.toString()));
+        assertTrue(err.toString().contains("pecia index: Index storage operation failed:"));
+        assertTrue(err.toString().contains("not a database"));
+        assertFalse(err.toString().contains("\tat "));
+        assertTrue(out.toString().contains("indexed: 0"));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(corrupt, Files.readAllBytes(database));
+    }
+
+    @Test
+    void invalidTokenBudgetFailsRealIndexButDoesNotAffectDryRun() throws IOException {
+        Files.writeString(root.resolve(".pecia.toml"), "[index]\ninclude = ['*.txt']\n[chunk]\nmax_tokens = 512\n");
+        Files.writeString(root.resolve("a.txt"), "needle");
+
+        assertEquals(1, run(root.toString()));
+        assertFalse(Files.exists(root.resolve(".pecia")));
+
+        out.getBuffer().setLength(0);
+        err.getBuffer().setLength(0);
+
+        assertEquals(0, run(root.toString(), "--dry-run"));
+        assertTrue(out.toString().contains("1 file(s) would be indexed"));
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void helpAndUsageErrorsDoNotOpenStorage() {
+        assertEquals(0, run(root.toString(), "--help"));
+        assertTrue(out.toString().contains("local lexical index"));
+        assertFalse(out.toString().contains("embeds"));
+        assertFalse(Files.exists(root.resolve(".pecia")));
+
+        out.getBuffer().setLength(0);
+        err.getBuffer().setLength(0);
+
+        assertEquals(2, run(root.toString(), "--unknown-option"));
+        assertTrue(err.toString().contains("Unknown option"));
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void omittedTargetDefaultsToTheWorkingDirectory() {
+        IndexCommand command = new IndexCommand(new IndexService(new PeciaConfigLoader(new PeciaConfigParser())));
+        new CommandLine(command).parseArgs();
+
+        assertEquals(Path.of("."), command.path);
     }
 
     private int run(String... args) {

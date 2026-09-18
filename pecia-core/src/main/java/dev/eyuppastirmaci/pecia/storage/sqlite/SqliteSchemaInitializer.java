@@ -3,10 +3,13 @@ package dev.eyuppastirmaci.pecia.storage.sqlite;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Map;
 
 final class SqliteSchemaInitializer {
+
     private static final String SCHEMA_RESOURCE = "/db/migration/V1__create_initial_schema.sql";
     private static final int SCHEMA_VERSION = 2;
     private static final int INDEX_FORMAT_VERSION = 2;
@@ -18,6 +21,62 @@ final class SqliteSchemaInitializer {
             "index_metadata", "singleton, project_root_uri, index_format_version");
 
     private SqliteSchemaInitializer() { }
+
+    static void validateReadOnly(Connection connection, String rootUri) throws IOException, SQLException {
+        SqliteFtsSchema fts = SqliteFtsSchema.load();
+
+        // A deferred read transaction keeps all validation reads in one snapshot without a write lock.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("BEGIN");
+
+            try {
+                int version;
+
+                try (ResultSet result = statement.executeQuery("PRAGMA user_version")) {
+                    result.next();
+                    version = result.getInt(1);
+                }
+
+                if (version != 1 && version != SCHEMA_VERSION) {
+                    throw new IndexAccessException(IndexAccessException.Reason.INCOMPATIBLE,
+                            "Unsupported SQLite schema version: " + version);
+                }
+
+                validateSchema(connection, rootUri, version == 1 ? 1 : INDEX_FORMAT_VERSION);
+
+                if (version == 1) {
+                    throw new IndexAccessException(IndexAccessException.Reason.MIGRATION_REQUIRED,
+                            "Index upgrade required; run index before querying");
+                }
+
+                fts.validate(connection);
+                statement.execute("COMMIT");
+            } catch (SQLException | RuntimeException | Error failure) {
+                try {
+                    statement.execute("ROLLBACK");
+                } catch (SQLException rollbackFailure) {
+                    failure.addSuppressed(rollbackFailure);
+                }
+
+                if (failure instanceof SQLException sql && !(sql instanceof IndexAccessException)
+                        && isInvalidSchema(sql)) {
+
+                    throw new IndexAccessException(IndexAccessException.Reason.CORRUPT_INDEX,
+                            "Could not validate existing index", sql);
+                }
+
+                throw failure;
+            }
+        }
+    }
+
+    private static boolean isInvalidSchema(SQLException failure) {
+        // Generic validation errors and SQLite ERROR/CORRUPT/NOTADB indicate invalid stored structure.
+        // Busy, locked, I/O and other access errors must retain their original classification.
+        int code = failure.getErrorCode() & 0xff;
+
+        return code == 0 || code == 1 || code == 11 || code == 26;
+    }
 
     static void initialize(Connection connection, String rootUri) throws IOException, SQLException {
         try (var input = SqliteSchemaInitializer.class.getResourceAsStream(SCHEMA_RESOURCE)) {
@@ -143,11 +202,13 @@ final class SqliteSchemaInitializer {
             }
 
             if (!rootUri.equals(result.getString(2))) {
-                throw new SQLException("SQLite index belongs to another project root: " + result.getString(2));
+                throw new IndexAccessException(IndexAccessException.Reason.WRONG_PROJECT,
+                        "SQLite index belongs to another project root: " + result.getString(2));
             }
 
             if (result.getInt(3) != expectedFormat) {
-                throw new SQLException("Unsupported index format version: " + result.getInt(3));
+                throw new IndexAccessException(IndexAccessException.Reason.INCOMPATIBLE,
+                        "Unsupported index format version: " + result.getInt(3));
             }
 
             if (result.next()) {

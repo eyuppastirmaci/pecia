@@ -5,7 +5,7 @@ import picocli.CommandLine.Command;
 
 @Command(
         name = "pecia",
-        description = "Turns a folder of documents and source code into a searchable local vector index.",
+        description = "Indexes documents and source code for offline lexical search.",
         version = "pecia 0.1.0-SNAPSHOT",
         mixinStandardHelpOptions = true,
         subcommands = {

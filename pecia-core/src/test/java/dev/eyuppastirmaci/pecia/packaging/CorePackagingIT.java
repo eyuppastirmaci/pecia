@@ -50,6 +50,16 @@ class CorePackagingIT {
         runConsumer("verifyLexicalSearch");
     }
 
+    @Test
+    void indexesAFolderUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifyFolderIndex");
+    }
+
+    @Test
+    void queriesAnIndexedFolderReadOnlyUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifyReadOnlyQuery");
+    }
+
     private void runConsumer(String method) throws Exception {
         Path coreJar = requiredPath("pecia.it.jar");
         Path runtimeDirectory = requiredPath("pecia.it.runtimeDirectory");

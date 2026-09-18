@@ -3,10 +3,12 @@ package dev.eyuppastirmaci.pecia;
 import dev.eyuppastirmaci.pecia.cli.IndexCommand;
 import dev.eyuppastirmaci.pecia.cli.InitCommand;
 import dev.eyuppastirmaci.pecia.cli.PeciaCommand;
+import dev.eyuppastirmaci.pecia.cli.QueryCommand;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.search.QueryService;
 import picocli.CommandLine;
 
 public final class Bootstrap implements CommandLine.IFactory {
@@ -15,7 +17,11 @@ public final class Bootstrap implements CommandLine.IFactory {
 
     private final PeciaConfigFile configFile = new PeciaConfigFile();
 
-    private final IndexService indexService = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
+    private final PeciaConfigLoader configLoader = new PeciaConfigLoader(new PeciaConfigParser());
+
+    private final IndexService indexService = new IndexService(configLoader);
+
+    private final QueryService queryService = new QueryService(configLoader);
 
     /**
      * Creates a command instance, injecting wired dependencies where needed.
@@ -26,12 +32,17 @@ public final class Bootstrap implements CommandLine.IFactory {
      */
     @Override
     public <K> K create(Class<K> cls) throws Exception {
+
         if (cls == InitCommand.class) {
             return cls.cast(new InitCommand(configFile));
         }
 
         if (cls == IndexCommand.class) {
             return cls.cast(new IndexCommand(indexService));
+        }
+
+        if (cls == QueryCommand.class) {
+            return cls.cast(new QueryCommand(queryService));
         }
 
         // Commands without wired dependencies are built by picocli's default factory.

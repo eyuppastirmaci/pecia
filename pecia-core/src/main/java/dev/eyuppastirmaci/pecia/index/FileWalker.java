@@ -52,6 +52,12 @@ public final class FileWalker {
      * @throws IOException if either path is invalid or traversal cannot start
      */
     public WalkResult scan(Path target, Path projectRoot) throws IOException {
+        return scan(target, projectRoot, Set.of());
+    }
+
+    /** Scans with exact absolute paths excluded, even when include rules would accept them. */
+    public WalkResult scan(Path target, Path projectRoot, Set<Path> excludedFiles) throws IOException {
+        Set<Path> excluded = Set.copyOf(excludedFiles);
         Path normalizedRoot = target.toAbsolutePath().normalize();
         Path project = projectRoot.toAbsolutePath().normalize();
 
@@ -111,7 +117,7 @@ public final class FileWalker {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
 
-                if (!attrs.isRegularFile()) {
+                if (!attrs.isRegularFile() || excluded.contains(file)) {
 
                     return FileVisitResult.CONTINUE;
                 }

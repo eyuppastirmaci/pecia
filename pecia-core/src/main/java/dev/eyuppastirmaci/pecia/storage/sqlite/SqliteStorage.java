@@ -11,12 +11,15 @@ import org.sqlite.SQLiteConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 
 public final class SqliteStorage implements AutoCloseable {
+
     private final Connection connection;
 
     private SqliteStorage(Connection connection) {
@@ -51,6 +54,69 @@ public final class SqliteStorage implements AutoCloseable {
 
         try {
             SqliteSchemaInitializer.initialize(connection, root.toUri().toASCIIString());
+
+            return new SqliteStorage(connection);
+        } catch (IOException | SQLException | RuntimeException | Error failure) {
+            try {
+                connection.close();
+            } catch (SQLException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+
+            throw failure;
+        }
+    }
+
+    /**
+     * Opens and validates an existing index with SQLite's native read-only flag.
+     * Never creates parent directories, creates an index, migrates it, or probes FTS through writes.
+     * The caller owns the returned storage and must close it.
+     *
+     * @throws IndexAccessException if the index is missing, needs migration, is incompatible, foreign or corrupt
+     * @throws IOException if paths or bundled schema definitions cannot be read
+     * @throws SQLException if SQLite cannot open or read the database
+     * @throws NullPointerException if either path is null
+     */
+    public static SqliteStorage openReadOnly(Path databasePath, Path projectRoot) throws IOException, SQLException {
+        Path database = databasePath.toAbsolutePath().normalize();
+        Path root = projectRoot.toRealPath();
+
+        if (!Files.isDirectory(root)) {
+            throw new IOException("Project root must be a directory: " + root);
+        }
+
+        try {
+
+            if (!Files.readAttributes(database, BasicFileAttributes.class).isRegularFile()) {
+                throw new IndexAccessException(IndexAccessException.Reason.CORRUPT_INDEX,
+                        "Index path is not a regular file: " + database);
+            }
+        } catch (NoSuchFileException missing) {
+            throw new IndexAccessException(IndexAccessException.Reason.NOT_FOUND,
+                    "Index does not exist; run index first: " + database, missing);
+        }
+
+        SQLiteConfig config = new SQLiteConfig();
+        config.setReadOnly(true);
+        config.enforceForeignKeys(true);
+        config.setBusyTimeout(5000);
+        Connection connection;
+
+        try {
+            connection = JDBC.createConnection("jdbc:sqlite:" + database.toUri().toASCIIString(), config.toProperties());
+        } catch (SQLException failure) {
+            int code = failure.getErrorCode() & 0xff;
+
+            if (code == 11 || code == 26) {
+                throw new IndexAccessException(IndexAccessException.Reason.CORRUPT_INDEX,
+                        "Could not open corrupt index: " + database, failure);
+            }
+
+            throw failure;
+        }
+
+        try {
+            SqliteSchemaInitializer.validateReadOnly(connection, root.toUri().toASCIIString());
 
             return new SqliteStorage(connection);
         } catch (IOException | SQLException | RuntimeException | Error failure) {
