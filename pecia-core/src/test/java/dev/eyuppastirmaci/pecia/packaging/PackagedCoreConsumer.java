@@ -18,6 +18,7 @@ import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.index.IndexingProfile;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.search.QueryException;
 import dev.eyuppastirmaci.pecia.search.QueryService;
@@ -52,6 +53,7 @@ import org.tomlj.Toml;
 public final class PackagedCoreConsumer {
     private static final String V1_RESOURCE = "/db/migration/V1__create_initial_schema.sql";
     private static final String V2_RESOURCE = "/db/migration/V2__add_chunk_fts.sql";
+    private static final String V3_RESOURCE = "/db/migration/V3__add_file_indexing_profiles.sql";
 
     private PackagedCoreConsumer() {}
 
@@ -262,6 +264,9 @@ public final class PackagedCoreConsumer {
                 check(
                         storage.chunks().findByFileId(file.id()).equals(expected),
                         "Migration must preserve chunk IDs, text, headings, attributes, offsets and line" + " ranges");
+                check(
+                        storage.files().findIndexingProfile(file.id()).isEmpty(),
+                        "Migrated historical files must have an unknown indexing profile");
                 check(
                         storage.files()
                                         .findByPath(Path.of("empty.md"))
@@ -485,12 +490,12 @@ public final class PackagedCoreConsumer {
             execute(connection, "INSERT INTO chunks_fts(chunks_fts) VALUES ('integrity-check')");
             try (var statement = connection.createStatement();
                     var result = statement.executeQuery("PRAGMA user_version")) {
-                check(result.next() && result.getInt(1) == 2, "Packaged storage must use schema version 2");
+                check(result.next() && result.getInt(1) == 3, "Packaged storage must use schema version 3");
             }
             try (var statement = connection.createStatement();
                     var result = statement.executeQuery(
                             "SELECT index_format_version FROM index_metadata WHERE singleton = 1")) {
-                check(result.next() && result.getInt(1) == 2, "Packaged storage must use index format 2");
+                check(result.next() && result.getInt(1) == 3, "Packaged storage must use index format 3");
             }
         }
     }
@@ -533,6 +538,121 @@ public final class PackagedCoreConsumer {
 
     private record FtsRow(long id, String content, String headings, String sourcePath) {}
 
+    /** Verifies persisted profiles, atomic replacement, and legacy compatibility through the packaged API. */
+    public static void verifyIndexingProfiles(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Path database = root.resolve("profiles.db");
+        Path source = Path.of("notes.txt");
+        IndexingProfile originalProfile = new IndexingProfile("packaged-tokenizer-v1", 128, 16);
+        IndexingProfile replacementProfile = new IndexingProfile("packaged-tokenizer-v2", 64, 8);
+        Document original = new Document(
+                source,
+                DocumentType.PLAIN_TEXT,
+                "originalneedle",
+                ContentHash.sha256("originalneedle".getBytes(StandardCharsets.UTF_8)));
+        Document replacement = new Document(
+                source,
+                DocumentType.PLAIN_TEXT,
+                "replacementneedle",
+                ContentHash.sha256("replacementneedle".getBytes(StandardCharsets.UTF_8)));
+        List<Chunk> originalChunks = List.of(new Chunk(
+                source, DocumentType.PLAIN_TEXT, 0, original.content(), new LineRange(1, 1), ChunkMetadata.empty()));
+        List<Chunk> replacementChunks = List.of(new Chunk(
+                source, DocumentType.PLAIN_TEXT, 0, replacement.content(), new LineRange(1, 1), ChunkMetadata.empty()));
+        StoredFile originalFile;
+        List<StoredChunk> persistedChunks;
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            originalFile = storage.replaceFile(original, originalChunks, originalProfile);
+            persistedChunks = storage.chunks().findByFileId(originalFile.id());
+        }
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            check(
+                    storage.files()
+                            .findIndexingProfile(originalFile.id())
+                            .orElseThrow()
+                            .equals(originalProfile),
+                    "Packaged profile metadata must survive close and read-only reopen");
+            check(
+                    storage.chunks().findByFileId(originalFile.id()).equals(persistedChunks),
+                    "Profile persistence must preserve the associated chunks");
+        }
+
+        try (Connection connection = openDatabase(database)) {
+            execute(connection, """
+                CREATE TRIGGER fail_profile BEFORE INSERT ON file_indexing_profiles
+                BEGIN SELECT RAISE(ABORT, 'injected profile failure'); END
+                """);
+        }
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            try {
+                storage.replaceFile(replacement, replacementChunks, replacementProfile);
+                throw new AssertionError("A failed profile write must abort file replacement");
+            } catch (SQLException failure) {
+                check(
+                        failure.getMessage().contains("injected profile failure"),
+                        "The packaged failure must come from the profile write");
+            }
+            check(
+                    storage.files().findByPath(source).orElseThrow().equals(originalFile),
+                    "Profile failure must roll back the file manifest");
+            check(
+                    storage.chunks().findByFileId(originalFile.id()).equals(persistedChunks),
+                    "Profile failure must roll back chunk replacement");
+            check(
+                    storage.files()
+                            .findIndexingProfile(originalFile.id())
+                            .orElseThrow()
+                            .equals(originalProfile),
+                    "Profile failure must retain the previous profile");
+            check(
+                    storage.lexicalSearch()
+                                    .search(new SearchRequest("originalneedle"))
+                                    .size()
+                            == 1,
+                    "Profile failure must preserve the previous FTS rows");
+            check(
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("replacementneedle"))
+                            .isEmpty(),
+                    "Profile failure must not publish replacement FTS rows");
+            try (Connection connection = openDatabase(database)) {
+                execute(connection, "DROP TRIGGER fail_profile");
+            }
+            StoredFile replaced = storage.replaceFile(replacement, replacementChunks, replacementProfile);
+            check(replaced.id() == originalFile.id(), "Profile-aware replacement must retain the file identity");
+        }
+
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            check(
+                    storage.files()
+                            .findIndexingProfile(originalFile.id())
+                            .orElseThrow()
+                            .equals(replacementProfile),
+                    "A successful retry must commit the replacement profile");
+            check(
+                    storage.lexicalSearch()
+                                    .search(new SearchRequest("replacementneedle"))
+                                    .size()
+                            == 1,
+                    "A successful retry must commit replacement FTS rows");
+        }
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            storage.replaceFile(replacement, replacementChunks);
+        }
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            check(
+                    storage.files().findIndexingProfile(originalFile.id()).isEmpty(),
+                    "Legacy replacement must clear the profile when chunk compatibility is unknown");
+            check(
+                    storage.lexicalSearch()
+                                    .search(new SearchRequest("replacementneedle"))
+                                    .size()
+                            == 1,
+                    "Legacy replacement must keep the document searchable");
+        }
+    }
+
     /** Verifies folder indexing, replacement, and search through the packaged core API. */
     public static void verifyFolderIndex(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
         verifyArchiveOrigins(coreJar, runtimeDirectory);
@@ -546,7 +666,17 @@ public final class PackagedCoreConsumer {
         check(
                 result.candidateCount() == 3 && result.indexedFiles() == 3 && result.writtenChunks() == 2,
                 "Packaged folder counters must include empty files");
-        check(result.equals(service.index(root)), "Repeated folder indexing must replace existing chunks");
+        check(
+                result.unchangedFiles() == 0 && result.deletedFiles() == 0,
+                "A first packaged index must not report unchanged files or deletions");
+        IndexResult repeated = service.index(root);
+        check(
+                repeated.status() == IndexResult.Status.COMPLETE
+                        && repeated.candidateCount() == 3
+                        && repeated.indexedFiles() == 0
+                        && repeated.unchangedFiles() == 3
+                        && repeated.writtenChunks() == 0,
+                "Repeated folder indexing must skip unchanged files including empty files");
 
         try (SqliteStorage storage = SqliteStorage.open(result.context().databasePath(), root)) {
             check(storage.files().findAll().size() == 3, "Packaged manifest must persist all admitted files");
@@ -692,6 +822,7 @@ public final class PackagedCoreConsumer {
                 SearchException.class,
                 QueryService.class,
                 QueryException.class,
+                IndexingProfile.class,
                 IndexAccessException.class)) {
             Path origin = Path.of(
                     type.getProtectionDomain().getCodeSource().getLocation().toURI());
@@ -716,7 +847,8 @@ public final class PackagedCoreConsumer {
                 tokenizerResources + "LICENSE.txt",
                 "/META-INF/licenses/commonmark-LICENSE.txt",
                 V1_RESOURCE,
-                V2_RESOURCE)) {
+                V2_RESOURCE,
+                V3_RESOURCE)) {
             URL resource = MiniLmTokenizer.class.getResource(name);
             check(resource != null && resource.getProtocol().equals("jar"), "Resource must load from a JAR: " + name);
             JarURLConnection connection = (JarURLConnection) resource.openConnection();

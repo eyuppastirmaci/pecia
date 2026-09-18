@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.content;
 
 import static dev.eyuppastirmaci.pecia.content.ExtractionException.Reason.UNSUPPORTED_TYPE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -67,5 +68,35 @@ class DocumentExtractionServiceTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new ExtractionRequest(file, Path.of("../notes.txt"), DocumentType.PLAIN_TEXT));
+    }
+
+    @Test
+    void extractsTheLoadedSnapshotWithoutReadingTheSourceAgain() throws Exception {
+        Path file = Files.writeString(root.resolve("notes.txt"), "original");
+        ExtractionRequest request = new ExtractionRequest(file, Path.of("notes.txt"), DocumentType.PLAIN_TEXT);
+        DocumentExtractionService service =
+                new DocumentExtractionService(new FileContentLoader(1024), new TextDocumentExtractor());
+        FileContent content = service.load(request);
+        Files.delete(file);
+
+        Document document = service.extract(request, content);
+
+        assertEquals("original", document.content());
+        assertSame(content.contentHash(), document.contentHash());
+    }
+
+    @Test
+    void validatesSuppliedSnapshotIdentityAndRequiredInputs() throws Exception {
+        Path file = Files.writeString(root.resolve("notes.txt"), "original");
+        ExtractionRequest request = new ExtractionRequest(file, Path.of("notes.txt"), DocumentType.PLAIN_TEXT);
+        DocumentExtractionService service =
+                new DocumentExtractionService(new FileContentLoader(1024), new TextDocumentExtractor());
+        FileContent content = service.load(request);
+        FileContent other = new FileContent(root.resolve("other.txt"), content.bytes());
+
+        assertThrows(IllegalArgumentException.class, () -> service.extract(request, other));
+        assertThrows(NullPointerException.class, () -> service.extract(request, null));
+        assertThrows(NullPointerException.class, () -> service.extract(null, content));
+        assertThrows(NullPointerException.class, () -> service.load(null));
     }
 }

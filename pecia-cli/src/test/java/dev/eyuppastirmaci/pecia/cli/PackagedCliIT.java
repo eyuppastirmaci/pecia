@@ -258,7 +258,7 @@ class PackagedCliIT {
 
         Files.writeString(project.resolve("notes.txt"), "replacementneedle notes\n");
 
-        assertIndexSummary(run(project, "index"), database, 3, 3);
+        assertIndexSummary(run(project, "index"), database, 3, 1, 1);
 
         try (SqliteStorage storage = SqliteStorage.openReadOnly(database, project)) {
             List<StoredFile> files = storage.files().findAll();
@@ -290,7 +290,7 @@ class PackagedCliIT {
         Path database = project.resolve("state/search.sqlite");
 
         assertIndexSummary(run(project, "index", "docs"), database, 1, 1);
-        assertIndexSummary(run(docs, "index"), database, 1, 1);
+        assertIndexSummary(run(docs, "index"), database, 1, 0, 0);
 
         try (SqliteStorage storage = SqliteStorage.openReadOnly(database, project)) {
             List<StoredFile> files = storage.files().findAll();
@@ -461,7 +461,8 @@ class PackagedCliIT {
 
         assertEquals(1, partial.exitCode());
         assertEquals(
-                "index: " + database + "\ncandidates: 2\nindexed: 1\nchunks: 1\nrejected: 1\nfailed: 0\n",
+                "index: " + database
+                        + "\ncandidates: 2\nindexed: 1\nunchanged: 0\ndeleted: 0\nchunks: 1\nrejected: 1\nfailed: 0\n",
                 partial.out());
         assertTrue(partial.err().startsWith("warning: bad.txt: INVALID_UTF8: "), partial.err());
         assertNoStackTrace(partial.err());
@@ -590,20 +591,46 @@ class PackagedCliIT {
         }
     }
 
+    @Test
+    void indexingDeletedFileRemovesSearchResultsAndReportsCleanup() throws Exception {
+        Path source = Files.writeString(project.resolve("removed.txt"), "deletedneedle");
+        assertSuccess(run(project, "index"));
+        Files.delete(source);
+
+        Result cleanup = run(project, "index");
+
+        assertSuccess(cleanup);
+        assertEquals(
+                "index: " + project.resolve(".pecia/index.db")
+                        + "\ncandidates: 0\nindexed: 0\nunchanged: 0\ndeleted: 1\nchunks: 0\nrejected: 0\nfailed: 0\n",
+                cleanup.out());
+        Result query = run(project, "query", "deletedneedle");
+        assertSuccess(query);
+        assertEquals("No results.\n", query.out());
+        assertIndexSummary(run(project, "index"), project.resolve(".pecia/index.db"), 0, 0);
+    }
+
     private static void assertSuccess(Result result) {
         assertEquals(0, result.exitCode(), result.err());
         assertEquals("", result.err());
     }
 
     private static void assertIndexSummary(Result result, Path database, int files, int chunks) {
+        assertIndexSummary(result, database, files, files, chunks);
+    }
+
+    private static void assertIndexSummary(Result result, Path database, int candidates, int indexed, int chunks) {
         assertSuccess(result);
         assertEquals(
                 "index: "
                         + database
                         + "\ncandidates: "
-                        + files
+                        + candidates
                         + "\nindexed: "
-                        + files
+                        + indexed
+                        + "\nunchanged: "
+                        + (candidates - indexed)
+                        + "\ndeleted: 0"
                         + "\nchunks: "
                         + chunks
                         + "\nrejected: 0\nfailed: 0\n",

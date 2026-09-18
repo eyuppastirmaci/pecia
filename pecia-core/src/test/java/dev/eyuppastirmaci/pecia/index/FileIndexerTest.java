@@ -127,7 +127,10 @@ class FileIndexerTest {
             FileIndexer.Result second = indexer.index(Path.of("notes.txt"), storage);
 
             assertEquals(first.file().id(), second.file().id());
-            assertEquals(second, indexer.index(Path.of("notes.txt"), storage));
+            FileIndexer.Result repeated = indexer.index(Path.of("notes.txt"), storage);
+            assertEquals(second.file(), repeated.file());
+            assertTrue(repeated.unchanged());
+            assertEquals(0, repeated.chunkCount());
             assertTrue(storage.lexicalSearch()
                     .search(new SearchRequest("oldneedle"))
                     .isEmpty());
@@ -210,8 +213,8 @@ class FileIndexerTest {
         DocumentChunker broken = document -> {
             throw failure;
         };
-        FileIndexer indexer =
-                new FileIndexer(context, extraction(), new DocumentChunkerFactory(broken, broken, broken));
+        FileIndexer indexer = new FileIndexer(
+                context, extraction(), new DocumentChunkerFactory(broken, broken, broken), profile(context));
 
         try (SqliteStorage storage = SqliteStorage.open(context.databasePath(), root)) {
             FileIndexer.Result before = new FileIndexer(context).index(Path.of("notes.txt"), storage);
@@ -243,7 +246,8 @@ class FileIndexerTest {
         DocumentChunker two = d -> List.of(
                 new Chunk(d.sourcePath(), d.type(), 0, "newneedle first", new LineRange(1, 1), ChunkMetadata.empty()),
                 new Chunk(d.sourcePath(), d.type(), 1, "newneedle second", new LineRange(2, 2), ChunkMetadata.empty()));
-        FileIndexer indexer = new FileIndexer(context, extraction(), new DocumentChunkerFactory(two, two, two));
+        FileIndexer indexer =
+                new FileIndexer(context, extraction(), new DocumentChunkerFactory(two, two, two), profile(context));
 
         try (SqliteStorage storage = SqliteStorage.open(context.databasePath(), root)) {
             FileIndexer.Result before = new FileIndexer(context).index(Path.of("notes.txt"), storage);
@@ -299,8 +303,8 @@ class FileIndexerTest {
 
             return delegate.getChunker(d).chunk(d);
         };
-        FileIndexer indexer =
-                new FileIndexer(context, extraction(), new DocumentChunkerFactory(changing, changing, changing));
+        FileIndexer indexer = new FileIndexer(
+                context, extraction(), new DocumentChunkerFactory(changing, changing, changing), profile(context));
 
         try (SqliteStorage storage = SqliteStorage.open(context.databasePath(), root)) {
             FileIndexer.Result result = indexer.index(Path.of("notes.txt"), storage);
@@ -326,6 +330,11 @@ class FileIndexerTest {
 
     private static DocumentExtractionService extraction() {
         return new DocumentExtractionService(new FileContentLoader(1024), new TextDocumentExtractor());
+    }
+
+    private static IndexingProfile profile(ProjectContext context) {
+        return IndexingProfile.from(
+                context.loadedConfig().config(), MiniLmTokenizer.bundled().identity());
     }
 
     private static void sql(ProjectContext context, String sql) throws SQLException {

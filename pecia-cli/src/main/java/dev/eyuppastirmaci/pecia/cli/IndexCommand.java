@@ -100,6 +100,8 @@ public class IndexCommand implements Callable<Integer> {
         out.println("index: " + result.context().databasePath());
         out.println("candidates: " + result.candidateCount());
         out.println("indexed: " + result.indexedFiles());
+        out.println("unchanged: " + result.unchangedFiles());
+        out.println("deleted: " + result.deletedFiles());
         out.println("chunks: " + result.writtenChunks());
         out.println("rejected: " + result.rejectedFiles());
         out.println("failed: " + result.failedFiles());

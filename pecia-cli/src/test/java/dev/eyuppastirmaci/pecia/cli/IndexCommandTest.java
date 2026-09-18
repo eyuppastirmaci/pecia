@@ -164,6 +164,8 @@ class IndexCommandTest {
                         "index: " + root.resolve(".pecia/index.db"),
                         "candidates: 2",
                         "indexed: 2",
+                        "unchanged: 0",
+                        "deleted: 0",
                         "chunks: 1",
                         "rejected: 0",
                         "failed: 0",
@@ -178,9 +180,55 @@ class IndexCommandTest {
     }
 
     @Test
+    void repeatedIndexReportsUnchangedFilesIncludingEmptyFiles() throws Exception {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        Files.writeString(root.resolve("empty.txt"), "");
+        assertEquals(0, run(root.toString()));
+        out.getBuffer().setLength(0);
+        err.getBuffer().setLength(0);
+
+        assertEquals(0, run(root.toString()));
+        assertEquals("", err.toString());
+        assertEquals(
+                String.join(
+                        System.lineSeparator(),
+                        "index: " + root.resolve(".pecia/index.db"),
+                        "candidates: 2",
+                        "indexed: 0",
+                        "unchanged: 2",
+                        "deleted: 0",
+                        "chunks: 0",
+                        "rejected: 0",
+                        "failed: 0",
+                        ""),
+                out.toString());
+    }
+
+    @Test
+    void partialRepeatSeparatesUnchangedFilesFromRejections() throws Exception {
+        Files.writeString(root.resolve("good.txt"), "good");
+        Files.writeString(root.resolve("bad.txt"), "old content");
+        assertEquals(0, run(root.toString()));
+        Files.writeString(root.resolve("bad.txt"), "binary\0");
+        out.getBuffer().setLength(0);
+        err.getBuffer().setLength(0);
+
+        assertEquals(1, run(root.toString()));
+        assertTrue(out.toString().contains("indexed: 0"));
+        assertTrue(out.toString().contains("unchanged: 1"));
+        assertTrue(out.toString().contains("deleted: 0"));
+        assertTrue(out.toString().contains("chunks: 0"));
+        assertTrue(out.toString().contains("rejected: 1"));
+        assertTrue(out.toString().contains("failed: 0"));
+        assertTrue(err.toString().contains("warning: bad.txt: BINARY_CONTENT:"));
+    }
+
+    @Test
     void emptyProjectIsSuccessful() {
         assertEquals(0, run(root.toString()));
         assertTrue(out.toString().contains("indexed: 0"));
+        assertTrue(out.toString().contains("unchanged: 0"));
+        assertTrue(out.toString().contains("deleted: 0"));
         assertEquals("", err.toString());
         assertTrue(Files.isRegularFile(root.resolve(".pecia/index.db")));
     }
@@ -220,7 +268,7 @@ class IndexCommandTest {
         Files.write(database, corrupt);
 
         assertEquals(1, run(root.toString()));
-        assertTrue(err.toString().contains("pecia index: Index storage operation failed:"));
+        assertTrue(err.toString().contains("pecia index: Index storage or cleanup operation failed:"));
         assertTrue(err.toString().contains("not a database"));
         assertFalse(err.toString().contains("\tat "));
         assertTrue(out.toString().contains("indexed: 0"));

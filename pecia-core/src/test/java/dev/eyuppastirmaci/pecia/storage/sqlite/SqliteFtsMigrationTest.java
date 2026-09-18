@@ -47,12 +47,12 @@ class SqliteFtsMigrationTest {
     Path root;
 
     @Test
-    void createsAFreshVersionTwoDatabaseWithAnImmediatelyUsableIndex() throws Exception {
+    void createsAFreshCurrentVersionDatabaseWithAnImmediatelyUsableIndex() throws Exception {
         Path database = root.resolve("nested/index.db");
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             Connection connection = storage.connection();
-            assertVersionTwo(connection);
+            assertCurrentVersion(connection);
             assertEquals(List.of(), rows(connection));
             insertFile(connection, 5, "docs/freshpath.md");
             insertChunk(connection, 19, 5, 0, "freshbody");
@@ -65,7 +65,7 @@ class SqliteFtsMigrationTest {
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertVersionTwo(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertEquals(
                     List.of(new FtsRow(19, "freshbody", "Freshheading", "docs/freshpath.md")),
                     rows(storage.connection()));
@@ -83,7 +83,7 @@ class SqliteFtsMigrationTest {
 
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             Connection connection = storage.connection();
-            assertVersionTwo(connection);
+            assertCurrentVersion(connection);
             assertEquals(before, sourceSnapshot(connection));
             assertEquals(List.of(), rows(connection));
             assertMatches(connection, "anything");
@@ -104,7 +104,7 @@ class SqliteFtsMigrationTest {
 
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             Connection connection = storage.connection();
-            assertVersionTwo(connection);
+            assertCurrentVersion(connection);
             assertEquals(
                     before,
                     sourceSnapshot(connection),
@@ -130,7 +130,7 @@ class SqliteFtsMigrationTest {
     }
 
     @Test
-    void repeatedVersionTwoOpeningsDoNotRewriteOrDuplicateTheExistingIndex() throws Exception {
+    void repeatedCurrentVersionOpeningsDoNotRewriteOrDuplicateTheExistingIndex() throws Exception {
         Path database = root.resolve("index.db");
         Map<String, List<List<String>>> before;
         try (Connection connection = openVersionOne(root)) {
@@ -138,7 +138,7 @@ class SqliteFtsMigrationTest {
             before = sourceSnapshot(connection);
         }
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertVersionTwo(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertEquals(EXPECTED_FTS, rows(storage.connection()));
         }
         byte[] migratedDatabase = Files.readAllBytes(database);
@@ -146,7 +146,7 @@ class SqliteFtsMigrationTest {
         for (int attempt = 0; attempt < 3; attempt++) {
             try (SqliteStorage storage = SqliteStorage.open(database, root)) {
                 Connection connection = storage.connection();
-                assertVersionTwo(connection);
+                assertCurrentVersion(connection);
                 assertEquals(before, sourceSnapshot(connection));
                 assertEquals(EXPECTED_FTS, rows(connection));
                 assertMigratedMatches(connection);
@@ -180,7 +180,7 @@ class SqliteFtsMigrationTest {
         }
 
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
-            assertVersionTwo(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertEquals(before, sourceSnapshot(storage.connection()));
             assertEquals(EXPECTED_FTS, rows(storage.connection()));
             assertMigratedMatches(storage.connection());
@@ -212,7 +212,7 @@ class SqliteFtsMigrationTest {
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertVersionTwo(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertEquals(before, sourceSnapshot(storage.connection()));
             assertEquals(EXPECTED_FTS, rows(storage.connection()));
             assertMigratedMatches(storage.connection());
@@ -251,7 +251,7 @@ class SqliteFtsMigrationTest {
         ready.countDown();
         assertTrue(start.await(5, TimeUnit.SECONDS));
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
-            assertVersionTwo(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertMigratedMatches(storage.connection());
             return rows(storage.connection());
         }
@@ -311,9 +311,9 @@ class SqliteFtsMigrationTest {
         assertMatches(connection, "unused");
     }
 
-    private static void assertVersionTwo(Connection connection) throws SQLException {
-        assertEquals(2, scalar(connection, "PRAGMA user_version"));
-        assertEquals(2, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+    private static void assertCurrentVersion(Connection connection) throws SQLException {
+        assertEquals(3, scalar(connection, "PRAGMA user_version"));
+        assertEquals(3, scalar(connection, "SELECT index_format_version FROM index_metadata"));
         assertEquals(1, scalar(connection, "PRAGMA foreign_keys"));
     }
 

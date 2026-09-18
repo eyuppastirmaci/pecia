@@ -2,7 +2,9 @@ package dev.eyuppastirmaci.pecia.storage.sqlite;
 
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
+import dev.eyuppastirmaci.pecia.index.IndexingProfile;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
+import dev.eyuppastirmaci.pecia.storage.sqlite.mapper.IndexingProfileRowMapper;
 import dev.eyuppastirmaci.pecia.storage.sqlite.mapper.StoredFileRowMapper;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -16,6 +18,7 @@ public final class SqliteFileRepository {
     private static final String COLUMNS = "id, source_path, document_type, content_hash";
     private final Connection connection;
     private final StoredFileRowMapper mapper = new StoredFileRowMapper();
+    private final IndexingProfileRowMapper profileMapper = new IndexingProfileRowMapper();
 
     SqliteFileRepository(Connection connection) {
         this.connection = connection;
@@ -95,6 +98,41 @@ public final class SqliteFileRepository {
             try (var row = statement.executeQuery()) {
                 return row.next() ? Optional.of(mapper.map(row)) : Optional.empty();
             }
+        }
+    }
+
+    /**
+     * Reads the processing profile committed with a file's last complete replacement.
+     *
+     * @return the profile, or empty for a missing file, a legacy record, or invalidated chunk state
+     * @throws SQLException if reading fails or stored profile values are invalid
+     * @throws IllegalArgumentException if fileId is not positive
+     */
+    public Optional<IndexingProfile> findIndexingProfile(long fileId) throws SQLException {
+        if (fileId <= 0) {
+            throw new IllegalArgumentException("fileId must be positive: " + fileId);
+        }
+
+        try (var query = connection.prepareStatement(
+                "SELECT tokenizer_key, max_tokens, overlap_tokens FROM file_indexing_profiles WHERE file_id = ?")) {
+            query.setLong(1, fileId);
+
+            try (var row = query.executeQuery()) {
+                return row.next() ? Optional.of(profileMapper.map(row)) : Optional.empty();
+            }
+        }
+    }
+
+    /** Writes the profile only after all replacement chunks and metadata have been saved. */
+    void saveIndexingProfile(long fileId, IndexingProfile profile) throws SQLException {
+        try (var insert = connection.prepareStatement(
+                "INSERT INTO file_indexing_profiles(file_id, tokenizer_key, max_tokens, overlap_tokens)"
+                        + " VALUES (?, ?, ?, ?)")) {
+            insert.setLong(1, fileId);
+            insert.setString(2, profile.tokenizerKey());
+            insert.setInt(3, profile.maxTokens());
+            insert.setInt(4, profile.overlapTokens());
+            insert.executeUpdate();
         }
     }
 

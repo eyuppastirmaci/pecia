@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class FolderIndexTest {
 
@@ -50,8 +52,9 @@ class FolderIndexTest {
 
         assertEquals(IndexResult.Status.COMPLETE, result.status());
         assertEquals(3, result.candidateCount());
-        assertEquals(3, result.indexedFiles());
-        assertEquals(2, result.writtenChunks());
+        assertEquals(0, result.indexedFiles());
+        assertEquals(3, result.unchangedFiles());
+        assertEquals(0, result.writtenChunks());
         assertEquals(0, result.rejectedFiles());
         assertEquals(0, result.failedFiles());
         assertEquals(result, service.index(child));
@@ -73,6 +76,36 @@ class FolderIndexTest {
     }
 
     @Test
+    void mixedRunCountsNewChangedAndUnchangedFilesThenSkipsAllOnRepeat() throws Exception {
+        Files.writeString(root.resolve("changed.txt"), "oldneedle");
+        Files.writeString(root.resolve("same.txt"), "sameneedle");
+        Files.writeString(root.resolve("empty.txt"), "");
+        service.index(root);
+        Files.writeString(root.resolve("changed.txt"), "updatedneedle");
+        Files.writeString(root.resolve("new.txt"), "newneedle");
+
+        IndexResult mixed = service.index(root);
+
+        assertEquals(IndexResult.Status.COMPLETE, mixed.status());
+        assertEquals(4, mixed.candidateCount());
+        assertEquals(2, mixed.indexedFiles());
+        assertEquals(2, mixed.unchangedFiles());
+        assertEquals(0, mixed.deletedFiles());
+        assertEquals(2, mixed.writtenChunks());
+        assertTrue(mixed.issues().isEmpty());
+
+        IndexResult repeated = service.index(root);
+
+        assertEquals(IndexResult.Status.COMPLETE, repeated.status());
+        assertEquals(4, repeated.candidateCount());
+        assertEquals(0, repeated.indexedFiles());
+        assertEquals(4, repeated.unchangedFiles());
+        assertEquals(0, repeated.deletedFiles());
+        assertEquals(0, repeated.writtenChunks());
+        assertTrue(repeated.issues().isEmpty());
+    }
+
+    @Test
     void goodBadGoodPreservesRejectedDataAndContinuesThenRetries() throws Exception {
         Files.writeString(root.resolve("a.txt"), "alpha");
         Files.writeString(root.resolve("b.txt"), "oldneedle");
@@ -83,7 +116,8 @@ class FolderIndexTest {
         IndexResult partial = service.index(root);
 
         assertEquals(IndexResult.Status.PARTIAL, partial.status());
-        assertEquals(2, partial.indexedFiles());
+        assertEquals(1, partial.indexedFiles());
+        assertEquals(1, partial.unchangedFiles());
         assertEquals(1, partial.rejectedFiles());
         assertEquals(0, partial.failedFiles());
         assertEquals(Path.of("b.txt"), partial.issues().getFirst().sourcePath());
@@ -107,11 +141,17 @@ class FolderIndexTest {
         assertEquals(IndexResult.Status.COMPLETE, service.index(root).status());
     }
 
-    @Test
-    void readFailureAfterDiscoveryIsCountedSeparatelyAndConnectionCloses() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void readFailureAfterDiscoveryIsCountedSeparatelyAndConnectionCloses(boolean previouslyIndexed) throws Exception {
         Files.writeString(root.resolve("a.txt"), "alpha");
         Files.writeString(root.resolve("b.txt"), "bravo");
         Files.writeString(root.resolve("c.txt"), "charlie");
+
+        if (previouslyIndexed) {
+            service.index(root);
+        }
+
         AtomicReference<SqliteStorage> captured = new AtomicReference<SqliteStorage>();
         IndexService deleting = new IndexService(loader, context -> {
             Files.delete(root.resolve("b.txt"));
@@ -123,10 +163,25 @@ class FolderIndexTest {
         IndexResult result = deleting.index(root);
 
         assertEquals(IndexResult.Status.PARTIAL, result.status());
-        assertEquals(2, result.indexedFiles());
+        assertEquals(2, result.indexedFiles() + result.unchangedFiles());
+        assertEquals(previouslyIndexed ? 2 : 0, result.unchangedFiles());
+        assertEquals(previouslyIndexed ? 0 : 2, result.writtenChunks());
+        assertEquals(0, result.deletedFiles());
         assertEquals(1, result.failedFiles());
         assertEquals(0, result.rejectedFiles());
         assertThrows(SQLException.class, () -> captured.get().files().findAll());
+
+        if (previouslyIndexed) {
+            try (SqliteStorage storage =
+                    SqliteStorage.openReadOnly(result.context().databasePath(), root)) {
+                assertEquals(3, storage.files().findAll().size());
+                assertEquals(
+                        1,
+                        storage.lexicalSearch()
+                                .search(new SearchRequest("bravo"))
+                                .size());
+            }
+        }
     }
 
     @Test
@@ -137,6 +192,9 @@ class FolderIndexTest {
 
         assertEquals(IndexResult.Status.INCOMPLETE_SCAN, failure.result().status());
         assertEquals(0, failure.result().indexedFiles());
+        assertEquals(0, failure.result().unchangedFiles());
+        assertEquals(0, failure.result().deletedFiles());
+        assertEquals(0, failure.result().writtenChunks());
         assertEquals(1, failure.scanIssues().size());
         assertThrows(
                 UnsupportedOperationException.class, () -> failure.scanIssues().clear());
@@ -147,7 +205,11 @@ class FolderIndexTest {
         byte[] before = Files.readAllBytes(initial.context().databasePath());
         Files.createDirectory(root.resolve("bad/.gitignore"));
 
-        assertThrows(IndexException.class, () -> service.index(root));
+        IndexException repeated = assertThrows(IndexException.class, () -> service.index(root));
+        assertEquals(IndexResult.Status.INCOMPLETE_SCAN, repeated.result().status());
+        assertEquals(0, repeated.result().indexedFiles());
+        assertEquals(0, repeated.result().unchangedFiles());
+        assertEquals(0, repeated.result().deletedFiles());
         assertArrayEquals(before, Files.readAllBytes(initial.context().databasePath()));
     }
 
@@ -172,10 +234,15 @@ class FolderIndexTest {
         assertFalse(Files.exists(root.resolve("missing")));
     }
 
-    @Test
-    void storageFailureStopsAfterAtomicRollbackAndPreservesEarlierFiles() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void storageFailureStopsAfterAtomicRollbackAndPreservesEarlierFiles(boolean withUnchangedFile) throws Exception {
         for (String name : List.of("a", "b", "c")) {
             Files.writeString(root.resolve(name + ".txt"), name + "old");
+        }
+
+        if (withUnchangedFile) {
+            Files.writeString(root.resolve("aa.txt"), "unchangedneedle");
         }
 
         IndexResult initial = service.index(root);
@@ -204,8 +271,10 @@ class FolderIndexTest {
         IndexException failure = assertThrows(IndexException.class, () -> failing.index(root));
 
         assertEquals(IndexResult.Status.FAILED, failure.result().status());
-        assertEquals(3, failure.result().candidateCount());
+        assertEquals(withUnchangedFile ? 4 : 3, failure.result().candidateCount());
         assertEquals(1, failure.result().indexedFiles());
+        assertEquals(withUnchangedFile ? 1 : 0, failure.result().unchangedFiles());
+        assertEquals(0, failure.result().deletedFiles());
         assertEquals(1, failure.result().writtenChunks());
         assertInstanceOf(SQLException.class, failure.getCause());
         assertThrows(SQLException.class, () -> captured.get().files().findAll());
@@ -226,7 +295,11 @@ class FolderIndexTest {
             assertTrue(storage.lexicalSearch().search(new SearchRequest("bnew")).isEmpty());
         }
 
-        assertEquals(IndexResult.Status.COMPLETE, service.index(root).status());
+        IndexResult recovered = service.index(root);
+        assertEquals(IndexResult.Status.COMPLETE, recovered.status());
+        assertEquals(2, recovered.indexedFiles());
+        assertEquals(withUnchangedFile ? 2 : 1, recovered.unchangedFiles());
+        assertEquals(2, recovered.writtenChunks());
     }
 
     @Test

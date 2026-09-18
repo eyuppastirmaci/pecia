@@ -57,6 +57,11 @@ class CorePackagingIT {
         runConsumer("verifyReadOnlyQuery");
     }
 
+    @Test
+    void persistsIndexingProfilesAtomicallyUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifyIndexingProfiles");
+    }
+
     private void runConsumer(String method) throws Exception {
         Path coreJar = requiredPath("pecia.it.jar");
         Path runtimeDirectory = requiredPath("pecia.it.runtimeDirectory");
@@ -149,7 +154,8 @@ class CorePackagingIT {
             assertNotNull(jar.getManifest(), "The core JAR must have a manifest");
             assertNull(jar.getManifest().getMainAttributes().getValue(Attributes.Name.MAIN_CLASS));
             assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/index/IndexService.class"));
-            for (String migration : List.of("V1__create_initial_schema.sql", "V2__add_chunk_fts.sql")) {
+            for (String migration : List.of(
+                    "V1__create_initial_schema.sql", "V2__add_chunk_fts.sql", "V3__add_file_indexing_profiles.sql")) {
                 assertTrue(
                         readEntry(jar, "db/migration/" + migration).length > 0,
                         "The core JAR must contain the migration: " + migration);

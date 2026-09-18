@@ -163,7 +163,7 @@ public final class FileWalker {
         return new WalkResult(files, issues);
     }
 
-    private static boolean isReserved(Path path) {
+    static boolean isReserved(Path path) {
         return path.getFileName() != null
                 && ALWAYS_SKIPPED_DIRS.contains(path.getFileName().toString().toLowerCase(Locale.ROOT));
     }

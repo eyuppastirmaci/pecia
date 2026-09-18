@@ -9,6 +9,7 @@ import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.inser
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionTwo;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.resource;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.rows;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -34,7 +35,7 @@ class SqliteFtsMigrationFailureTest {
     Path root;
 
     @ParameterizedTest
-    @ValueSource(ints = {0, 1, 2})
+    @ValueSource(ints = {0, 1, 2, 3})
     void missingFtsRuntimeDoesNotChangeAnySupportedVersionAndAllowsRetry(int version) throws Exception {
         Path database = root.resolve("index.db");
         if (version == 1) {
@@ -42,6 +43,10 @@ class SqliteFtsMigrationFailureTest {
                 seed(connection);
             }
         } else if (version == 2) {
+            try (Connection connection = openVersionTwo(root)) {
+                seed(connection);
+            }
+        } else if (version == 3) {
             try (SqliteStorage storage = SqliteStorage.open(database, root)) {
                 seed(storage.connection());
             }
@@ -52,14 +57,13 @@ class SqliteFtsMigrationFailureTest {
             SQLException cause = new SQLException("no such module: fts5", "missing", 1);
             SQLException failure = assertThrows(
                     SQLException.class,
-                    () -> SqliteSchemaInitializer.initialize(
-                            connection,
-                            rootUri(),
-                            resource(V1_RESOURCE),
-                            resource(V2_RESOURCE),
-                            owned -> SqliteFtsSupport.verify(owned, (probeConnection, table) -> {
-                                throw cause;
-                            })));
+                    () -> SqliteSchemaInitializer.load(connection, rootUri())
+                            .initialize(
+                                    resource(V1_RESOURCE),
+                                    resource(V2_RESOURCE),
+                                    owned -> SqliteFtsSupport.verify(owned, (probeConnection, table) -> {
+                                        throw cause;
+                                    })));
 
             assertTrue(failure.getMessage().contains("FTS5 is unavailable"));
             assertSame(cause, failure.getCause());
@@ -75,9 +79,9 @@ class SqliteFtsMigrationFailureTest {
                 assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema"));
             }
 
-            SqliteSchemaInitializer.initialize(connection, rootUri());
-            assertEquals(2, scalar(connection, "PRAGMA user_version"));
-            assertEquals(2, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+            SqliteSchemaInitializer.load(connection, rootUri()).initialize();
+            assertEquals(3, scalar(connection, "PRAGMA user_version"));
+            assertEquals(3, scalar(connection, "SELECT index_format_version FROM index_metadata"));
             if (version > 0) {
                 assertMatches(connection, "originalfirst", 11);
                 assertMatches(connection, "originalsecond", 12);
@@ -114,8 +118,8 @@ class SqliteFtsMigrationFailureTest {
 
             SQLException failure = assertThrows(
                     SQLException.class,
-                    () -> SqliteSchemaInitializer.initialize(
-                            connection, rootUri(), resource(V1_RESOURCE), failingMigration, SqliteFtsSupport::verify));
+                    () -> SqliteSchemaInitializer.load(connection, rootUri())
+                            .initialize(resource(V1_RESOURCE), failingMigration, SqliteFtsSupport::verify));
 
             assertFalse(failure.getMessage().contains("FTS5 is unavailable"));
             assertEquals(0, failure.getSuppressed().length);
@@ -125,8 +129,8 @@ class SqliteFtsMigrationFailureTest {
             assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'chunks_fts'"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM temp.sqlite_schema"));
 
-            SqliteSchemaInitializer.initialize(connection, rootUri());
-            assertEquals(2, scalar(connection, "PRAGMA user_version"));
+            SqliteSchemaInitializer.load(connection, rootUri()).initialize();
+            assertEquals(3, scalar(connection, "PRAGMA user_version"));
             assertMatches(connection, "content: originalfirst", 11);
             assertMatches(connection, "content: originalsecond", 12);
             assertMatches(connection, "headings: Originalheading", 11);
@@ -140,19 +144,18 @@ class SqliteFtsMigrationFailureTest {
         try (Connection connection = raw(database)) {
             assertThrows(
                     SQLException.class,
-                    () -> SqliteSchemaInitializer.initialize(
-                            connection,
-                            rootUri(),
-                            resource(V1_RESOURCE),
-                            resource(V2_RESOURCE) + "\nINVALID SQL;",
-                            SqliteFtsSupport::verify));
+                    () -> SqliteSchemaInitializer.load(connection, rootUri())
+                            .initialize(
+                                    resource(V1_RESOURCE),
+                                    resource(V2_RESOURCE) + "\nINVALID SQL;",
+                                    SqliteFtsSupport::verify));
             assertEquals(0, scalar(connection, "PRAGMA user_version"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM temp.sqlite_schema"));
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertEquals(2, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(3, scalar(storage.connection(), "PRAGMA user_version"));
             assertConsistent(storage.connection());
         }
     }
@@ -161,17 +164,16 @@ class SqliteFtsMigrationFailureTest {
     void acceptsHistoricalCrLfDeclarationsWhenOpeningWithAnLfResource() throws Exception {
         try (Connection connection = openVersionOne(root)) {
             seed(connection);
-            SqliteSchemaInitializer.initialize(
-                    connection,
-                    rootUri(),
-                    resource(V1_RESOURCE),
-                    resource(V2_RESOURCE).replace("\n", "\r\n"),
-                    SqliteFtsSupport::verify);
+            SqliteSchemaInitializer.load(connection, rootUri())
+                    .initialize(
+                            resource(V1_RESOURCE),
+                            resource(V2_RESOURCE).replace("\n", "\r\n"),
+                            SqliteFtsSupport::verify);
             assertMatches(connection, "originalfirst", 11);
         }
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             assertMatches(storage.connection(), "originalsecond", 12);
-            assertEquals(2, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(3, scalar(storage.connection(), "PRAGMA user_version"));
         }
     }
 

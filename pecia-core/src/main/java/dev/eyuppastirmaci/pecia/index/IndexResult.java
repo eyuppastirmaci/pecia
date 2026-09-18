@@ -8,13 +8,18 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * An indexing outcome; indexed file and written chunk counts include only committed replacements.
+ * An indexing outcome with unchanged files and committed replacements and deletions. Deleted files
+ * are independent of the current scan's candidate count.
+ *
+ * @param writtenChunks chunks written by committed replacements, excluding unchanged files
  */
 public record IndexResult(
         ProjectContext context,
         Status status,
         int candidateCount,
         int indexedFiles,
+        int unchangedFiles,
+        int deletedFiles,
         long writtenChunks,
         List<FileIssue> issues) {
 
@@ -26,10 +31,23 @@ public record IndexResult(
 
         if (candidateCount < 0
                 || indexedFiles < 0
+                || unchangedFiles < 0
+                || deletedFiles < 0
                 || writtenChunks < 0
-                || (long) indexedFiles + issues.size() > candidateCount) {
+                || (long) indexedFiles + unchangedFiles + issues.size() > candidateCount) {
             throw new IllegalArgumentException("Invalid indexing counters");
         }
+    }
+
+    /** Creates an outcome with no unchanged files or deletions for existing indexing callers. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            long writtenChunks,
+            List<FileIssue> issues) {
+        this(context, status, candidateCount, indexedFiles, 0, 0, writtenChunks, issues);
     }
 
     /** Returns the number of candidates rejected for content or format restrictions. */
@@ -42,10 +60,10 @@ public record IndexResult(
         return issues.size() - rejectedFiles();
     }
 
-    /** Describes whether indexing completed, skipped problematic files, or aborted. */
+    /** Describes whether indexing and cleanup completed, encountered file issues, or aborted. */
     public enum Status {
 
-        /** All admitted candidates were indexed successfully. */
+        /** All admitted candidates were indexed or unchanged, and any cleanup completed. */
         COMPLETE,
         /** Discovery completed, but one or more files could not be extracted. */
         PARTIAL,

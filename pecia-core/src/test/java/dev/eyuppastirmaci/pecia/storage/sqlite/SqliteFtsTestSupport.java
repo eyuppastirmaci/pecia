@@ -48,6 +48,23 @@ final class SqliteFtsTestSupport {
         }
     }
 
+    static Connection openVersionTwo(Path root) throws IOException, SQLException {
+        Connection connection = openVersionOne(root);
+        try {
+            applyFts(connection);
+            execute(connection, "UPDATE index_metadata SET index_format_version = 2");
+            execute(connection, "PRAGMA user_version = 2");
+            return connection;
+        } catch (IOException | SQLException | RuntimeException | Error failure) {
+            try {
+                connection.close();
+            } catch (SQLException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+            throw failure;
+        }
+    }
+
     static void applyFts(Connection connection) throws IOException, SQLException {
         applyScript(connection, resource(V2_RESOURCE));
     }

@@ -5,6 +5,7 @@ import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.inser
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionTwo;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -101,7 +102,7 @@ class SqliteReadOnlyStorageTest {
                     storage.lexicalSearch()
                             .search(new SearchRequest("JWT_SECRET"))
                             .size());
-            assertEquals(2, scalar(connection, "PRAGMA user_version"));
+            assertEquals(3, scalar(connection, "PRAGMA user_version"));
         }
 
         assertArrayEquals(before, Files.readAllBytes(database));
@@ -132,11 +133,12 @@ class SqliteReadOnlyStorageTest {
         assertEquals(before, entries());
     }
 
-    @Test
-    void reportsMigrationForAValidVersionOneIndexWithoutUpgradingIt() throws Exception {
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2})
+    void reportsMigrationForAValidHistoricalIndexWithoutUpgradingIt(int version) throws Exception {
         Path database = root.resolve("index.db");
 
-        try (Connection connection = openVersionOne(root)) {
+        try (Connection connection = version == 1 ? openVersionOne(root) : openVersionTwo(root)) {
             populate(connection);
         }
 
@@ -150,16 +152,19 @@ class SqliteReadOnlyStorageTest {
         assertArrayEquals(before, Files.readAllBytes(database));
 
         try (Connection connection = raw(database)) {
-            assertEquals(1, scalar(connection, "PRAGMA user_version"));
-            assertEquals(1, scalar(connection, "SELECT index_format_version FROM index_metadata"));
-            assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'chunks_fts'"));
+            assertEquals(version, scalar(connection, "PRAGMA user_version"));
+            assertEquals(version, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+            assertEquals(
+                    version - 1, scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'chunks_fts'"));
+            assertEquals(
+                    0, scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'file_indexing_profiles'"));
             assertEquals(1, scalar(connection, "SELECT count(*) FROM chunks"));
             assertExclusiveAccess(connection);
         }
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {0, 3, 99})
+    @ValueSource(ints = {0, 4, 99})
     void rejectsUnsupportedSchemaVersionsWithoutAdoptingOrChangingThem(int version) throws Exception {
         Path database = root.resolve("index.db");
 
@@ -176,7 +181,7 @@ class SqliteReadOnlyStorageTest {
         Path database = root.resolve("index.db");
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            execute(storage.connection(), "UPDATE index_metadata SET index_format_version = 3");
+            execute(storage.connection(), "UPDATE index_metadata SET index_format_version = 99");
         }
 
         assertRejectedWithoutModification(database, root, IndexAccessException.Reason.INCOMPATIBLE);
@@ -290,8 +295,9 @@ class SqliteReadOnlyStorageTest {
             try {
                 SQLException failure = assertThrows(
                         SQLException.class,
-                        () -> SqliteSchemaInitializer.validateReadOnly(
-                                connection, root.toRealPath().toUri().toASCIIString()));
+                        () -> SqliteSchemaInitializer.load(
+                                        connection, root.toRealPath().toUri().toASCIIString())
+                                .validateReadOnly());
 
                 assertEquals(5, failure.getErrorCode() & 0xff, "The writer lock must remain a SQLITE_BUSY failure");
                 assertFalse(failure instanceof IndexAccessException, "A locked database is not a corrupt index");
@@ -299,8 +305,8 @@ class SqliteReadOnlyStorageTest {
                 execute(writer, "ROLLBACK");
             }
 
-            SqliteSchemaInitializer.validateReadOnly(
-                    connection, root.toRealPath().toUri().toASCIIString());
+            SqliteSchemaInitializer.load(connection, root.toRealPath().toUri().toASCIIString())
+                    .validateReadOnly();
 
             assertEquals(
                     1,

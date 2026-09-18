@@ -41,11 +41,17 @@ class SqliteStorageTest {
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             owned = storage.connection();
-            assertEquals(2, scalar(owned, "PRAGMA user_version"));
-            assertEquals(2, scalar(owned, "SELECT index_format_version FROM index_metadata"));
+            assertEquals(3, scalar(owned, "PRAGMA user_version"));
+            assertEquals(3, scalar(owned, "SELECT index_format_version FROM index_metadata"));
             assertEquals(1, scalar(owned, "PRAGMA foreign_keys"));
-            for (String table :
-                    List.of("files", "chunks", "chunk_headings", "chunk_attributes", "index_metadata", "chunks_fts")) {
+            for (String table : List.of(
+                    "files",
+                    "chunks",
+                    "chunk_headings",
+                    "chunk_attributes",
+                    "index_metadata",
+                    "chunks_fts",
+                    "file_indexing_profiles")) {
                 try (var query = owned.prepareStatement("SELECT type FROM sqlite_schema WHERE name = ?")) {
                     query.setString(1, table);
                     try (var row = query.executeQuery()) {
@@ -93,7 +99,7 @@ class SqliteStorageTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-1, 3, 100})
+    @ValueSource(ints = {-1, 4, 100})
     void rejectsUnsupportedSchemaVersionsWithoutChangingTheDatabase(int version) throws Exception {
         Path database = root.resolve("index.db");
 
@@ -146,7 +152,7 @@ class SqliteStorageTest {
                 "DROP TABLE chunk_attributes",
                 "ALTER TABLE chunks RENAME COLUMN content TO wrong",
                 "DELETE FROM index_metadata",
-                "UPDATE index_metadata SET index_format_version = 3"
+                "UPDATE index_metadata SET index_format_version = 99"
             })
     void rejectsIncompleteOrIncompatibleCurrentDatabases(String damage) throws Exception {
         Path database = root.resolve("index.db");
@@ -167,16 +173,15 @@ class SqliteStorageTest {
         try (Connection connection = raw(database)) {
             assertThrows(
                     SQLException.class,
-                    () -> SqliteSchemaInitializer.initialize(
-                            connection,
-                            root.toRealPath().toUri().toASCIIString(),
-                            "CREATE TABLE partial(value TEXT); PRAGMA user_version = 1; INVALID SQL;"));
+                    () -> SqliteSchemaInitializer.load(
+                                    connection, root.toRealPath().toUri().toASCIIString())
+                            .initialize("CREATE TABLE partial(value TEXT); PRAGMA user_version = 1; INVALID SQL;"));
             assertEquals(0, scalar(connection, "PRAGMA user_version"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema"));
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertEquals(2, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(3, scalar(storage.connection(), "PRAGMA user_version"));
         }
     }
 
@@ -187,10 +192,8 @@ class SqliteStorageTest {
         try (Connection connection = raw(database)) {
             assertThrows(
                     SQLException.class,
-                    () -> SqliteSchemaInitializer.initialize(
-                            connection,
-                            "root",
-                            "CREATE TABLE index_metadata(singleton INTEGER CHECK(singleton = 2),"
+                    () -> SqliteSchemaInitializer.load(connection, "root")
+                            .initialize("CREATE TABLE index_metadata(singleton INTEGER CHECK(singleton = 2),"
                                     + " project_root_uri TEXT, index_format_version INTEGER);"));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM sqlite_schema"));
             assertEquals(0, scalar(connection, "PRAGMA user_version"));

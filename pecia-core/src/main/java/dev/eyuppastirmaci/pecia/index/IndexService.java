@@ -50,8 +50,10 @@ public final class IndexService {
 
     /**
      * Indexes admitted files in deterministic order, atomically replacing each file independently.
-     * Every candidate is reprocessed; missing or excluded old records are not deleted. Content
-     * rejection/read errors retain old data and produce a PARTIAL result; storage failures abort. A
+     * Unchanged content with a matching profile is skipped. After a successful run, confirmed missing
+     * files in the target scope are deleted as one atomic batch; excluded records are retained.
+     * Content rejection/read errors retain old data, skip cleanup and produce a PARTIAL result. Storage
+     * or cleanup failures abort while preserving earlier per-file commits. A
      * valid empty directory creates a queryable empty index. This service owns and closes storage.
      *
      * @throws IOException if target/configuration resolution or initial discovery fails, before
@@ -68,7 +70,7 @@ public final class IndexService {
 
         requireCompleteScan(context, scanResult);
 
-        return indexFiles(context, scanResult.files());
+        return indexFiles(context, scanResult);
     }
 
     private void requireCompleteScan(ProjectContext context, WalkResult scanResult) throws IndexException {
@@ -82,10 +84,13 @@ public final class IndexService {
         throw new IndexException("Indexing requires a complete scan", null, result, scanResult.issues());
     }
 
-    private IndexResult indexFiles(ProjectContext context, List<Path> candidates) throws IndexException {
+    private IndexResult indexFiles(ProjectContext context, WalkResult scanResult) throws IndexException {
+        List<Path> candidates = scanResult.files();
         // Constructing the file pipeline validates the real tokenizer budget before opening storage.
         FileIndexer indexer = new FileIndexer(context);
         int indexedFiles = 0;
+        int unchangedFiles = 0;
+        int deletedFiles = 0;
         long writtenChunks = 0;
         List<IndexResult.FileIssue> issues = new ArrayList<>();
 
@@ -93,7 +98,12 @@ public final class IndexService {
             for (Path candidate : candidates) {
                 try {
                     FileIndexer.Result result = indexer.index(candidate, storage);
-                    indexedFiles++;
+                    if (result.unchanged()) {
+                        unchangedFiles++;
+                    } else {
+                        indexedFiles++;
+                    }
+
                     writtenChunks += result.chunkCount();
                 } catch (ExtractionException failure) {
                     IndexResult.FileIssue issue = new IndexResult.FileIssue(
@@ -102,16 +112,32 @@ public final class IndexService {
                     issues.add(issue);
                 }
             }
+
+            if (issues.isEmpty()) {
+                IndexDeletionPlanner planner = new IndexDeletionPlanner(context);
+                var missing = planner.plan(scanResult, storage.files().findAll());
+
+                // Recheck absence and scope immediately before applying the batch.
+                deletedFiles = storage.deleteFiles(planner.plan(scanResult, missing));
+            }
         } catch (IOException | SQLException failure) {
             IndexResult result = new IndexResult(
-                    context, IndexResult.Status.FAILED, candidates.size(), indexedFiles, writtenChunks, issues);
+                    context,
+                    IndexResult.Status.FAILED,
+                    candidates.size(),
+                    indexedFiles,
+                    unchangedFiles,
+                    deletedFiles,
+                    writtenChunks,
+                    issues);
 
-            throw new IndexException("Index storage operation failed", failure, result, List.of());
+            throw new IndexException("Index storage or cleanup operation failed", failure, result, List.of());
         }
 
         IndexResult.Status status = issues.isEmpty() ? IndexResult.Status.COMPLETE : IndexResult.Status.PARTIAL;
 
-        return new IndexResult(context, status, candidates.size(), indexedFiles, writtenChunks, issues);
+        return new IndexResult(
+                context, status, candidates.size(), indexedFiles, unchangedFiles, deletedFiles, writtenChunks, issues);
     }
 
     private WalkResult scan(ProjectContext context) throws IOException {
