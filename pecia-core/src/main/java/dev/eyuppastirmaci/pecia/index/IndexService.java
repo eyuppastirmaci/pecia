@@ -142,9 +142,10 @@ public final class IndexService {
 
     private WalkResult scan(ProjectContext context) throws IOException {
         PeciaConfig config = context.loadedConfig().config();
+        GlobFilter filter = new GlobFilter(config.include(), config.exclude());
+        FileWalker walker = new FileWalker(filter);
 
-        return new FileWalker(new GlobFilter(config.include(), config.exclude()))
-                .scan(context.target(), context.projectRoot(), context.storageFiles());
+        return walker.scan(context.target(), context.projectRoot(), context.storageFiles());
     }
 
     @FunctionalInterface

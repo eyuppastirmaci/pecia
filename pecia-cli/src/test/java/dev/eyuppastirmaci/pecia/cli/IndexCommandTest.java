@@ -205,6 +205,62 @@ class IndexCommandTest {
     }
 
     @Test
+    void deletedFileReportsCleanupOnceAndPreservesUnchangedCounters() throws Exception {
+        Files.writeString(root.resolve(".pecia.toml"), "[index]\ninclude = ['*.txt']\n");
+        Files.writeString(root.resolve("keep.txt"), "survivor");
+        Path deleted = Files.writeString(root.resolve("delete.txt"), "obsolete");
+        Files.writeString(root.resolve("empty.txt"), "");
+        assertSuccessfulIndex(3, 3, 0, 0, 2);
+
+        Files.delete(deleted);
+
+        assertSuccessfulIndex(2, 0, 2, 1, 0);
+        assertSuccessfulIndex(2, 0, 2, 0, 0);
+
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(root.resolve(".pecia/index.db"), root)) {
+            assertTrue(storage.lexicalSearch()
+                    .search(new SearchRequest("obsolete"))
+                    .isEmpty());
+            assertEquals(
+                    1,
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("survivor"))
+                            .size());
+        }
+    }
+
+    @Test
+    void changedTomlTokenBudgetReportsNewChunksThenUnchangedFiles() throws IOException {
+        Files.writeString(root.resolve("calendar.txt"), """
+            needle january one two
+            needle february one two
+            needle march one two
+            needle april one two
+            needle may one two
+            needle june one two
+            """);
+        writeChunkConfig(26, 1);
+        assertSuccessfulIndex(1, 1, 0, 0, 1);
+
+        writeChunkConfig(14, 1);
+
+        assertSuccessfulIndex(1, 1, 0, 0, 2);
+        assertSuccessfulIndex(1, 0, 1, 0, 0);
+    }
+
+    @Test
+    void changedEmbeddingConcurrencyReportsOnlyUnchangedFiles() throws IOException {
+        Files.writeString(root.resolve("notes.txt"), "needle");
+        Files.writeString(root.resolve("empty.txt"), "");
+        writeChunkConfig(26, 1);
+        assertSuccessfulIndex(2, 2, 0, 0, 1);
+
+        writeChunkConfig(26, 4);
+
+        assertSuccessfulIndex(2, 0, 2, 0, 0);
+    }
+
+    @Test
     void partialRepeatSeparatesUnchangedFilesFromRejections() throws Exception {
         Files.writeString(root.resolve("good.txt"), "good");
         Files.writeString(root.resolve("bad.txt"), "old content");
@@ -312,6 +368,34 @@ class IndexCommandTest {
         new CommandLine(command).parseArgs();
 
         assertEquals(Path.of("."), command.path);
+    }
+
+    private void writeChunkConfig(int maxTokens, int concurrency) throws IOException {
+        Files.writeString(
+                root.resolve(".pecia.toml"),
+                "[index]\ninclude = ['*.txt']\n[chunk]\nmax_tokens = " + maxTokens
+                        + "\noverlap_tokens = 0\n[embed]\nconcurrency = " + concurrency + "\n");
+    }
+
+    private void assertSuccessfulIndex(int candidates, int indexed, int unchanged, int deleted, int chunks) {
+        out.getBuffer().setLength(0);
+        err.getBuffer().setLength(0);
+
+        assertEquals(0, run(root.toString()));
+        assertEquals("", err.toString());
+        assertEquals(
+                String.join(
+                        System.lineSeparator(),
+                        "index: " + root.resolve(".pecia/index.db"),
+                        "candidates: " + candidates,
+                        "indexed: " + indexed,
+                        "unchanged: " + unchanged,
+                        "deleted: " + deleted,
+                        "chunks: " + chunks,
+                        "rejected: 0",
+                        "failed: 0",
+                        ""),
+                out.toString());
     }
 
     private int run(String... args) {

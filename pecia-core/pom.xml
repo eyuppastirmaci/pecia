@@ -47,6 +47,32 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <id>packaged-test-support</id>
+                        <phase>process-test-classes</phase>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>test-support</classifier>
+                            <includes>
+                                <include>dev/eyuppastirmaci/pecia/testing/OfflineEnvironment*.class</include>
+                                <include>dev/eyuppastirmaci/pecia/testing/OfflineSandbox*.class</include>
+                                <include>dev/eyuppastirmaci/pecia/testing/NetworkGuard*.class</include>
+                                <include>dev/eyuppastirmaci/pecia/testing/NetworkProbe*.class</include>
+                            </includes>
+                            <excludes>
+                                <exclude>**/*Test*.class</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
                     <execution>

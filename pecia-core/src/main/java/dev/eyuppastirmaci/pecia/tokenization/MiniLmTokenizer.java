@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.tokenization;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -361,9 +362,10 @@ public final class MiniLmTokenizer implements TokenCounter {
 
     private static Map<String, Integer> parseVocabulary(byte[] bytes) throws IOException {
         Map<String, Integer> vocabulary = new HashMap<>();
+        InputStreamReader vocabularyReader =
+                new InputStreamReader(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8);
 
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new java.io.ByteArrayInputStream(bytes), StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(vocabularyReader)) {
             String token;
             int tokenId = 0;
 

@@ -13,14 +13,18 @@ import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
+import dev.eyuppastirmaci.pecia.testing.OfflineEnvironment;
+import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
@@ -32,12 +36,27 @@ class PackagedCliIT {
 
     private static final String TOKENIZER_PATH = "dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/";
     private static final String VOCABULARY_SHA256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3";
+    private static final String CALENDAR_TEXT = """
+        needle january one two
+        needle february one two
+        needle march one two
+        needle april one two
+        needle may one two
+        needle june one two
+        needle july one two
+        needle august one two
+        needle september one two
+        needle october one two
+        needle november one two
+        needle december one two
+        """;
 
     @TempDir
     Path sandbox;
 
     private Path project;
     private Path executableJar;
+    private OfflineSandbox offline;
 
     @BeforeEach
     void prepareProject() throws IOException {
@@ -481,6 +500,205 @@ class PackagedCliIT {
     }
 
     @Test
+    void lexicalLifecycleKeepsCliQueriesCurrentAcrossUnchangedEditAndDeleteRuns() throws Exception {
+        enableOffline();
+        runReadOnly(project, "--help");
+        Files.writeString(project.resolve(".pecia.toml"), """
+            [index]
+            include = ['**/*.md', '**/*.java', '**/*.txt']
+            """);
+        Files.createDirectory(project.resolve("docs"));
+        Files.createDirectory(project.resolve("src"));
+        Path guide = project.resolve("docs/Ödeme.md");
+        Files.writeString(guide, "# Ödeme rehberi\n\noriginalneedle İstanbul café 😀\n");
+        Files.writeString(project.resolve("src/Auth.java"), "String JWT_SECRET;\n");
+        Files.writeString(project.resolve("a-weak.txt"), "ranking filler filler filler\n");
+        Files.writeString(project.resolve("z-strong.txt"), "ranking ranking ranking filler\n");
+        Files.writeString(project.resolve("empty.txt"), "");
+        Path database = project.resolve(".pecia/index.db");
+
+        assertIndexSummary(run(project, "index"), database, 5, 4);
+        Result original = runReadOnly(project, "query", "originalneedle");
+        assertEquals(List.of("docs/Ödeme.md:1-3"), hitLocations(original));
+        assertTrue(original.out().contains("  heading: Ödeme rehberi\n"), original.out());
+        assertTrue(original.out().contains("  originalneedle İstanbul café 😀\n"), original.out());
+        assertEquals(List.of("docs/Ödeme.md:1-3"), hitLocations(runReadOnly(project, "query", "İstanbul café")));
+        Result source = runReadOnly(project, "query", "JWT_SECRET");
+        assertEquals(List.of("src/Auth.java:1-1"), hitLocations(source));
+        assertTrue(source.out().contains("  String JWT_SECRET;\n"), source.out());
+        Result ranking = runReadOnly(project, "query", "ranking");
+        assertRanking(ranking);
+        Result limited = runReadOnly(project, "query", "ranking", "--limit", "1");
+        assertEquals(List.of("z-strong.txt:1-1"), hitLocations(limited));
+        assertEquals(List.of(bm25Scores(ranking).getFirst()), bm25Scores(limited));
+
+        assertIndexSummary(run(project, "index"), database, 5, 0, 0);
+        assertEquals(
+                original.out(), runReadOnly(project, "query", "originalneedle").out());
+        assertEquals(ranking.out(), runReadOnly(project, "query", "ranking").out());
+
+        Files.writeString(guide, "# Ödeme rehberi\n\nreplacementneedle İstanbul café 😀\n");
+        assertIndexSummary(run(project, "index"), database, 5, 1, 1);
+        Result replacement = runReadOnly(project, "query", "replacementneedle");
+        assertEquals(List.of("docs/Ödeme.md:1-3"), hitLocations(replacement));
+        assertTrue(replacement.out().contains("  heading: Ödeme rehberi\n"), replacement.out());
+        assertTrue(replacement.out().contains("  replacementneedle İstanbul café 😀\n"), replacement.out());
+        assertEquals(
+                "No results.\n", runReadOnly(project, "query", "originalneedle").out());
+        assertRanking(runReadOnly(project, "query", "ranking"));
+
+        Files.delete(guide);
+        assertIndexSummary(run(project, "index"), database, 4, 0, 1, 0);
+        assertEquals(
+                "No results.\n",
+                runReadOnly(project, "query", "replacementneedle").out());
+        assertEquals(
+                "No results.\n", runReadOnly(project, "query", "İstanbul café").out());
+        assertEquals(List.of("src/Auth.java:1-1"), hitLocations(runReadOnly(project, "query", "JWT_SECRET")));
+        assertRanking(runReadOnly(project, "query", "ranking"));
+        assertIndexSummary(run(project, "index"), database, 4, 0, 0);
+        Result preview = runReadOnly(project, "index", "--dry-run");
+        assertTrue(preview.out().contains("4 file(s) would be indexed:\n"), preview.out());
+        assertFalse(preview.out().contains("Ödeme.md"), preview.out());
+    }
+
+    @Test
+    void configuredRechunkingUpdatesCliRangesAndThenReturnsToUnchangedIndexing() throws Exception {
+        enableOffline();
+        Path docs = Files.createDirectory(project.resolve("docs"));
+        Files.writeString(docs.resolve("calendar.txt"), CALENDAR_TEXT);
+        Path database = project.resolve("state/search.db");
+        List<LineRange> large = List.of(new LineRange(1, 6), new LineRange(7, 12));
+        List<LineRange> small =
+                List.of(new LineRange(1, 3), new LineRange(4, 6), new LineRange(7, 9), new LineRange(10, 12));
+        writeCalendarConfig(26, 1);
+
+        Result freshPreview = runReadOnly(project, "index", "--dry-run");
+        assertTrue(freshPreview.out().contains("1 file(s) would be indexed:\n  docs/calendar.txt\n"));
+        assertFalse(Files.exists(project.resolve("state")));
+        assertIndexSummary(run(project, "index"), database, 1, 2);
+        Result original = assertCalendarQuery(docs, large);
+        assertIndexSummary(run(project, "index"), database, 1, 0, 0);
+        assertEquals(original.out(), assertCalendarQuery(docs, large).out());
+
+        writeCalendarConfig(14, 1);
+        Result changedPreview = runReadOnly(project, "index", "--dry-run");
+        assertTrue(changedPreview.out().contains("1 file(s) would be indexed:\n  docs/calendar.txt\n"));
+        // Preview and query must leave the old chunks intact until a real index run.
+        assertEquals(original.out(), assertCalendarQuery(docs, large).out());
+        assertIndexSummary(run(project, "index"), database, 1, 1, 4);
+        Result smaller = assertCalendarQuery(docs, small);
+        Result july = runReadOnly(project, "query", "july", "--root", docs.toString());
+        assertEquals(List.of("docs/calendar.txt:7-9"), hitLocations(july));
+        assertIndexSummary(run(project, "index"), database, 1, 0, 0);
+        assertEquals(smaller.out(), assertCalendarQuery(docs, small).out());
+
+        writeCalendarConfig(26, 1);
+        assertIndexSummary(run(project, "index"), database, 1, 1, 2);
+        Result larger = assertCalendarQuery(docs, large);
+        assertEquals(
+                List.of("docs/calendar.txt:7-12"),
+                hitLocations(runReadOnly(project, "query", "july", "--root", docs.toString())));
+        assertIndexSummary(run(project, "index"), database, 1, 0, 0);
+        assertEquals(larger.out(), assertCalendarQuery(docs, large).out());
+
+        writeCalendarConfig(26, 4);
+        byte[] beforeConcurrencyChange = Files.readAllBytes(database);
+        assertIndexSummary(run(project, "index"), database, 1, 0, 0);
+        assertArrayEquals(beforeConcurrencyChange, Files.readAllBytes(database));
+        assertEquals(larger.out(), assertCalendarQuery(docs, large).out());
+        runReadOnly(project, "index", "--dry-run");
+        assertEquals(CALENDAR_TEXT, Files.readString(docs.resolve("calendar.txt")));
+        assertFalse(Files.exists(project.resolve(".pecia")));
+        assertFalse(Files.exists(docs.resolve("state")));
+    }
+
+    private Result assertCalendarQuery(Path root, List<LineRange> ranges) throws Exception {
+        Result result = runReadOnly(project, "query", "needle", "--root", root.toString(), "--limit", "100");
+        assertEquals(
+                ranges.stream()
+                        .map(range -> "docs/calendar.txt:" + range.startLine() + "-" + range.endLine())
+                        .toList(),
+                hitLocations(result));
+        List<String> blocks = List.of(result.out().stripTrailing().split("\n\n"));
+        assertEquals(ranges.size(), blocks.size());
+        assertEquals(ranges.size(), bm25Scores(result).size());
+        for (int index = 0; index < ranges.size(); index++) {
+            LineRange range = ranges.get(index);
+            List<String> rendered = blocks.get(index).lines().toList();
+            assertEquals(
+                    CALENDAR_TEXT.lines().toList().subList(range.startLine() - 1, range.endLine()).stream()
+                            .map(line -> "  " + line)
+                            .toList(),
+                    rendered.subList(2, rendered.size()));
+        }
+        return result;
+    }
+
+    private void enableOffline() throws Exception {
+        offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+    }
+
+    private void writeCalendarConfig(int maxTokens, int concurrency) throws IOException {
+        Files.writeString(project.resolve(".pecia.toml"), """
+            [index]
+            include = ['docs/*.txt']
+            [chunk]
+            max_tokens = %d
+            overlap_tokens = 0
+            [embed]
+            concurrency = %d
+            [store]
+            path = 'state/search.db'
+            """.formatted(maxTokens, concurrency));
+    }
+
+    private Result runReadOnly(Path directory, String... arguments) throws Exception {
+        List<Path> entries = projectEntries();
+        Map<Path, ContentHash> contents = projectContents();
+        Result result = run(directory, arguments);
+        assertSuccess(result);
+        assertEquals(entries, projectEntries(), "Query/preview must not create or delete project entries");
+        assertEquals(contents, projectContents(), "Query/preview must preserve source and index bytes");
+        return result;
+    }
+
+    private Map<Path, ContentHash> projectContents() throws IOException {
+        Map<Path, ContentHash> contents = new HashMap<>();
+        try (var paths = Files.walk(project)) {
+            for (Path path : paths.filter(Files::isRegularFile).toList()) {
+                contents.put(project.relativize(path), ContentHash.sha256(Files.readAllBytes(path)));
+            }
+        }
+        return Map.copyOf(contents);
+    }
+
+    private static List<String> hitLocations(Result result) {
+        return result.out()
+                .lines()
+                .filter(line -> !line.isBlank() && !line.startsWith(" "))
+                .toList();
+    }
+
+    private static List<Double> bm25Scores(Result result) {
+        List<Double> scores = result.out()
+                .lines()
+                .filter(line -> line.startsWith("  BM25: "))
+                .map(line -> Double.parseDouble(line.substring("  BM25: ".length())))
+                .toList();
+        assertTrue(scores.stream().allMatch(Double::isFinite), result.out());
+        return scores;
+    }
+
+    private static void assertRanking(Result result) {
+        assertEquals(List.of("z-strong.txt:1-1", "a-weak.txt:1-1"), hitLocations(result));
+        List<Double> scores = bm25Scores(result);
+        assertEquals(2, scores.size());
+        assertTrue(scores.getFirst() < scores.getLast(), result.out());
+    }
+
+    @Test
     void executableJarIncludesCoreVocabularyAndLicenses() throws Exception {
         try (JarFile jar = new JarFile(executableJar.toFile())) {
             assertEquals(
@@ -489,6 +707,9 @@ class PackagedCliIT {
             assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/index/IndexService.class"));
             assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/search/QueryService.class"));
             assertNotNull(jar.getJarEntry("picocli/CommandLine.class"));
+            assertTrue(
+                    jar.stream().noneMatch(entry -> entry.getName().startsWith("dev/eyuppastirmaci/pecia/testing/")),
+                    "Test-only offline support must not be included in the CLI distribution");
             assertTrue(
                     jar.stream()
                             .map(entry -> entry.getName())
@@ -534,10 +755,16 @@ class PackagedCliIT {
                 "-Dfile.encoding=UTF-8",
                 "-Dstdout.encoding=UTF-8",
                 "-Dstderr.encoding=UTF-8",
+                "-Djava.io.tmpdir="
+                        + Path.of(System.getProperty("java.io.tmpdir")).toRealPath(),
                 "-Dpicocli.ansi=false",
                 "-Dpicocli.usage.width=80"));
 
         command.addAll(jvmArguments);
+        OfflineSandbox.Run evidence = offline == null ? null : offline.newRun();
+        if (evidence != null) {
+            command.addAll(evidence.jvmArguments());
+        }
         command.addAll(List.of("-jar", executableJar.toString()));
         command.addAll(List.of(arguments));
 
@@ -549,6 +776,9 @@ class PackagedCliIT {
                 .redirectOutput(stdout.toFile())
                 .redirectError(stderr.toFile());
         builder.environment().keySet().removeAll(List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"));
+        if (evidence != null) {
+            evidence.configure(builder.environment());
+        }
         Process process = builder.start();
 
         try {
@@ -562,10 +792,20 @@ class PackagedCliIT {
 
             assertTrue(completed, () -> "CLI timed out: " + command);
 
-            return new Result(
-                    process.exitValue(),
-                    Files.readString(stdout).replace("\r\n", "\n"),
-                    Files.readString(stderr).replace("\r\n", "\n"));
+            String error = Files.readString(stderr).replace("\r\n", "\n");
+            if (evidence != null) {
+                evidence.verifyLexical("dev.eyuppastirmaci.pecia.Bootstrap");
+                error = OfflineSandbox.applicationStderr(error);
+                List<String> options = List.of(arguments);
+                if (options.contains("query") || options.contains("--dry-run") || options.contains("--help")) {
+                    assertFalse(
+                            OfflineEnvironment.initialized(
+                                    evidence.initializationLog(),
+                                    "dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer"),
+                            "Query, preview and help must not initialize the tokenizer");
+                }
+            }
+            return new Result(process.exitValue(), Files.readString(stdout).replace("\r\n", "\n"), error);
         } finally {
             if (process.isAlive()) {
                 process.destroyForcibly();
@@ -620,6 +860,11 @@ class PackagedCliIT {
     }
 
     private static void assertIndexSummary(Result result, Path database, int candidates, int indexed, int chunks) {
+        assertIndexSummary(result, database, candidates, indexed, 0, chunks);
+    }
+
+    private static void assertIndexSummary(
+            Result result, Path database, int candidates, int indexed, int deleted, int chunks) {
         assertSuccess(result);
         assertEquals(
                 "index: "
@@ -630,7 +875,8 @@ class PackagedCliIT {
                         + indexed
                         + "\nunchanged: "
                         + (candidates - indexed)
-                        + "\ndeleted: 0"
+                        + "\ndeleted: "
+                        + deleted
                         + "\nchunks: "
                         + chunks
                         + "\nrejected: 0\nfailed: 0\n",

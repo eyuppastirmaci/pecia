@@ -32,18 +32,6 @@ public final class DocumentExtractionService {
     }
 
     /**
-     * Checks strategy support and loads stable, bounded bytes for hashing before interpretation.
-     *
-     * @throws NullPointerException if request is null
-     * @throws ExtractionException if the type is unsupported or the source cannot be loaded
-     */
-    public FileContent load(ExtractionRequest request) throws ExtractionException {
-        requireSupported(request);
-
-        return contentLoader.load(request.file());
-    }
-
-    /**
      * Extracts an already loaded snapshot without reading the source again. Use {@link #load(ExtractionRequest)} to
      * enforce the configured file size and stable-read checks before calling this overload.
      *
@@ -59,6 +47,18 @@ public final class DocumentExtractionService {
         requireSupported(request);
 
         return extractor.extract(request, content);
+    }
+
+    /**
+     * Checks strategy support and loads stable, bounded bytes for hashing before interpretation.
+     *
+     * @throws NullPointerException if request is null
+     * @throws ExtractionException if the type is unsupported or the source cannot be loaded
+     */
+    public FileContent load(ExtractionRequest request) throws ExtractionException {
+        requireSupported(request);
+
+        return contentLoader.load(request.file());
     }
 
     private void requireSupported(ExtractionRequest request) throws ExtractionException {

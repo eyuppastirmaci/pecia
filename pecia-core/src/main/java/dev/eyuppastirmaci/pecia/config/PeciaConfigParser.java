@@ -51,7 +51,7 @@ public final class PeciaConfigParser {
     }
 
     private static List<String> stringList(TomlParseResult toml, String key, List<String> fallback) {
-        TomlArray array = tomlValue(toml, key, "an array of strings", toml::getArray);
+        TomlArray array = tomlValue(key, "an array of strings", toml::getArray);
 
         if (array == null) {
             return fallback;
@@ -71,18 +71,18 @@ public final class PeciaConfigParser {
     }
 
     private static int intValue(TomlParseResult toml, String key, int fallback) {
-        Long value = tomlValue(toml, key, "an integer", toml::getLong);
+        Long value = tomlValue(key, "an integer", toml::getLong);
 
         return value == null ? fallback : Math.toIntExact(value);
     }
 
     private static String stringValue(TomlParseResult toml, String key, String fallback) {
-        String value = tomlValue(toml, key, "a string", toml::getString);
+        String value = tomlValue(key, "a string", toml::getString);
 
         return value == null ? fallback : value;
     }
 
-    private static <T> T tomlValue(TomlParseResult toml, String key, String expected, Function<String, T> getter) {
+    private static <T> T tomlValue(String key, String expected, Function<String, T> getter) {
         // tomlj throws when a key exists with the wrong type; turn that into our own clear error.
         try {
             return getter.apply(key);

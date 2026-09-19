@@ -27,26 +27,26 @@ public final class Bootstrap implements CommandLine.IFactory {
     /**
      * Creates a command instance, injecting wired dependencies where needed.
      *
-     * @param cls command class picocli asks for
+     * @param commandClass command class picocli asks for
      * @return an instance of the requested class
      * @throws Exception if the fallback factory fails to build the instance
      */
     @Override
-    public <K> K create(Class<K> cls) throws Exception {
-        if (cls == InitCommand.class) {
-            return cls.cast(new InitCommand(configFile));
+    public <K> K create(Class<K> commandClass) throws Exception {
+        if (commandClass == InitCommand.class) {
+            return commandClass.cast(new InitCommand(configFile));
         }
 
-        if (cls == IndexCommand.class) {
-            return cls.cast(new IndexCommand(indexService));
+        if (commandClass == IndexCommand.class) {
+            return commandClass.cast(new IndexCommand(indexService));
         }
 
-        if (cls == QueryCommand.class) {
-            return cls.cast(new QueryCommand(queryService));
+        if (commandClass == QueryCommand.class) {
+            return commandClass.cast(new QueryCommand(queryService));
         }
 
         // Commands without wired dependencies are built by picocli's default factory.
-        return fallback.create(cls);
+        return fallback.create(commandClass);
     }
 
     /**

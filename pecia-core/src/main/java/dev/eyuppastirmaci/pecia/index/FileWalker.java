@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.StreamSupport;
 
 /** Discovers filtered files with inherited gitignore rules without following symbolic links. */
 public final class FileWalker {
@@ -179,7 +180,7 @@ public final class FileWalker {
         // Join individual path components so display and sorting do not depend on the host separator.
         return String.join(
                 "/",
-                java.util.stream.StreamSupport.stream(path.spliterator(), false)
+                StreamSupport.stream(path.spliterator(), false)
                         .map(Path::toString)
                         .toList());
     }
@@ -195,9 +196,10 @@ public final class FileWalker {
             }
         }
 
-        BasicFileAttributes attrs = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        BasicFileAttributes attributes =
+                Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
 
-        if (!attrs.isDirectory()) {
+        if (!attributes.isDirectory()) {
             throw new IOException("Target must be a directory: " + path);
         }
     }

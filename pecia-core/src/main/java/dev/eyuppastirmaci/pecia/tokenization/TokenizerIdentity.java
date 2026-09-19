@@ -5,9 +5,7 @@ package dev.eyuppastirmaci.pecia.tokenization;
  *
  * @param modelId embedding model whose tokenization contract is implemented
  * @param revision pinned model repository revision
- * @param algorithm tokenizer algorithm identifier
  * @param vocabularySha256 SHA-256 digest of the exact vocabulary bytes
- * @param vocabularySize number of entries in the vocabulary
  * @param maxInputTokens maximum model input length including special tokens
  * @param specialTokenCount number of tokens added around one input sequence
  */

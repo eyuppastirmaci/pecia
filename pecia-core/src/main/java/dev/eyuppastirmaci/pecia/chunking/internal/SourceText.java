@@ -11,7 +11,6 @@ public final class SourceText {
 
     /** Builds source boundaries while treating CRLF pairs as single line terminators. */
     public SourceText(String text) {
-        IntStream.Builder words = IntStream.builder();
         IntStream.Builder starts = IntStream.builder().add(0);
         int offset = 0;
 
@@ -25,6 +24,7 @@ public final class SourceText {
             offset = next;
         }
 
+        IntStream.Builder words = IntStream.builder();
         offset = skipWhitespace(text, 0);
 
         while (offset < text.length()) {

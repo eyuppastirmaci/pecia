@@ -75,19 +75,19 @@ public final class GlobFilter {
 
     /** Compiles case-folded glob patterns and adds root-level variants for recursive patterns. */
     private static List<PathMatcher> compile(List<String> globs) {
-        FileSystem fs = FileSystems.getDefault();
+        FileSystem fileSystem = FileSystems.getDefault();
 
         List<PathMatcher> matchers = new ArrayList<>();
 
         for (String glob : globs) {
             // Matching is case-insensitive on every OS; never change the returned source path.
             glob = glob.toLowerCase(Locale.ROOT);
-            matchers.add(fs.getPathMatcher("glob:" + glob));
+            matchers.add(fileSystem.getPathMatcher("glob:" + glob));
 
             // A glob like "**/*.md" never matches a root-level "README.md", so also match the part after
             // "**/".
             if (glob.startsWith("**/")) {
-                matchers.add(fs.getPathMatcher("glob:" + glob.substring(3)));
+                matchers.add(fileSystem.getPathMatcher("glob:" + glob.substring(3)));
             }
         }
 

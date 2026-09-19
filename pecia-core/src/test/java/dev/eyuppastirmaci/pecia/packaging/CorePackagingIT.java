@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
@@ -77,6 +78,28 @@ class CorePackagingIT {
         runConsumer("verifyV3IncrementalUpgrade");
     }
 
+    @Test
+    void completesLexicalLifecycleAndReopensItInSeparatePackagedCoreProcesses() throws Exception {
+        Path sandbox = Files.createDirectory(fixture.resolve("forked core")).toRealPath();
+        Path project = Files.createDirectory(fixture.resolve("lexical project")).toRealPath();
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+
+        assertEquals(
+                "PACKAGED_CORE_OK lexical-lifecycle",
+                runner.runOffline("lexical-lifecycle", project, offline)
+                        .stdout()
+                        .strip());
+        assertEquals(
+                "PACKAGED_CORE_OK lexical-reopen",
+                runner.runOffline("lexical-reopen", project, offline).stdout().strip());
+    }
+
     private void runConsumer(String method) throws Exception {
         Path coreJar = requiredPath("pecia.it.jar");
         Path runtimeDirectory = requiredPath("pecia.it.runtimeDirectory");
@@ -142,6 +165,9 @@ class CorePackagingIT {
     @Test
     void preservesTheVocabularyAndRequiredLicenseResources() throws Exception {
         try (JarFile jar = new JarFile(requiredPath("pecia.it.jar").toFile())) {
+            assertTrue(
+                    jar.stream().noneMatch(entry -> entry.getName().startsWith("dev/eyuppastirmaci/pecia/testing/")),
+                    "Test-only offline support must not be included in the core distribution");
             byte[] vocabulary = readEntry(jar, TOKENIZER_RESOURCES + "vocab.txt");
             assertEquals(
                     VOCABULARY_SHA256,

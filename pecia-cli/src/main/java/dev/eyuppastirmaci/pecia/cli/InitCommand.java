@@ -29,12 +29,12 @@ public class InitCommand implements Callable<Integer> {
      */
     @Override
     public Integer call() throws IOException {
-        Path dir = Path.of("").toAbsolutePath();
+        Path directory = Path.of("").toAbsolutePath();
 
-        boolean created = configFile.writeDefault(dir);
+        boolean created = configFile.writeDefault(directory);
 
         if (created) {
-            System.out.println("Wrote " + dir.resolve(PeciaConfigFile.FILE_NAME));
+            System.out.println("Wrote " + directory.resolve(PeciaConfigFile.FILE_NAME));
         } else {
             System.out.println(PeciaConfigFile.FILE_NAME + " already exists, left unchanged.");
         }

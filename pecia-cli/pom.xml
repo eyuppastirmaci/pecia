@@ -19,6 +19,14 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>dev.eyuppastirmaci</groupId>
+            <artifactId>pecia-core</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <classifier>test-support</classifier>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
         </dependency>

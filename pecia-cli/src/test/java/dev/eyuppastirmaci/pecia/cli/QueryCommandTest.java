@@ -77,6 +77,33 @@ class QueryCommandTest {
     }
 
     @Test
+    void childRootResolvesCustomStoreAndPrintsProjectRelativeStoredContent() throws Exception {
+        Files.writeString(
+                root.resolve(".pecia.toml"),
+                "[index]\ninclude = ['docs/*.txt']\n[store]\npath = 'state/custom index.db'\n");
+        Path child = Files.createDirectories(root.resolve("docs/nested"));
+        Path source = Files.writeString(root.resolve("docs/guide.txt"), "needle İstanbul 😀\nsecond line\n");
+        IndexResult indexed = new IndexService(loader).index(root);
+        Path database = root.resolve("state/custom index.db");
+        assertEquals(database, indexed.context().databasePath());
+        assertEquals(1, indexed.indexedFiles());
+        byte[] before = Files.readAllBytes(database);
+        Files.delete(source);
+
+        assertEquals(0, run("needle", "--root", child.toString()));
+
+        assertEquals("", err.toString());
+        assertTrue(out.toString().startsWith("docs/guide.txt:1-2" + System.lineSeparator()));
+        assertTrue(out.toString().contains("  needle İstanbul 😀" + System.lineSeparator()));
+        assertTrue(out.toString().contains("  second line" + System.lineSeparator()));
+        assertEquals(1, out.toString().split("  BM25:", -1).length - 1);
+        assertArrayEquals(before, Files.readAllBytes(database));
+        assertFalse(Files.exists(root.resolve(".pecia")));
+        assertFalse(Files.exists(child.resolve(".pecia")));
+        assertFalse(Files.exists(child.resolve("state")));
+    }
+
+    @Test
     void defaultArgumentsFollowTheCoreContract() {
         QueryCommand command = new QueryCommand(new QueryService(loader));
         new CommandLine(command).parseArgs("needle");
