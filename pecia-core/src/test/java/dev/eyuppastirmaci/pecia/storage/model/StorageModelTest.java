@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
+import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
@@ -14,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -43,6 +45,27 @@ class StorageModelTest {
         assertEquals(1, stored.fileId());
         assertEquals(5, stored.chunk().content().length());
         assertEquals(metadata, stored.chunk().metadata());
+        assertEquals(Optional.empty(), stored.stableId());
+    }
+
+    @Test
+    void retainsDeterministicIdentitySeparatelyFromDatabaseRowIdentifiers() {
+        Chunk chunk = new Chunk(SOURCE, DocumentType.MARKDOWN, 0, "text", new LineRange(1, 1), ChunkMetadata.empty());
+        ChunkId stableId = new ChunkId("a".repeat(64));
+        StoredChunk stored = new StoredChunk(7, 1, chunk, Optional.of(stableId));
+
+        assertSame(chunk, stored.chunk());
+        assertEquals(7, stored.id());
+        assertEquals(1, stored.fileId());
+        assertSame(stableId, stored.stableId().orElseThrow());
+        assertEquals(new StoredChunk(7, 1, chunk, Optional.of(stableId)), stored);
+    }
+
+    @Test
+    void explicitUnknownIdentityMatchesTheCompatibilityConstructor() {
+        Chunk chunk = new Chunk(SOURCE, DocumentType.MARKDOWN, 0, "text", new LineRange(1, 1), ChunkMetadata.empty());
+
+        assertEquals(new StoredChunk(7, 1, chunk), new StoredChunk(7, 1, chunk, Optional.empty()));
     }
 
     @ParameterizedTest
@@ -75,6 +98,9 @@ class StorageModelTest {
         assertThrows(NullPointerException.class, () -> new StoredFile(1, SOURCE, null, HASH));
         assertThrows(NullPointerException.class, () -> new StoredFile(1, SOURCE, DocumentType.MARKDOWN, null));
         assertThrows(NullPointerException.class, () -> new StoredChunk(1, 1, null));
+        assertThrows(NullPointerException.class, () -> new StoredChunk(1, 1, null, Optional.empty()));
+        Chunk chunk = new Chunk(SOURCE, DocumentType.MARKDOWN, 0, "text", new LineRange(1, 1), ChunkMetadata.empty());
+        assertThrows(NullPointerException.class, () -> new StoredChunk(1, 1, chunk, null));
     }
 
     @Test

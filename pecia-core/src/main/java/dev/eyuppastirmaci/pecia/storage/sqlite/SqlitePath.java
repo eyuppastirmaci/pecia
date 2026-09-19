@@ -2,7 +2,6 @@ package dev.eyuppastirmaci.pecia.storage.sqlite;
 
 import dev.eyuppastirmaci.pecia.content.ContentPath;
 import java.nio.file.Path;
-import java.util.StringJoiner;
 
 /** Converts project-relative paths to and from the portable spelling stored in SQLite. */
 public final class SqlitePath {
@@ -17,14 +16,7 @@ public final class SqlitePath {
      * @throws NullPointerException if path is null
      */
     public static String encode(Path path) {
-        ContentPath.requireProjectRelative(path);
-        StringJoiner names = new StringJoiner("/");
-
-        for (Path name : path) {
-            names.add(name.toString());
-        }
-
-        return names.toString();
+        return ContentPath.encode(path);
     }
 
     /**

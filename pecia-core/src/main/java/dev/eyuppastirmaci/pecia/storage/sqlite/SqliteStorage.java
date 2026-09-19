@@ -1,6 +1,9 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
+import dev.eyuppastirmaci.pecia.chunking.ChunkIdGenerator;
+import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.content.Chunk;
+import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.ExtractionRequest;
@@ -8,6 +11,7 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.IndexDecision;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
+import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,6 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -155,7 +160,7 @@ public final class SqliteStorage implements AutoCloseable {
      * @return the repository usable until this storage is closed
      */
     public SqliteFileRepository files() {
-        return new SqliteFileRepository(connection);
+        return new SqliteFileRepository(this);
     }
 
     /**
@@ -203,6 +208,43 @@ public final class SqliteStorage implements AutoCloseable {
     }
 
     /**
+     * Finds a file whose content, type, and complete chunking identity match in one database snapshot.
+     * The stored fingerprint and every deterministic chunk ID are validated before returning a match.
+     * Legacy profiles and invalidated processing state require reindexing. The caller must load and
+     * validate the current source before this lookup; this method never writes data.
+     *
+     * @return the matching manifest entry, or empty when the file needs indexing
+     * @throws NullPointerException if an argument is null
+     * @throws SQLException if reading fails or stored identities are inconsistent
+     */
+    public Optional<StoredFile> findUnchangedFile(
+            ExtractionRequest request, ContentHash contentHash, ChunkingIdentity identity) throws SQLException {
+        Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(contentHash, "contentHash");
+        Objects.requireNonNull(identity, "identity");
+
+        return inScope(() -> {
+            var previous = files().findByPath(request.sourcePath());
+
+            if (previous.isEmpty()) {
+                return Optional.empty();
+            }
+
+            StoredFile file = previous.orElseThrow();
+            var storedIdentity = files().findChunkingIdentity(file.id());
+
+            if (storedIdentity.isEmpty()) {
+                return Optional.empty();
+            }
+
+            IndexDecision decision =
+                    IndexDecision.evaluate(request, contentHash, identity, file, storedIdentity.orElseThrow());
+
+            return decision == IndexDecision.UNCHANGED ? previous : Optional.empty();
+        });
+    }
+
+    /**
      * Returns a read-only lexical search service usable for this storage's lifetime. Repeated
      * searches see committed replacements; this service never closes the connection, rebuilds the
      * index or commits the caller's transaction. Serialize access to this storage. Opening storage
@@ -229,7 +271,7 @@ public final class SqliteStorage implements AutoCloseable {
 
     /**
      * Atomically saves a document's manifest and replaces all its chunks while preserving an existing
-     * file ID. Clears any previously stored indexing profile because this caller supplies none.
+     * file ID. Clears processing profiles and deterministic IDs because this caller supplies none.
      *
      * @param document the extracted document carrying the raw-byte hash
      * @param chunks the complete chunk list in contiguous zero-based order, possibly empty
@@ -242,12 +284,13 @@ public final class SqliteStorage implements AutoCloseable {
     public StoredFile replaceFile(Document document, List<Chunk> chunks) throws SQLException {
         List<Chunk> replacement = validateChunks(document, chunks);
 
-        return inScope(() -> saveReplacement(document, replacement));
+        return inScope(() -> saveReplacement(document, replacement).file());
     }
 
     /**
      * Atomically replaces a file and commits the profile used to produce its chunks. The profile is
      * written last; a failure restores the previous manifest, chunks, search entries, and profile.
+     * This legacy profile does not establish deterministic chunk IDs.
      *
      * @param profile the tokenizer and chunk settings used for this complete replacement
      * @return the saved manifest entry, preserving an existing file ID
@@ -260,10 +303,46 @@ public final class SqliteStorage implements AutoCloseable {
         List<Chunk> replacement = validateChunks(document, chunks);
 
         return inScope(() -> {
-            StoredFile file = saveReplacement(document, replacement);
+            StoredFile file = saveReplacement(document, replacement).file();
             files().saveIndexingProfile(file.id(), profile);
 
             return file;
+        });
+    }
+
+    /**
+     * Atomically replaces a file, deriving project-local IDs from its path, chunk positions, and
+     * complete chunking identity. All inputs and IDs are validated before writing. Chunk metadata is
+     * saved before IDs, and the profile is written last so incomplete replacements never look current.
+     * Content changes at the same position retain an ID when the identity is unchanged.
+     *
+     * @param identity the extraction, tokenizer, and chunking compatibility used for this replacement
+     * @return the saved manifest entry, preserving an existing file ID
+     * @throws SQLException if persistence fails, with previous content and identities restored when
+     *     rollback succeeds; an outer transaction remains caller-owned
+     * @throws IllegalArgumentException if chunks do not match the document or storage contract, or
+     *     the source path cannot be represented losslessly as Unicode
+     * @throws NullPointerException if document, chunks, a chunk, or identity is null
+     */
+    public StoredFile replaceFile(Document document, List<Chunk> chunks, ChunkingIdentity identity)
+            throws SQLException {
+        Objects.requireNonNull(identity, "identity");
+        List<Chunk> replacement = validateChunks(document, chunks);
+        ChunkIdGenerator generator = new ChunkIdGenerator(identity);
+
+        // Empty files still need a path that can participate in deterministic identities.
+        if (replacement.isEmpty()) {
+            generator.generate(document.sourcePath(), 0);
+        }
+
+        List<ChunkId> chunkIds = replacement.stream().map(generator::generate).toList();
+
+        return inScope(() -> {
+            SavedReplacement saved = saveReplacement(document, replacement);
+            chunks().saveIdentities(saved.chunks(), chunkIds);
+            files().saveChunkingIdentity(saved.file().id(), identity);
+
+            return saved.file();
         });
     }
 
@@ -326,17 +405,20 @@ public final class SqliteStorage implements AutoCloseable {
         return replacement;
     }
 
-    private StoredFile saveReplacement(Document document, List<Chunk> replacement) throws SQLException {
+    private SavedReplacement saveReplacement(Document document, List<Chunk> replacement) throws SQLException {
         StoredFile file = files().save(document.sourcePath(), document.type(), document.contentHash());
         SqliteChunkRepository repository = chunks();
         repository.deleteByFileId(file.id());
+        List<StoredChunk> saved = new ArrayList<>();
 
         for (Chunk chunk : replacement) {
-            repository.insert(file.id(), chunk);
+            saved.add(repository.insert(file.id(), chunk));
         }
 
-        return file;
+        return new SavedReplacement(file, List.copyOf(saved));
     }
+
+    private record SavedReplacement(StoredFile file, List<StoredChunk> chunks) {}
 
     /** Keeps repository operations atomic while preserving any caller-owned outer transaction. */
     <T> T inScope(SqlWork<T> work) throws SQLException {

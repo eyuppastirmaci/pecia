@@ -48,7 +48,8 @@ public record TokenizerIdentity(
     }
 
     /**
-     * Returns a stable key suitable for persisted chunking compatibility metadata.
+     * Returns the legacy indexing-profile key, including model provenance. Use
+     * {@link TokenizerCompatibility} for model-independent chunking compatibility.
      *
      * @return the complete tokenizer compatibility key
      */

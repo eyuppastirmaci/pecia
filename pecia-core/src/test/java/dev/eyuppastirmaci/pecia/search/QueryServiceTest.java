@@ -8,11 +8,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.chunking.ChunkIdGenerator;
+import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -42,6 +46,25 @@ class QueryServiceTest {
         Path child = Files.createDirectory(root.resolve("docs"));
         Files.writeString(child.resolve("guide.md"), "# Guide\n\nİstanbul café documentation\n");
         IndexResult indexed = new IndexService(loader).index(root);
+        ChunkingIdentity identity = ChunkingIdentity.from(
+                indexed.context().loadedConfig().config(),
+                MiniLmTokenizer.bundled().identity());
+        ChunkIdGenerator generator = new ChunkIdGenerator(identity);
+        StoredChunk codeChunk;
+        StoredChunk markdownChunk;
+        try (SqliteStorage storage =
+                SqliteStorage.openReadOnly(indexed.context().databasePath(), root)) {
+            long codeFile = storage.files()
+                    .findByPath(Path.of("Auth.java"))
+                    .orElseThrow()
+                    .id();
+            long markdownFile = storage.files()
+                    .findByPath(Path.of("docs/guide.md"))
+                    .orElseThrow()
+                    .id();
+            codeChunk = storage.chunks().findByFileId(codeFile).getFirst();
+            markdownChunk = storage.chunks().findByFileId(markdownFile).getFirst();
+        }
         byte[] before = Files.readAllBytes(indexed.context().databasePath());
         Files.delete(root.resolve("Auth.java"));
         Files.delete(child.resolve("guide.md"));
@@ -50,6 +73,11 @@ class QueryServiceTest {
         List<SearchHit> hits = service.search(child, new SearchRequest("JWT_SECRET"));
 
         assertEquals(Path.of("Auth.java"), hits.getFirst().sourcePath());
+        assertEquals(codeChunk.id(), hits.getFirst().chunkId());
+        assertEquals(codeChunk.stableId(), hits.getFirst().stableId());
+        assertEquals(
+                generator.generate(codeChunk.chunk()),
+                hits.getFirst().stableId().orElseThrow());
         assertEquals(hits, service.search(root, new SearchRequest("JWT_SECRET")));
 
         List<SearchHit> markdown = service.search(child, new SearchRequest("İstanbul café"));
@@ -57,6 +85,11 @@ class QueryServiceTest {
         assertEquals(1, markdown.size());
         assertEquals(List.of("Guide"), markdown.getFirst().metadata().headingPath());
         assertTrue(markdown.getFirst().snippet().contains("İstanbul café"));
+        assertEquals(markdownChunk.id(), markdown.getFirst().chunkId());
+        assertEquals(markdownChunk.stableId(), markdown.getFirst().stableId());
+        assertEquals(
+                generator.generate(markdownChunk.chunk()),
+                markdown.getFirst().stableId().orElseThrow());
         assertThrows(UnsupportedOperationException.class, () -> hits.clear());
         assertArrayEquals(before, Files.readAllBytes(indexed.context().databasePath()));
     }
@@ -171,6 +204,7 @@ class QueryServiceTest {
     private static void execute(Path database, String sql) throws SQLException {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database.toUri());
                 Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA foreign_keys = ON");
             statement.execute(sql);
         }
     }

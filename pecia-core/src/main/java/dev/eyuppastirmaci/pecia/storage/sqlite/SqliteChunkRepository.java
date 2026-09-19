@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
+import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
@@ -69,7 +70,8 @@ public final class SqliteChunkRepository {
     }
 
     /**
-     * Reads a file's chunks and metadata in index order from one consistent snapshot.
+     * Reads a file's chunks, metadata, and validated deterministic IDs in index order from one
+     * consistent snapshot. Legacy and invalidated chunks have no deterministic ID.
      *
      * @param fileId the positive manifest ID
      * @return an immutable ordered list, empty for a missing file or a file without chunks
@@ -80,7 +82,9 @@ public final class SqliteChunkRepository {
         requireId(fileId);
 
         return storage.inScope(() -> {
-            var mapper = new StoredChunkRowMapper(new SqliteChunkMetadataReader(connection).readForFile(fileId));
+            var identities = new SqliteChunkIdentityReader(connection).read(fileId);
+            var mapper = new StoredChunkRowMapper(
+                    new SqliteChunkMetadataReader(connection).readForFile(fileId), identities.chunkIds());
             List<StoredChunk> chunks = new ArrayList<>();
 
             try (var query = connection.prepareStatement("""
@@ -103,6 +107,7 @@ public final class SqliteChunkRepository {
 
     /**
      * Deletes all chunks and dependent metadata for one file while retaining its manifest entry.
+     * Invalidates processing profiles even when the file already has no chunks.
      *
      * @param fileId the positive manifest ID
      * @return the number of deleted chunks
@@ -112,10 +117,36 @@ public final class SqliteChunkRepository {
     public int deleteByFileId(long fileId) throws SQLException {
         requireId(fileId);
 
-        try (var statement = connection.prepareStatement("DELETE FROM chunks WHERE file_id = ?")) {
-            statement.setLong(1, fileId);
+        return storage.inScope(() -> {
+            try (var chunks = connection.prepareStatement("DELETE FROM chunks WHERE file_id = ?");
+                    var identity = connection.prepareStatement("DELETE FROM file_chunking_profiles WHERE file_id = ?");
+                    var profile = connection.prepareStatement("DELETE FROM file_indexing_profiles WHERE file_id = ?")) {
+                chunks.setLong(1, fileId);
+                int deleted = chunks.executeUpdate();
+                identity.setLong(1, fileId);
+                identity.executeUpdate();
+                profile.setLong(1, fileId);
+                profile.executeUpdate();
 
-            return statement.executeUpdate();
+                return deleted;
+            }
+        });
+    }
+
+    /** Stamps generated IDs only after every chunk and its metadata have been saved. */
+    void saveIdentities(List<StoredChunk> chunks, List<ChunkId> chunkIds) throws SQLException {
+        try (var insert = connection.prepareStatement(
+                "INSERT INTO chunk_identities(chunk_id, file_id, stable_id) VALUES (?, ?, ?)")) {
+            for (int index = 0; index < chunks.size(); index++) {
+                StoredChunk chunk = chunks.get(index);
+                insert.setLong(1, chunk.id());
+                insert.setLong(2, chunk.fileId());
+                insert.setString(3, chunkIds.get(index).value());
+
+                if (insert.executeUpdate() != 1) {
+                    throw new SQLException("Chunk identity insertion returned no row");
+                }
+            }
         }
     }
 

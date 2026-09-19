@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
+import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /** Reads and enriches ranked lexical hits on the storage-owned connection. */
 final class SqliteLexicalRetriever {
@@ -50,8 +52,8 @@ final class SqliteLexicalRetriever {
     }
 
     /**
-     * Reads candidates and their metadata from one snapshot without taking ownership of the
-     * connection.
+     * Reads candidates, metadata, and validated deterministic IDs from one snapshot without taking
+     * ownership of the connection.
      */
     List<SearchHit> search(String matchExpression, int limit) throws SQLException {
         validateRequest(matchExpression, limit);
@@ -65,10 +67,15 @@ final class SqliteLexicalRetriever {
 
             Map<Long, ChunkMetadata> metadata = metadataReader.read(
                     candidates.stream().map(Candidate::chunkId).toList());
+            List<Long> fileIds = candidates.stream().map(Candidate::fileId).toList();
+            var identities = new SqliteChunkIdentityReader(connection).readForFiles(fileIds);
             List<SearchHit> hits = new ArrayList<>(candidates.size());
 
             for (Candidate candidate : candidates) {
-                hits.add(toHit(candidate, metadata.getOrDefault(candidate.chunkId(), ChunkMetadata.empty())));
+                var fileIdentity = identities.get(candidate.fileId());
+                Optional<ChunkId> stableId =
+                        Optional.ofNullable(fileIdentity.chunkIds().get(candidate.chunkId()));
+                hits.add(toHit(candidate, metadata.getOrDefault(candidate.chunkId(), ChunkMetadata.empty()), stableId));
             }
 
             return List.copyOf(hits);
@@ -105,9 +112,15 @@ final class SqliteLexicalRetriever {
 
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
+                    long fileId = rows.getLong("file_id");
+
+                    if (fileId <= 0) {
+                        throw new SQLException("Invalid stored lexical file ID: " + fileId);
+                    }
+
                     candidates.add(new Candidate(
                             rows.getLong("chunk_id"),
-                            rows.getLong("file_id"),
+                            fileId,
                             rows.getInt("chunk_index"),
                             rows.getString("source_path"),
                             rows.getDouble("bm25_score"),
@@ -123,7 +136,8 @@ final class SqliteLexicalRetriever {
         return List.copyOf(candidates);
     }
 
-    private static SearchHit toHit(Candidate candidate, ChunkMetadata metadata) throws SQLException {
+    private static SearchHit toHit(Candidate candidate, ChunkMetadata metadata, Optional<ChunkId> stableId)
+            throws SQLException {
         try {
             Chunk chunk = new Chunk(
                     SqlitePath.decode(candidate.sourcePath()),
@@ -132,7 +146,7 @@ final class SqliteLexicalRetriever {
                     candidate.content(),
                     new LineRange(candidate.startLine(), candidate.endLine()),
                     metadata);
-            StoredChunk stored = new StoredChunk(candidate.chunkId(), candidate.fileId(), chunk);
+            StoredChunk stored = new StoredChunk(candidate.chunkId(), candidate.fileId(), chunk, stableId);
 
             return new SearchHit(
                     stored.id(),
@@ -142,7 +156,8 @@ final class SqliteLexicalRetriever {
                     chunk.sourceLocation(),
                     chunk.metadata(),
                     new SearchScore(candidate.bm25Score(), SearchScore.Kind.SQLITE_BM25),
-                    boundedSnippet(candidate.snippet()));
+                    boundedSnippet(candidate.snippet()),
+                    stored.stableId());
         } catch (IllegalArgumentException | NullPointerException invalid) {
             throw new SQLException("Invalid stored lexical result", invalid);
         }

@@ -13,13 +13,14 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 - [x] Validated UTF-8 text extraction and SHA-256 content hashing.
 - [x] Token-budget chunking for text, Markdown, and source code, using a bundled offline tokenizer.
 - [x] SQLite storage with atomic file replacement and synchronized FTS5 indexing.
+- [x] Incremental indexing: skip unchanged files and remove deleted files.
+- [x] Stable chunk identities and versioned extraction, tokenizer, and chunking compatibility.
 - [x] Offline BM25 search with paths, line ranges, scores, optional headings, and snippets.
 - [x] Reusable Java core API and runnable JAR with `init`, `index`, and `query` commands.
 
 ### Planned for v0.1.0
 
-- [ ] Incremental indexing: skip unchanged files and remove deleted files.
-- [ ] Stable chunk identities and configuration/embedding compatibility tracking.
+- [ ] Embedding compatibility tracking.
 - [ ] Optional MiniLM semantic search with explicit model download and caching.
 - [ ] Vector storage and resumable embedding backfill.
 - [ ] Hybrid BM25 + vector ranking with RRF and search mode selection.
@@ -72,6 +73,10 @@ Supported text files are read with size and UTF-8 validation, then split into ch
 ### 🗃️ Local indexing
 
 File metadata and chunks are stored in SQLite, with FTS5 kept in sync for text search. Each file is replaced atomically, so a failed replacement preserves its previous data while earlier successful files remain indexed.
+
+Indexing validates and hashes the current source before deciding whether to skip it. Matching content, document type, and complete chunking settings skip extraction and writes, including for empty files. Changes to extraction or chunking versions, tokenizer behavior, or token budgets require reprocessing; model names and revisions alone do not change chunking compatibility.
+
+Each indexed chunk has a deterministic SHA-256 ID derived from its project-relative path, zero-based position, and chunking profile. IDs are project-local and exclude content: an edit at the same position can keep its ID while the separate file hash tracks freshness. The Java core exposes this as `StoredChunk.stableId()` and `SearchHit.stableId()`. Their numeric database IDs remain local row locators. Legacy or invalidated records remain searchable with an empty stable ID until reindexing establishes a complete profile.
 
 ### 🔎 Lexical search
 

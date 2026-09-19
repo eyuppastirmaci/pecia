@@ -1,5 +1,6 @@
 package dev.eyuppastirmaci.pecia.index;
 
+import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
 import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.content.Chunk;
@@ -28,7 +29,7 @@ final class FileIndexer {
     private final ProjectContext context;
     private final DocumentExtractionService extraction;
     private final DocumentChunkerFactory chunkers;
-    private final IndexingProfile profile;
+    private final ChunkingIdentity identity;
     private final FileTypeDetector types = new FileTypeDetector();
 
     FileIndexer(ProjectContext context) {
@@ -40,23 +41,23 @@ final class FileIndexer {
         this.context = context;
         this.extraction = new DocumentExtractionService(contentLoader, extractor);
         this.chunkers = DocumentChunkerFactory.create(tokenizer, config.maxTokens(), config.overlapTokens());
-        this.profile = IndexingProfile.from(config, tokenizer.identity());
+        this.identity = ChunkingIdentity.from(config, tokenizer.identity());
     }
 
     FileIndexer(
             ProjectContext context,
             DocumentExtractionService extraction,
             DocumentChunkerFactory chunkers,
-            IndexingProfile profile) {
+            ChunkingIdentity identity) {
         this.context = Objects.requireNonNull(context, "context");
         this.extraction = Objects.requireNonNull(extraction, "extraction");
         this.chunkers = Objects.requireNonNull(chunkers, "chunkers");
-        this.profile = Objects.requireNonNull(profile, "profile");
+        this.identity = Objects.requireNonNull(identity, "identity");
     }
 
     /**
      * Loads and hashes each candidate, skipping interpretation and writes when stored state matches.
-     * Changed files are extracted from those same bytes and atomically replaced with their profile.
+     * Changed files are extracted from those same bytes and atomically replaced with their chunking identity.
      * Extraction failures retain their typed reason; SQL failures remain fatal to the enclosing run.
      * Programming/chunking failures propagate without being disguised as content rejections.
      */
@@ -71,7 +72,7 @@ final class FileIndexer {
         ExtractionRequest request =
                 new ExtractionRequest(absolute, context.sourcePath(candidate), types.typeForCandidate(candidate));
         FileContent content = extraction.load(request);
-        var unchanged = storage.findUnchangedFile(request, content.contentHash(), profile);
+        var unchanged = storage.findUnchangedFile(request, content.contentHash(), identity);
 
         if (unchanged.isPresent()) {
             return new Result(unchanged.orElseThrow(), 0, true);
@@ -86,7 +87,7 @@ final class FileIndexer {
         }
 
         List<Chunk> chunks = chunkers.getChunker(document).chunk(document);
-        StoredFile file = storage.replaceFile(document, chunks, profile);
+        StoredFile file = storage.replaceFile(document, chunks, identity);
 
         return new Result(file, chunks.size(), false);
     }

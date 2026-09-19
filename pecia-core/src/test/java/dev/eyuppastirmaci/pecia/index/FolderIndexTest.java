@@ -8,9 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
+import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,11 +22,14 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class FolderIndexTest {
@@ -235,8 +241,16 @@ class FolderIndexTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void storageFailureStopsAfterAtomicRollbackAndPreservesEarlierFiles(boolean withUnchangedFile) throws Exception {
+    @CsvSource({
+        "false, chunks",
+        "true, chunks",
+        "false, chunk_identities",
+        "true, chunk_identities",
+        "false, file_chunking_profiles",
+        "true, file_chunking_profiles"
+    })
+    void storageFailureStopsAfterAtomicRollbackAndPreservesEarlierFiles(boolean withUnchangedFile, String failedTable)
+            throws Exception {
         for (String name : List.of("a", "b", "c")) {
             Files.writeString(root.resolve(name + ".txt"), name + "old");
         }
@@ -246,6 +260,11 @@ class FolderIndexTest {
         }
 
         IndexResult initial = service.index(root);
+        Map<Path, IndexedFile> before;
+        try (SqliteStorage storage =
+                SqliteStorage.openReadOnly(initial.context().databasePath(), root)) {
+            before = snapshot(storage);
+        }
         AtomicReference<SqliteStorage> captured = new AtomicReference<SqliteStorage>();
         IndexService failing = new IndexService(loader, context -> {
             SqliteStorage storage = SqliteStorage.open(context.databasePath(), context.projectRoot());
@@ -255,10 +274,10 @@ class FolderIndexTest {
                             "jdbc:sqlite:" + context.databasePath().toUri());
                     Statement statement = connection.createStatement()) {
                 statement.execute("""
-                    CREATE TRIGGER fail_b BEFORE INSERT ON chunks
+                    CREATE TRIGGER fail_b BEFORE INSERT ON %s
                     WHEN NEW.file_id = (SELECT id FROM files WHERE source_path = 'b.txt')
                     BEGIN SELECT RAISE(ABORT, 'injected replacement failure'); END
-                    """);
+                    """.formatted(failedTable));
             }
 
             return storage;
@@ -286,6 +305,18 @@ class FolderIndexTest {
         }
 
         try (SqliteStorage storage = SqliteStorage.open(initial.context().databasePath(), root)) {
+            Map<Path, IndexedFile> after = snapshot(storage);
+            for (Path source : before.keySet()) {
+                if (source.equals(Path.of("a.txt"))) {
+                    assertEquals(
+                            before.get(source).identity(), after.get(source).identity());
+                    assertEquals(
+                            before.get(source).chunks().getFirst().stableId(),
+                            after.get(source).chunks().getFirst().stableId());
+                } else {
+                    assertEquals(before.get(source), after.get(source), source.toString());
+                }
+            }
             for (String query : List.of("anew", "bold", "cold")) {
                 assertEquals(
                         1,
@@ -300,6 +331,16 @@ class FolderIndexTest {
         assertEquals(2, recovered.indexedFiles());
         assertEquals(withUnchangedFile ? 2 : 1, recovered.unchangedFiles());
         assertEquals(2, recovered.writtenChunks());
+        try (SqliteStorage storage =
+                SqliteStorage.openReadOnly(initial.context().databasePath(), root)) {
+            Map<Path, IndexedFile> after = snapshot(storage);
+            for (Path source : before.keySet()) {
+                assertEquals(before.get(source).identity(), after.get(source).identity());
+                assertEquals(
+                        before.get(source).chunks().getFirst().stableId(),
+                        after.get(source).chunks().getFirst().stableId());
+            }
+        }
     }
 
     @Test
@@ -319,4 +360,21 @@ class FolderIndexTest {
         assertEquals(0, failure.result().indexedFiles());
         assertEquals(IndexResult.Status.FAILED, failure.result().status());
     }
+
+    private static Map<Path, IndexedFile> snapshot(SqliteStorage storage) throws SQLException {
+        Map<Path, IndexedFile> files = new HashMap<>();
+        for (StoredFile file : storage.files().findAll()) {
+            List<StoredChunk> chunks = storage.chunks().findByFileId(file.id());
+            chunks.forEach(chunk -> assertTrue(chunk.stableId().isPresent()));
+            files.put(
+                    file.sourcePath(),
+                    new IndexedFile(
+                            file,
+                            chunks,
+                            storage.files().findChunkingIdentity(file.id()).orElseThrow()));
+        }
+        return Map.copyOf(files);
+    }
+
+    private record IndexedFile(StoredFile file, List<StoredChunk> chunks, ChunkingIdentity identity) {}
 }

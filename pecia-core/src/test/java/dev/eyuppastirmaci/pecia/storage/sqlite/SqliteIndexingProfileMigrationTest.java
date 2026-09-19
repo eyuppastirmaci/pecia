@@ -9,6 +9,7 @@ import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.inser
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionThree;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionTwo;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.resource;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.rows;
@@ -48,11 +49,11 @@ class SqliteIndexingProfileMigrationTest {
     Path root;
 
     @Test
-    void createsFreshVersionThreeWithEmptyProfileStorageAndUsableSearch() throws Exception {
+    void createsFreshCurrentVersionWithEmptyProfileStorageAndUsableSearch() throws Exception {
         Path database = root.resolve("nested/index.db");
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             Connection connection = storage.connection();
-            assertVersionThree(connection);
+            assertCurrentVersion(connection);
             assertEquals(0, scalar(connection, "SELECT count(*) FROM file_indexing_profiles"));
             seed(connection);
             assertEquals(EXPECTED_FTS, rows(connection));
@@ -62,20 +63,20 @@ class SqliteIndexingProfileMigrationTest {
 
         byte[] before = Files.readAllBytes(database);
         try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
-            assertVersionThree(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertMatches(storage.connection(), "profilebody", 11);
         }
         assertArrayEquals(before, Files.readAllBytes(database));
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 2})
+    @ValueSource(ints = {1, 2, 3})
     void upgradesLegacyDataWithoutInventingProfilesOrChangingSourceAndSearchRows(int version) throws Exception {
         Map<String, List<List<String>>> before;
         try (Connection connection = historical(version)) {
             seed(connection);
             before = sourceSnapshot(connection);
-            if (version == 2) {
+            if (version >= 2) {
                 assertEquals(EXPECTED_FTS, rows(connection));
             }
         }
@@ -84,7 +85,7 @@ class SqliteIndexingProfileMigrationTest {
         Path database = root.resolve("index.db");
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             Connection connection = storage.connection();
-            assertVersionThree(connection);
+            assertCurrentVersion(connection);
             assertEquals(before, sourceSnapshot(connection));
             assertEquals(EXPECTED_FTS, rows(connection));
             assertEquals(0, scalar(connection, "SELECT count(*) FROM file_indexing_profiles"));
@@ -97,7 +98,7 @@ class SqliteIndexingProfileMigrationTest {
 
         byte[] migrated = Files.readAllBytes(database);
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertVersionThree(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertEquals(before, sourceSnapshot(storage.connection()));
             assertEquals(EXPECTED_FTS, rows(storage.connection()));
         }
@@ -111,14 +112,14 @@ class SqliteIndexingProfileMigrationTest {
             SqliteSchemaInitializer.load(connection, rootUri())
                     .initialize(resource(V1_RESOURCE), "INVALID SQL;", resource(V3_RESOURCE), SqliteFtsSupport::verify);
 
-            assertVersionThree(connection);
+            assertCurrentVersion(connection);
             assertEquals(EXPECTED_FTS, rows(connection));
             assertConsistent(connection);
         }
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 2})
+    @ValueSource(ints = {1, 2, 3})
     void readOnlyLegacyOpenRequestsMigrationWithoutChangingAnyBytes(int version) throws Exception {
         try (Connection connection = historical(version)) {
             seed(connection);
@@ -135,7 +136,14 @@ class SqliteIndexingProfileMigrationTest {
             assertEquals(version, scalar(connection, "PRAGMA user_version"));
             assertEquals(version, scalar(connection, "SELECT index_format_version FROM index_metadata"));
             assertEquals(
-                    0, scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'file_indexing_profiles'"));
+                    version >= 3 ? 1 : 0,
+                    scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'file_indexing_profiles'"));
+            assertEquals(
+                    0,
+                    scalar(
+                            connection,
+                            "SELECT count(*) FROM sqlite_schema WHERE name IN"
+                                    + " ('file_chunking_profiles', 'chunk_identities')"));
         }
     }
 
@@ -196,7 +204,7 @@ class SqliteIndexingProfileMigrationTest {
             }
 
             SqliteSchemaInitializer.load(connection, rootUri()).initialize();
-            assertVersionThree(connection);
+            assertCurrentVersion(connection);
             assertEquals(0, scalar(connection, "SELECT count(*) FROM file_indexing_profiles"));
             if (version > 0) {
                 assertEquals(EXPECTED_FTS, rows(connection));
@@ -245,7 +253,7 @@ class SqliteIndexingProfileMigrationTest {
                 "chunk_attributes_indexing_profile_update",
                 "chunk_attributes_indexing_profile_delete"
             })
-    void rejectsEveryMissingProfileSchemaObjectWithoutRepairingVersionThree(String object) throws Exception {
+    void rejectsEveryMissingProfileSchemaObjectWithoutRepairingCurrentVersion(String object) throws Exception {
         Path database = root.resolve("index.db");
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             seed(storage.connection());
@@ -280,10 +288,10 @@ class SqliteIndexingProfileMigrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 2, 3})
+    @ValueSource(ints = {1, 2, 3, 4})
     void rejectsWrongOwnersAndUnknownFormatsWithoutMutation(int version) throws Exception {
         Path database = root.resolve("index.db");
-        if (version < 3) {
+        if (version < 4) {
             try (Connection connection = historical(version)) {
                 seed(connection);
             }
@@ -311,17 +319,17 @@ class SqliteIndexingProfileMigrationTest {
         Path database = root.resolve("index.db");
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             seed(storage.connection());
-            execute(storage.connection(), "PRAGMA user_version = 4");
+            execute(storage.connection(), "PRAGMA user_version = 5");
         }
         assertBothModesRejectWithoutMutation(database, IndexAccessException.Reason.INCOMPATIBLE);
     }
 
     @ParameterizedTest
-    @CsvSource({"1,1.5", "2,2.5", "3,3.5", "1,4294967297", "2,4294967298", "3,4294967299"})
+    @CsvSource({"1,1.5", "2,2.5", "3,3.5", "4,4.5", "1,4294967297", "2,4294967298", "3,4294967299", "4,4294967300"})
     void rejectsFormatValuesThatWouldTruncateToAKnownVersion(int version, String invalidFormat) throws Exception {
         Path database = root.resolve("index.db");
 
-        if (version < 3) {
+        if (version < 4) {
             try (Connection connection = historical(version)) {
                 seed(connection);
             }
@@ -361,7 +369,7 @@ class SqliteIndexingProfileMigrationTest {
         ready.countDown();
         assertTrue(start.await(5, TimeUnit.SECONDS));
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
-            assertVersionThree(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertEquals(0, scalar(storage.connection(), "SELECT count(*) FROM file_indexing_profiles"));
             return rows(storage.connection());
         }
@@ -385,7 +393,12 @@ class SqliteIndexingProfileMigrationTest {
     }
 
     private Connection historical(int version) throws Exception {
-        return version == 1 ? openVersionOne(root) : openVersionTwo(root);
+        return switch (version) {
+            case 1 -> openVersionOne(root);
+            case 2 -> openVersionTwo(root);
+            case 3 -> openVersionThree(root);
+            default -> throw new AssertionError(version);
+        };
     }
 
     private String rootUri() throws Exception {
@@ -403,9 +416,9 @@ class SqliteIndexingProfileMigrationTest {
         execute(connection, "INSERT INTO chunk_attributes VALUES (29, 'custom', 'untouched')");
     }
 
-    private static void assertVersionThree(Connection connection) throws SQLException {
-        assertEquals(3, scalar(connection, "PRAGMA user_version"));
-        assertEquals(3, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+    private static void assertCurrentVersion(Connection connection) throws SQLException {
+        assertEquals(4, scalar(connection, "PRAGMA user_version"));
+        assertEquals(4, scalar(connection, "SELECT index_format_version FROM index_metadata"));
     }
 
     private static Map<String, List<List<String>>> sourceSnapshot(Connection connection) throws SQLException {

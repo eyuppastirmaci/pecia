@@ -156,8 +156,8 @@ class SqliteFtsSchemaValidationTest {
                 before, Files.readAllBytes(database), "Rejected current schema must not be repaired or rewritten");
         try (Connection connection = raw(database)) {
             assertEquals(fixture.source(), sourceSnapshot(connection));
-            assertEquals(3, scalar(connection, "PRAGMA user_version"));
-            assertEquals(3, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+            assertEquals(4, scalar(connection, "PRAGMA user_version"));
+            assertEquals(4, scalar(connection, "SELECT index_format_version FROM index_metadata"));
         }
     }
 

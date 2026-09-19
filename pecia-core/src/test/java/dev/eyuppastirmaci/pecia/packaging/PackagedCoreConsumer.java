@@ -1,10 +1,14 @@
 package dev.eyuppastirmaci.pecia.packaging;
 
+import dev.eyuppastirmaci.pecia.chunking.ChunkIdGenerator;
+import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
 import dev.eyuppastirmaci.pecia.chunking.markdown.MarkdownChunker;
+import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.content.Chunk;
+import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
@@ -31,6 +35,7 @@ import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.IndexAccessException;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
+import dev.eyuppastirmaci.pecia.tokenization.TokenizerCompatibility;
 import java.net.JarURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -54,6 +59,7 @@ public final class PackagedCoreConsumer {
     private static final String V1_RESOURCE = "/db/migration/V1__create_initial_schema.sql";
     private static final String V2_RESOURCE = "/db/migration/V2__add_chunk_fts.sql";
     private static final String V3_RESOURCE = "/db/migration/V3__add_file_indexing_profiles.sql";
+    private static final String V4_RESOURCE = "/db/migration/V4__add_chunk_identities.sql";
 
     private PackagedCoreConsumer() {}
 
@@ -490,12 +496,12 @@ public final class PackagedCoreConsumer {
             execute(connection, "INSERT INTO chunks_fts(chunks_fts) VALUES ('integrity-check')");
             try (var statement = connection.createStatement();
                     var result = statement.executeQuery("PRAGMA user_version")) {
-                check(result.next() && result.getInt(1) == 3, "Packaged storage must use schema version 3");
+                check(result.next() && result.getInt(1) == 4, "Packaged storage must use schema version 4");
             }
             try (var statement = connection.createStatement();
                     var result = statement.executeQuery(
                             "SELECT index_format_version FROM index_metadata WHERE singleton = 1")) {
-                check(result.next() && result.getInt(1) == 3, "Packaged storage must use index format 3");
+                check(result.next() && result.getInt(1) == 4, "Packaged storage must use index format 4");
             }
         }
     }
@@ -576,6 +582,10 @@ public final class PackagedCoreConsumer {
             check(
                     storage.chunks().findByFileId(originalFile.id()).equals(persistedChunks),
                     "Profile persistence must preserve the associated chunks");
+            List<SearchHit> legacyHits = storage.lexicalSearch().search(new SearchRequest("originalneedle"));
+            check(
+                    legacyHits.size() == 1 && legacyHits.getFirst().stableId().isEmpty(),
+                    "Legacy profile hits must remain searchable without inventing a complete chunking identity");
         }
 
         try (Connection connection = openDatabase(database)) {
@@ -653,6 +663,464 @@ public final class PackagedCoreConsumer {
         }
     }
 
+    /** Verifies deterministic identities and atomic profile persistence through the packaged API. */
+    public static void verifyChunkIdentities(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Path database = root.resolve("chunk-identities.db");
+        Path source = Path.of("docs", "İstanbul.md");
+        TokenizerCompatibility tokenizer =
+                new TokenizerCompatibility("packaged-wordpiece-v1", "b".repeat(64), 30_522, 256, 2);
+        ChunkingIdentity originalIdentity =
+                new ChunkingIdentity("packaged-extraction-v1", "packaged-chunking-v1", tokenizer, 128, 16);
+        ChunkingIdentity replacementIdentity =
+                new ChunkingIdentity("packaged-extraction-v1", "packaged-chunking-v2", tokenizer, 64, 8);
+        Document original = new Document(
+                source,
+                DocumentType.MARKDOWN,
+                "originalneedle\nsecondneedle",
+                ContentHash.sha256("originalneedle\nsecondneedle".getBytes(StandardCharsets.UTF_8)));
+        List<Chunk> originalChunks = List.of(
+                new Chunk(
+                        source,
+                        original.type(),
+                        0,
+                        "originalneedle",
+                        new LineRange(1, 1),
+                        new ChunkMetadata(List.of("Başlık"), Map.of("custom", "İ😀"))),
+                new Chunk(source, original.type(), 1, "secondneedle", new LineRange(2, 2), ChunkMetadata.empty()));
+        Document replacement = new Document(
+                source,
+                original.type(),
+                "replacementneedle",
+                ContentHash.sha256("replacementneedle".getBytes(StandardCharsets.UTF_8)));
+        List<Chunk> replacementChunks = List.of(new Chunk(
+                source, replacement.type(), 0, replacement.content(), new LineRange(1, 1), ChunkMetadata.empty()));
+        StoredFile originalFile;
+        List<StoredChunk> persistedChunks;
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            originalFile = storage.replaceFile(original, originalChunks, originalIdentity);
+            persistedChunks = checkChunkIdentities(storage, originalFile.id(), originalIdentity, originalChunks);
+            List<ChunkId> originalIds = persistedChunks.stream()
+                    .map(chunk -> chunk.stableId().orElseThrow())
+                    .toList();
+            storage.replaceFile(original, originalChunks, originalIdentity);
+            persistedChunks = checkChunkIdentities(storage, originalFile.id(), originalIdentity, originalChunks);
+            check(
+                    persistedChunks.stream()
+                            .map(chunk -> chunk.stableId().orElseThrow())
+                            .toList()
+                            .equals(originalIds),
+                    "Repeated packaged replacement must preserve deterministic chunk IDs");
+        }
+
+        byte[] beforeRead = Files.readAllBytes(database);
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            check(
+                    checkChunkIdentities(storage, originalFile.id(), originalIdentity, originalChunks)
+                            .equals(persistedChunks),
+                    "Full identities, chunks, and metadata must survive read-only reopen");
+            checkSearchIdentity(
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("originalneedle"))
+                            .getFirst(),
+                    persistedChunks.getFirst(),
+                    originalIdentity);
+        }
+        check(Arrays.equals(beforeRead, Files.readAllBytes(database)), "Reading identities must not modify the index");
+
+        try (Connection connection = openDatabase(database)) {
+            execute(connection, """
+                CREATE TRIGGER fail_chunking_profile BEFORE INSERT ON file_chunking_profiles
+                BEGIN SELECT RAISE(ABORT, 'injected chunking profile failure'); END
+                """);
+        }
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            try {
+                storage.replaceFile(replacement, replacementChunks, replacementIdentity);
+                throw new AssertionError("A failed full profile write must abort replacement");
+            } catch (SQLException failure) {
+                check(
+                        failure.getMessage().contains("injected chunking profile failure"),
+                        "The packaged failure must come from the final profile write");
+            }
+            check(
+                    storage.files().findByPath(source).orElseThrow().equals(originalFile),
+                    "Full profile failure must restore the original file manifest");
+            check(
+                    checkChunkIdentities(storage, originalFile.id(), originalIdentity, originalChunks)
+                            .equals(persistedChunks),
+                    "Full profile failure must restore chunks, metadata, profile, and deterministic IDs");
+            checkSearchIdentity(
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("originalneedle"))
+                            .getFirst(),
+                    persistedChunks.getFirst(),
+                    originalIdentity);
+            check(
+                    storage.lexicalSearch()
+                                    .search(new SearchRequest("originalneedle"))
+                                    .size()
+                            == 1,
+                    "Full profile failure must preserve committed search data");
+            check(
+                    storage.lexicalSearch()
+                            .search(new SearchRequest("replacementneedle"))
+                            .isEmpty(),
+                    "Full profile failure must not expose replacement search data");
+            try (Connection connection = openDatabase(database)) {
+                execute(connection, "DROP TRIGGER fail_chunking_profile");
+            }
+
+            StoredFile replaced = storage.replaceFile(replacement, replacementChunks, replacementIdentity);
+            check(replaced.id() == originalFile.id(), "Full profile replacement must retain the file identity");
+            List<StoredChunk> replacedChunks =
+                    checkChunkIdentities(storage, replaced.id(), replacementIdentity, replacementChunks);
+            check(
+                    !replacedChunks
+                            .getFirst()
+                            .stableId()
+                            .equals(persistedChunks.getFirst().stableId()),
+                    "A changed chunking profile must produce new deterministic IDs");
+
+            storage.replaceFile(replacement, replacementChunks);
+            check(
+                    storage.files().findChunkingIdentity(replaced.id()).isEmpty(),
+                    "Unprofiled replacement must remove the full chunking identity");
+            check(
+                    storage.chunks().findByFileId(replaced.id()).stream()
+                            .allMatch(chunk -> chunk.stableId().isEmpty()),
+                    "Unprofiled chunks must expose unknown deterministic identities");
+            List<SearchHit> unprofiledHits = storage.lexicalSearch().search(new SearchRequest("replacementneedle"));
+            check(
+                    unprofiledHits.size() == 1
+                            && unprofiledHits.getFirst().stableId().isEmpty(),
+                    "Unprofiled replacement must retain searchable content with an unknown deterministic ID");
+
+            storage.replaceFile(replacement, replacementChunks, replacementIdentity);
+            try (Connection connection = openDatabase(database)) {
+                execute(connection, "UPDATE chunks SET content = 'directneedle' WHERE file_id = ?", replaced.id());
+            }
+            List<SearchHit> invalidatedHits = storage.lexicalSearch().search(new SearchRequest("directneedle"));
+            check(
+                    invalidatedHits.size() == 1
+                            && invalidatedHits.getFirst().stableId().isEmpty(),
+                    "Direct chunk mutation must keep refreshed search content while invalidating deterministic IDs");
+
+            Document empty = new Document(source, original.type(), "", ContentHash.sha256(new byte[0]));
+            storage.replaceFile(empty, List.of(), replacementIdentity);
+            checkChunkIdentities(storage, replaced.id(), replacementIdentity, List.of());
+        }
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            checkChunkIdentities(storage, originalFile.id(), replacementIdentity, List.of());
+        }
+    }
+
+    private static List<StoredChunk> checkChunkIdentities(
+            SqliteStorage storage, long fileId, ChunkingIdentity identity, List<Chunk> expectedChunks)
+            throws SQLException {
+        ChunkingIdentity persisted =
+                storage.files().findChunkingIdentity(fileId).orElseThrow();
+        check(
+                persisted.equals(identity),
+                "The complete extraction, chunking, tokenizer, and budget identity must persist");
+        check(
+                persisted.fingerprint().equals(identity.fingerprint()),
+                "The persisted fingerprint must match its identity");
+        List<StoredChunk> chunks = storage.chunks().findByFileId(fileId);
+        check(
+                chunks.stream().map(StoredChunk::chunk).toList().equals(expectedChunks),
+                "Identity persistence must preserve all chunk content, locations, and metadata");
+        ChunkIdGenerator generator = new ChunkIdGenerator(identity);
+        for (StoredChunk chunk : chunks) {
+            check(
+                    chunk.stableId().orElseThrow().equals(generator.generate(chunk.chunk())),
+                    "The packaged storage ID must match the public deterministic generator");
+        }
+        return chunks;
+    }
+
+    /** Verifies incremental indexing uses complete identities and preserves IDs across content changes. */
+    public static void verifyIncrementalChunkIdentities(Path root, Path coreJar, Path runtimeDirectory)
+            throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Path source = Path.of("guide.md");
+        String indexScope = "[index]\ninclude = ['guide.md', 'empty.txt']\n";
+        Files.writeString(root.resolve(".pecia.toml"), indexScope);
+        Files.writeString(root.resolve(source), "# Guide\n\noriginalneedle\n");
+        Files.writeString(root.resolve("empty.txt"), "");
+        PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
+        IndexService service = new IndexService(loader);
+        QueryService query = new QueryService(loader);
+        IndexResult first = service.index(root);
+        check(
+                first.status() == IndexResult.Status.COMPLETE
+                        && first.indexedFiles() == 2
+                        && first.writtenChunks() == 1,
+                "The first index must persist populated and empty files");
+        Path database = first.context().databasePath();
+        ChunkingIdentity originalIdentity = ChunkingIdentity.from(
+                first.context().loadedConfig().config(),
+                MiniLmTokenizer.bundled().identity());
+        List<StoredChunk> originalChunks;
+        StoredFile originalFile;
+        SearchHit originalHit;
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            originalFile = storage.files().findByPath(source).orElseThrow();
+            originalChunks = checkIndexedIdentities(storage, originalIdentity, 2);
+            originalHit =
+                    query.search(root, new SearchRequest("originalneedle")).getFirst();
+            checkSearchIdentity(originalHit, originalChunks.getFirst(), originalIdentity);
+        }
+
+        byte[] beforeRepeat = Files.readAllBytes(database);
+        IndexResult repeated = service.index(root);
+        check(
+                repeated.indexedFiles() == 0 && repeated.unchangedFiles() == 2 && repeated.writtenChunks() == 0,
+                "Complete matching identities must skip populated and empty files");
+        check(
+                query.search(root, new SearchRequest("originalneedle")).equals(List.of(originalHit)),
+                "An unchanged indexing pass must preserve the complete search hit and deterministic ID");
+        check(
+                Arrays.equals(beforeRepeat, Files.readAllBytes(database)),
+                "An unchanged indexing run must leave the complete database untouched");
+
+        Files.writeString(root.resolve(source), "# Guide\n\nreplacementneedle\n");
+        IndexResult changed = service.index(root);
+        check(
+                changed.indexedFiles() == 1 && changed.unchangedFiles() == 1 && changed.writtenChunks() == 1,
+                "Content changes must reindex the changed file even when its chunk identity is unchanged");
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            StoredFile changedFile = storage.files().findByPath(source).orElseThrow();
+            List<StoredChunk> changedChunks = checkIndexedIdentities(storage, originalIdentity, 2);
+            check(
+                    changedFile.id() == originalFile.id()
+                            && !changedFile.contentHash().equals(originalFile.contentHash()),
+                    "Content replacement must retain the file ID and update its freshness hash");
+            check(
+                    changedChunks
+                            .getFirst()
+                            .stableId()
+                            .equals(originalChunks.getFirst().stableId()),
+                    "Content changes must preserve path, position, and profile-based chunk IDs");
+            SearchHit changedHit =
+                    query.search(root, new SearchRequest("replacementneedle")).getFirst();
+            checkSearchIdentity(changedHit, changedChunks.getFirst(), originalIdentity);
+            check(
+                    changedHit.stableId().equals(originalHit.stableId())
+                            && changedHit.snippet().contains("replacementneedle")
+                            && !changedHit.snippet().contains("originalneedle")
+                            && query.search(root, new SearchRequest("originalneedle"))
+                                    .isEmpty(),
+                    "A stable search ID must accompany refreshed snippets and searchable content");
+        }
+
+        Files.writeString(root.resolve(".pecia.toml"), indexScope + "[chunk]\nmax_tokens = 128\noverlap_tokens = 8\n");
+        IndexResult rechunked = service.index(root);
+        check(
+                rechunked.indexedFiles() == 2 && rechunked.unchangedFiles() == 0 && rechunked.writtenChunks() == 1,
+                "A chunk budget change must reindex both populated and empty files: " + rechunked);
+        ChunkingIdentity updatedIdentity = ChunkingIdentity.from(
+                rechunked.context().loadedConfig().config(),
+                MiniLmTokenizer.bundled().identity());
+        check(!updatedIdentity.equals(originalIdentity), "Changed chunk settings must change the full identity");
+        List<StoredChunk> updatedChunks;
+        SearchHit updatedHit;
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            updatedChunks = checkIndexedIdentities(storage, updatedIdentity, 2);
+            updatedHit =
+                    query.search(root, new SearchRequest("replacementneedle")).getFirst();
+            checkSearchIdentity(updatedHit, updatedChunks.getFirst(), updatedIdentity);
+            check(
+                    !updatedChunks
+                            .getFirst()
+                            .stableId()
+                            .equals(originalChunks.getFirst().stableId()),
+                    "Chunk budget changes must replace deterministic IDs even when boundaries remain the same");
+            check(
+                    !updatedHit.stableId().equals(originalHit.stableId()),
+                    "Rechunking must expose the replacement identity through the query API");
+        }
+
+        Files.writeString(
+                root.resolve(".pecia.toml"),
+                indexScope + "[chunk]\nmax_tokens = 128\noverlap_tokens = 8\n[embed]\nconcurrency = 4\n");
+        IndexResult embeddingOnly = service.index(root);
+        check(
+                embeddingOnly.indexedFiles() == 0
+                        && embeddingOnly.unchangedFiles() == 2
+                        && embeddingOnly.writtenChunks() == 0,
+                "Embedding concurrency must not invalidate chunking compatibility");
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            check(
+                    checkIndexedIdentities(storage, updatedIdentity, 2).equals(updatedChunks),
+                    "An embedding-only setting change must retain chunk rows and identities");
+        }
+        check(
+                query.search(root, new SearchRequest("replacementneedle")).equals(List.of(updatedHit)),
+                "An embedding-only setting change must preserve the complete search hit");
+    }
+
+    private static void checkSearchIdentity(SearchHit hit, StoredChunk chunk, ChunkingIdentity identity) {
+        check(
+                hit.chunkId() == chunk.id()
+                        && hit.sourcePath().equals(chunk.chunk().sourcePath())
+                        && hit.chunkIndex() == chunk.chunk().index(),
+                "A packaged search hit must retain the matching persisted row and source position");
+        check(
+                hit.stableId().equals(chunk.stableId())
+                        && hit.stableId().orElseThrow().equals(new ChunkIdGenerator(identity).generate(chunk.chunk())),
+                "A packaged search hit must expose the stored deterministic ID and match the public generator");
+    }
+
+    /** Verifies V3 migration preserves legacy data until a single indexing pass creates full identities. */
+    public static void verifyV3IncrementalUpgrade(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        String content = "legacyneedle";
+        Files.writeString(root.resolve("legacy.txt"), content);
+        Files.writeString(root.resolve("empty.txt"), "");
+        Path database = Files.createDirectories(root.resolve(".pecia")).resolve("index.db");
+        IndexingProfile legacyProfile = IndexingProfile.from(
+                PeciaConfig.defaults(), MiniLmTokenizer.bundled().identity());
+        try (Connection connection = openDatabase(database)) {
+            connection.setAutoCommit(false);
+            for (String resource : List.of(V1_RESOURCE, V2_RESOURCE, V3_RESOURCE)) {
+                try (var input = SqliteStorage.class.getResourceAsStream(resource);
+                        var statement = connection.createStatement()) {
+                    check(input != null, "Historical migration must be included in the core JAR: " + resource);
+                    statement.executeUpdate(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+                }
+            }
+            execute(
+                    connection,
+                    "INSERT INTO index_metadata VALUES (1, ?, 3)",
+                    root.toUri().toASCIIString());
+            execute(
+                    connection,
+                    "INSERT INTO files VALUES (7, 'legacy.txt', 'PLAIN_TEXT', ?)",
+                    ContentHash.sha256(content.getBytes(StandardCharsets.UTF_8)).value());
+            execute(
+                    connection,
+                    "INSERT INTO files VALUES (9, 'empty.txt', 'PLAIN_TEXT', ?)",
+                    ContentHash.sha256(new byte[0]).value());
+            execute(connection, "INSERT INTO chunks VALUES (41, 7, 0, ?, 1, 1)", content);
+            for (long fileId : List.of(7L, 9L)) {
+                execute(
+                        connection,
+                        "INSERT INTO file_indexing_profiles VALUES (?, ?, ?, ?)",
+                        fileId,
+                        legacyProfile.tokenizerKey(),
+                        legacyProfile.maxTokens(),
+                        legacyProfile.overlapTokens());
+            }
+            execute(connection, "PRAGMA user_version = 3");
+            connection.commit();
+        }
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            for (StoredFile file : storage.files().findAll()) {
+                check(
+                        storage.files()
+                                .findIndexingProfile(file.id())
+                                .orElseThrow()
+                                .equals(legacyProfile),
+                        "Migration must retain the legacy profile for comparison");
+                check(
+                        storage.files().findChunkingIdentity(file.id()).isEmpty(),
+                        "Schema migration must not guess extraction or chunking compatibility");
+            }
+            List<StoredChunk> legacyChunks = storage.chunks().findByFileId(7);
+            check(
+                    legacyChunks.size() == 1
+                            && legacyChunks.getFirst().id() == 41
+                            && legacyChunks.getFirst().stableId().isEmpty(),
+                    "Schema migration must preserve historical rows with unknown deterministic IDs");
+            List<SearchHit> legacyHits = storage.lexicalSearch().search(new SearchRequest("legacyneedle"));
+            check(
+                    legacyHits.size() == 1
+                            && legacyHits.getFirst().chunkId() == 41
+                            && legacyHits.getFirst().stableId().isEmpty(),
+                    "Migration must retain searchable legacy rows without inventing deterministic IDs");
+        }
+
+        PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
+        IndexService service = new IndexService(loader);
+        QueryService query = new QueryService(loader);
+        check(
+                query.search(root, new SearchRequest("legacyneedle"))
+                        .getFirst()
+                        .stableId()
+                        .isEmpty(),
+                "Read-only queries must expose unknown IDs for migrated legacy content before reindexing");
+        IndexResult upgraded = service.index(root);
+        check(
+                upgraded.status() == IndexResult.Status.COMPLETE
+                        && upgraded.indexedFiles() == 2
+                        && upgraded.unchangedFiles() == 0
+                        && upgraded.writtenChunks() == 1,
+                "Legacy profiles must force exactly one reindex, including empty files");
+        ChunkingIdentity identity = ChunkingIdentity.from(
+                upgraded.context().loadedConfig().config(),
+                MiniLmTokenizer.bundled().identity());
+        List<StoredChunk> upgradedChunks;
+        SearchHit upgradedHit;
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            upgradedChunks = checkIndexedIdentities(storage, identity, 2);
+            upgradedHit = query.search(root, new SearchRequest("legacyneedle")).getFirst();
+            checkSearchIdentity(upgradedHit, upgradedChunks.getFirst(), identity);
+            check(
+                    storage.files()
+                                            .findByPath(Path.of("legacy.txt"))
+                                            .orElseThrow()
+                                            .id()
+                                    == 7
+                            && storage.files()
+                                            .findByPath(Path.of("empty.txt"))
+                                            .orElseThrow()
+                                            .id()
+                                    == 9,
+                    "Upgrading chunk compatibility must retain existing file identities");
+        }
+        IndexResult repeated = service.index(root);
+        check(
+                repeated.indexedFiles() == 0 && repeated.unchangedFiles() == 2 && repeated.writtenChunks() == 0,
+                "The second indexing pass must skip upgraded files");
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            check(
+                    checkIndexedIdentities(storage, identity, 2).equals(upgradedChunks),
+                    "Skipping migrated files must preserve their new rows and deterministic IDs");
+        }
+        check(
+                query.search(root, new SearchRequest("legacyneedle")).equals(List.of(upgradedHit)),
+                "Queries must preserve upgraded IDs after the first unchanged indexing pass");
+    }
+
+    private static List<StoredChunk> checkIndexedIdentities(
+            SqliteStorage storage, ChunkingIdentity identity, int expectedFiles) throws SQLException {
+        List<StoredFile> files = storage.files().findAll();
+        check(files.size() == expectedFiles, "The manifest must contain the expected indexed files");
+        List<StoredChunk> chunks = new ArrayList<>();
+        ChunkIdGenerator generator = new ChunkIdGenerator(identity);
+        for (StoredFile file : files) {
+            check(
+                    storage.files()
+                            .findChunkingIdentity(file.id())
+                            .orElseThrow()
+                            .equals(identity),
+                    "Every indexed file, including empty files, must have the complete current identity");
+            check(
+                    storage.files().findIndexingProfile(file.id()).isEmpty(),
+                    "Production indexing must replace the legacy indexing profile");
+            for (StoredChunk chunk : storage.chunks().findByFileId(file.id())) {
+                check(
+                        chunk.stableId().orElseThrow().equals(generator.generate(chunk.chunk())),
+                        "Each indexed chunk must expose its expected deterministic ID");
+                chunks.add(chunk);
+            }
+        }
+        return List.copyOf(chunks);
+    }
+
     /** Verifies folder indexing, replacement, and search through the packaged core API. */
     public static void verifyFolderIndex(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
         verifyArchiveOrigins(coreJar, runtimeDirectory);
@@ -705,6 +1173,24 @@ public final class PackagedCoreConsumer {
         Files.writeString(child.resolve("guide.md"), "# Guide\n\nİstanbul documentationneedle\n");
         PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
         IndexResult indexed = new IndexService(loader).index(root);
+        ChunkingIdentity identity = ChunkingIdentity.from(
+                indexed.context().loadedConfig().config(),
+                MiniLmTokenizer.bundled().identity());
+        StoredChunk codeChunk;
+        StoredChunk markdownChunk;
+        try (SqliteStorage storage =
+                SqliteStorage.openReadOnly(indexed.context().databasePath(), root)) {
+            long codeFile = storage.files()
+                    .findByPath(Path.of("Auth.java"))
+                    .orElseThrow()
+                    .id();
+            long markdownFile = storage.files()
+                    .findByPath(Path.of("docs/guide.md"))
+                    .orElseThrow()
+                    .id();
+            codeChunk = storage.chunks().findByFileId(codeFile).getFirst();
+            markdownChunk = storage.chunks().findByFileId(markdownFile).getFirst();
+        }
         byte[] before = Files.readAllBytes(indexed.context().databasePath());
         Files.delete(root.resolve("Auth.java"));
         Files.delete(child.resolve("guide.md"));
@@ -717,6 +1203,7 @@ public final class PackagedCoreConsumer {
         check(
                 code.getFirst().sourceLocation().equals(new LineRange(1, 1)),
                 "Packaged query must preserve source lines");
+        checkSearchIdentity(code.getFirst(), codeChunk, identity);
 
         List<SearchHit> markdown = query.search(root, new SearchRequest("İstanbul documentationneedle"));
 
@@ -727,6 +1214,7 @@ public final class PackagedCoreConsumer {
         check(
                 markdown.getFirst().snippet().contains("documentationneedle"),
                 "Packaged query must expose the stored snippet");
+        checkSearchIdentity(markdown.getFirst(), markdownChunk, identity);
         check(query.search(root, new SearchRequest("absent")).isEmpty(), "No match is a successful empty query");
         check(
                 Arrays.equals(before, Files.readAllBytes(indexed.context().databasePath())),
@@ -772,6 +1260,7 @@ public final class PackagedCoreConsumer {
                     "Packaged API must preserve deterministic rank ties");
             for (var hit : hits) {
                 check(hit.chunkId() > 0 && hit.chunkIndex() == 0, "Packaged hit identity must come from storage");
+                check(hit.stableId().isEmpty(), "Unprofiled hits must expose an unknown deterministic identity");
                 check(hit.sourceLocation().equals(lines), "Packaged hit must keep the full source line range");
                 check(hit.metadata().equals(metadata), "Packaged hit must preserve ordered headings and attributes");
                 check(hit.snippet().equals(content), "Packaged hit must expose a plain content snippet");
@@ -812,8 +1301,13 @@ public final class PackagedCoreConsumer {
                 FileTypeDetector.class,
                 MiniLmTokenizer.class,
                 DocumentChunkerFactory.class,
+                ChunkingIdentity.class,
+                ChunkIdGenerator.class,
                 MarkdownChunker.class,
                 Chunk.class,
+                ChunkId.class,
+                TokenizerCompatibility.class,
+                StoredChunk.class,
                 SqliteStorage.class,
                 LexicalSearch.class,
                 SearchRequest.class,
@@ -848,7 +1342,8 @@ public final class PackagedCoreConsumer {
                 "/META-INF/licenses/commonmark-LICENSE.txt",
                 V1_RESOURCE,
                 V2_RESOURCE,
-                V3_RESOURCE)) {
+                V3_RESOURCE,
+                V4_RESOURCE)) {
             URL resource = MiniLmTokenizer.class.getResource(name);
             check(resource != null && resource.getProtocol().equals("jar"), "Resource must load from a JAR: " + name);
             JarURLConnection connection = (JarURLConnection) resource.openConnection();

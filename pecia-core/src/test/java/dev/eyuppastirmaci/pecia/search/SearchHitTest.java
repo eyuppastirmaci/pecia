@@ -1,8 +1,10 @@
 package dev.eyuppastirmaci.pecia.search;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
@@ -12,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class SearchHitTest {
@@ -33,6 +36,32 @@ class SearchHitTest {
         assertEquals(metadata, hit.metadata());
         assertEquals(SCORE, hit.score());
         assertEquals(snippet, hit.snippet());
+        assertEquals(Optional.empty(), hit.stableId());
+    }
+
+    @Test
+    void retainsTheOptionalStableIdentitySeparatelyFromTheDatabaseLocator() {
+        ChunkId stableId = new ChunkId("a".repeat(64));
+        SearchHit known = new SearchHit(
+                42, 3, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text", Optional.of(stableId));
+        SearchHit unknown =
+                new SearchHit(42, 3, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text");
+
+        assertEquals(42, known.chunkId());
+        assertEquals(Optional.of(stableId), known.stableId());
+        assertNotEquals(known, unknown);
+        assertEquals(
+                unknown,
+                new SearchHit(
+                        42,
+                        3,
+                        PATH,
+                        DocumentType.MARKDOWN,
+                        LINES,
+                        ChunkMetadata.empty(),
+                        SCORE,
+                        "text",
+                        Optional.empty()));
     }
 
     @Test
@@ -120,6 +149,10 @@ class SearchHitTest {
                 NullPointerException.class,
                 () -> new SearchHit(1, 0, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), null, "text"));
         assertThrows(NullPointerException.class, () -> hit(ChunkMetadata.empty(), null));
+        assertThrows(
+                NullPointerException.class,
+                () -> new SearchHit(
+                        1, 0, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "text", null));
     }
 
     @Test

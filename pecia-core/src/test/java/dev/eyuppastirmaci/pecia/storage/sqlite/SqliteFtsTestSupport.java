@@ -21,6 +21,7 @@ import org.sqlite.SQLiteConfig;
 final class SqliteFtsTestSupport {
     static final String V1_RESOURCE = "/db/migration/V1__create_initial_schema.sql";
     static final String V2_RESOURCE = "/db/migration/V2__add_chunk_fts.sql";
+    static final String V3_RESOURCE = "/db/migration/V3__add_file_indexing_profiles.sql";
 
     private SqliteFtsTestSupport() {}
 
@@ -67,6 +68,23 @@ final class SqliteFtsTestSupport {
 
     static void applyFts(Connection connection) throws IOException, SQLException {
         applyScript(connection, resource(V2_RESOURCE));
+    }
+
+    static Connection openVersionThree(Path root) throws IOException, SQLException {
+        Connection connection = openVersionTwo(root);
+        try {
+            applyScript(connection, resource(V3_RESOURCE));
+            execute(connection, "UPDATE index_metadata SET index_format_version = 3");
+            execute(connection, "PRAGMA user_version = 3");
+            return connection;
+        } catch (IOException | SQLException | RuntimeException | Error failure) {
+            try {
+                connection.close();
+            } catch (SQLException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+            throw failure;
+        }
     }
 
     static void applyScript(Connection connection, String sql) throws SQLException {

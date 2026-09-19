@@ -62,6 +62,21 @@ class CorePackagingIT {
         runConsumer("verifyIndexingProfiles");
     }
 
+    @Test
+    void persistsDeterministicChunkIdentitiesUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifyChunkIdentities");
+    }
+
+    @Test
+    void indexesIncrementallyWithDeterministicChunkIdentitiesUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifyIncrementalChunkIdentities");
+    }
+
+    @Test
+    void reindexesMigratedV3ProfilesOnceUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifyV3IncrementalUpgrade");
+    }
+
     private void runConsumer(String method) throws Exception {
         Path coreJar = requiredPath("pecia.it.jar");
         Path runtimeDirectory = requiredPath("pecia.it.runtimeDirectory");
@@ -155,7 +170,10 @@ class CorePackagingIT {
             assertNull(jar.getManifest().getMainAttributes().getValue(Attributes.Name.MAIN_CLASS));
             assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/index/IndexService.class"));
             for (String migration : List.of(
-                    "V1__create_initial_schema.sql", "V2__add_chunk_fts.sql", "V3__add_file_indexing_profiles.sql")) {
+                    "V1__create_initial_schema.sql",
+                    "V2__add_chunk_fts.sql",
+                    "V3__add_file_indexing_profiles.sql",
+                    "V4__add_chunk_identities.sql")) {
                 assertTrue(
                         readEntry(jar, "db/migration/" + migration).length > 0,
                         "The core JAR must contain the migration: " + migration);

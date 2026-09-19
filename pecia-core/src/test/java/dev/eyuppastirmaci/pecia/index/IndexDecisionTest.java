@@ -88,14 +88,16 @@ class IndexDecisionTest {
     void validatesMandatoryInputsEvenWhenThereIsNoStoredFile() {
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(null, HASH, PROFILE));
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, null, PROFILE));
-        assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, null));
+        assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, (IndexingProfile) null));
     }
 
     @Test
     void validatesMandatoryInputsForLegacyStoredFiles() {
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(null, HASH, PROFILE, STORED));
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, null, PROFILE, STORED));
-        assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, null, STORED));
+        assertThrows(
+                NullPointerException.class,
+                () -> IndexDecision.evaluate(REQUEST, HASH, (IndexingProfile) null, STORED));
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, PROFILE, null));
     }
 

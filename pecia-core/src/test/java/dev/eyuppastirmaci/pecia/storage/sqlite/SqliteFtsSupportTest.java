@@ -55,14 +55,14 @@ class SqliteFtsSupportTest {
                 assertEquals(chunks, storage.chunks().findByFileId(1));
                 assertEquals(indexed, SqliteFtsTestSupport.rows(connection));
                 SqliteFtsTestSupport.assertMatches(connection, "content: original", 1);
-                assertEquals(3, scalar(connection, "PRAGMA user_version"));
-                assertEquals(3, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+                assertEquals(4, scalar(connection, "PRAGMA user_version"));
+                assertEquals(4, scalar(connection, "SELECT index_format_version FROM index_metadata"));
                 assertEquals(1, scalar(connection, "SELECT count(*) FROM caller_temp WHERE value = 'retained'"));
             }
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertEquals(3, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(4, scalar(storage.connection(), "PRAGMA user_version"));
             assertEquals(1, storage.chunks().findByFileId(1).size());
             List<String> mainSchema = schema(storage.connection(), "main");
             for (String table :

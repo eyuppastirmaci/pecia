@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite.mapper;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
+import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
@@ -9,14 +10,22 @@ import dev.eyuppastirmaci.pecia.storage.sqlite.SqlitePath;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Map;
+import java.util.Optional;
 
 /** Maps joined SQLite chunk rows and preloaded metadata to validated stored chunks. */
 public final class StoredChunkRowMapper implements RowMapper<StoredChunk> {
     private final Map<Long, ChunkMetadata> metadata;
+    private final Map<Long, ChunkId> chunkIds;
 
     /** Copies chunk metadata loaded in the same snapshot as the rows to be mapped. */
     public StoredChunkRowMapper(Map<Long, ChunkMetadata> metadata) {
+        this(metadata, Map.of());
+    }
+
+    /** Copies metadata and validated deterministic IDs loaded in the same snapshot as the rows. */
+    public StoredChunkRowMapper(Map<Long, ChunkMetadata> metadata, Map<Long, ChunkId> chunkIds) {
         this.metadata = Map.copyOf(metadata);
+        this.chunkIds = Map.copyOf(chunkIds);
     }
 
     /**
@@ -38,7 +47,7 @@ public final class StoredChunkRowMapper implements RowMapper<StoredChunk> {
                     new LineRange(row.getInt("start_line"), row.getInt("end_line")),
                     metadata.getOrDefault(id, ChunkMetadata.empty()));
 
-            return new StoredChunk(id, row.getLong("file_id"), chunk);
+            return new StoredChunk(id, row.getLong("file_id"), chunk, Optional.ofNullable(chunkIds.get(id)));
         } catch (IllegalArgumentException | NullPointerException invalid) {
             throw new SQLException("Invalid stored chunk row", invalid);
         }

@@ -9,6 +9,7 @@ import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.inser
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionThree;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionTwo;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.resource;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.rows;
@@ -35,7 +36,7 @@ class SqliteFtsMigrationFailureTest {
     Path root;
 
     @ParameterizedTest
-    @ValueSource(ints = {0, 1, 2, 3})
+    @ValueSource(ints = {0, 1, 2, 3, 4})
     void missingFtsRuntimeDoesNotChangeAnySupportedVersionAndAllowsRetry(int version) throws Exception {
         Path database = root.resolve("index.db");
         if (version == 1) {
@@ -47,6 +48,10 @@ class SqliteFtsMigrationFailureTest {
                 seed(connection);
             }
         } else if (version == 3) {
+            try (Connection connection = openVersionThree(root)) {
+                seed(connection);
+            }
+        } else if (version == 4) {
             try (SqliteStorage storage = SqliteStorage.open(database, root)) {
                 seed(storage.connection());
             }
@@ -80,8 +85,8 @@ class SqliteFtsMigrationFailureTest {
             }
 
             SqliteSchemaInitializer.load(connection, rootUri()).initialize();
-            assertEquals(3, scalar(connection, "PRAGMA user_version"));
-            assertEquals(3, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+            assertEquals(4, scalar(connection, "PRAGMA user_version"));
+            assertEquals(4, scalar(connection, "SELECT index_format_version FROM index_metadata"));
             if (version > 0) {
                 assertMatches(connection, "originalfirst", 11);
                 assertMatches(connection, "originalsecond", 12);
@@ -130,7 +135,7 @@ class SqliteFtsMigrationFailureTest {
             assertEquals(0, scalar(connection, "SELECT count(*) FROM temp.sqlite_schema"));
 
             SqliteSchemaInitializer.load(connection, rootUri()).initialize();
-            assertEquals(3, scalar(connection, "PRAGMA user_version"));
+            assertEquals(4, scalar(connection, "PRAGMA user_version"));
             assertMatches(connection, "content: originalfirst", 11);
             assertMatches(connection, "content: originalsecond", 12);
             assertMatches(connection, "headings: Originalheading", 11);
@@ -155,7 +160,7 @@ class SqliteFtsMigrationFailureTest {
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertEquals(3, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(4, scalar(storage.connection(), "PRAGMA user_version"));
             assertConsistent(storage.connection());
         }
     }
@@ -173,7 +178,7 @@ class SqliteFtsMigrationFailureTest {
         }
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             assertMatches(storage.connection(), "originalsecond", 12);
-            assertEquals(3, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(4, scalar(storage.connection(), "PRAGMA user_version"));
         }
     }
 

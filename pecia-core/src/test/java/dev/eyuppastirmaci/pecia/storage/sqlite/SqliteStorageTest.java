@@ -41,8 +41,8 @@ class SqliteStorageTest {
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             owned = storage.connection();
-            assertEquals(3, scalar(owned, "PRAGMA user_version"));
-            assertEquals(3, scalar(owned, "SELECT index_format_version FROM index_metadata"));
+            assertEquals(4, scalar(owned, "PRAGMA user_version"));
+            assertEquals(4, scalar(owned, "SELECT index_format_version FROM index_metadata"));
             assertEquals(1, scalar(owned, "PRAGMA foreign_keys"));
             for (String table : List.of(
                     "files",
@@ -51,7 +51,9 @@ class SqliteStorageTest {
                     "chunk_attributes",
                     "index_metadata",
                     "chunks_fts",
-                    "file_indexing_profiles")) {
+                    "file_indexing_profiles",
+                    "file_chunking_profiles",
+                    "chunk_identities")) {
                 try (var query = owned.prepareStatement("SELECT type FROM sqlite_schema WHERE name = ?")) {
                     query.setString(1, table);
                     try (var row = query.executeQuery()) {
@@ -99,7 +101,7 @@ class SqliteStorageTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-1, 4, 100})
+    @ValueSource(ints = {-1, 5, 100})
     void rejectsUnsupportedSchemaVersionsWithoutChangingTheDatabase(int version) throws Exception {
         Path database = root.resolve("index.db");
 
@@ -181,7 +183,7 @@ class SqliteStorageTest {
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertEquals(3, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(4, scalar(storage.connection(), "PRAGMA user_version"));
         }
     }
 

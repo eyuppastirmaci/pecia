@@ -398,7 +398,8 @@ class SqliteIndexingProfileStorageTest {
             storage.replaceFile(document, List.of(chunk(document, 0)), ORIGINAL);
             var before = snapshot(storage, SOURCE);
 
-            assertThrows(NullPointerException.class, () -> storage.replaceFile(replacement, valid, null));
+            assertThrows(
+                    NullPointerException.class, () -> storage.replaceFile(replacement, valid, (IndexingProfile) null));
             assertThrows(NullPointerException.class, () -> storage.replaceFile(null, valid, UPDATED));
             assertThrows(NullPointerException.class, () -> storage.replaceFile(replacement, null, UPDATED));
             assertThrows(
@@ -415,7 +416,7 @@ class SqliteIndexingProfileStorageTest {
             assertSnapshot(storage, before);
         }
 
-        assertThrows(NullPointerException.class, () -> closed.replaceFile(replacement, valid, null));
+        assertThrows(NullPointerException.class, () -> closed.replaceFile(replacement, valid, (IndexingProfile) null));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> closed.replaceFile(replacement, List.of(chunk(replacement, 1)), UPDATED));

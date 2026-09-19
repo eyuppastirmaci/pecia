@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.chunking.internal;
 
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
+import dev.eyuppastirmaci.pecia.tokenization.TokenizerCompatibility;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
 
 /** Shared validation of chunking limits against a tokenizer's model input contract. */
@@ -30,15 +31,30 @@ public final class ChunkingBudget {
      * @throws IllegalArgumentException if the model input or overlap limits are invalid
      */
     public static int validate(TokenizerIdentity identity, int maxTokens, int overlapTokens) {
-        if (maxTokens <= identity.specialTokenCount() || maxTokens > identity.maxInputTokens()) {
+        return validateLimits(identity.maxInputTokens(), identity.specialTokenCount(), maxTokens, overlapTokens);
+    }
+
+    /**
+     * Validates chunk limits using model-independent tokenizer behavior metadata.
+     *
+     * @return the content token budget after reserving special tokens
+     * @throws NullPointerException if tokenizer is null
+     * @throws IllegalArgumentException if the input or overlap limits are invalid
+     */
+    public static int validate(TokenizerCompatibility tokenizer, int maxTokens, int overlapTokens) {
+        return validateLimits(tokenizer.maxInputTokens(), tokenizer.specialTokenCount(), maxTokens, overlapTokens);
+    }
+
+    private static int validateLimits(int maxInputTokens, int specialTokenCount, int maxTokens, int overlapTokens) {
+        if (maxTokens <= specialTokenCount || maxTokens > maxInputTokens) {
             throw new IllegalArgumentException("maxTokens must be greater than "
-                    + identity.specialTokenCount()
+                    + specialTokenCount
                     + " and at most "
-                    + identity.maxInputTokens()
+                    + maxInputTokens
                     + ", including special tokens");
         }
 
-        int contentBudget = maxTokens - identity.specialTokenCount();
+        int contentBudget = maxTokens - specialTokenCount;
 
         if (overlapTokens < 0 || overlapTokens >= contentBudget) {
             throw new IllegalArgumentException("overlapTokens must be non-negative and less than " + contentBudget);

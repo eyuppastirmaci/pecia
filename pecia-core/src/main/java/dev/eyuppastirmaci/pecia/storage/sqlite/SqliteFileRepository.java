@@ -1,5 +1,6 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
+import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
@@ -16,12 +17,14 @@ import java.util.Optional;
 /** Reads and writes file manifest entries using the owning storage's connection. */
 public final class SqliteFileRepository {
     private static final String COLUMNS = "id, source_path, document_type, content_hash";
+    private final SqliteStorage storage;
     private final Connection connection;
     private final StoredFileRowMapper mapper = new StoredFileRowMapper();
     private final IndexingProfileRowMapper profileMapper = new IndexingProfileRowMapper();
 
-    SqliteFileRepository(Connection connection) {
-        this.connection = connection;
+    SqliteFileRepository(SqliteStorage storage) {
+        this.storage = storage;
+        this.connection = storage.connection();
     }
 
     /** Acquires the write lock and preserves an existing file ID without a read-before-write race. */
@@ -119,6 +122,50 @@ public final class SqliteFileRepository {
 
             try (var row = query.executeQuery()) {
                 return row.next() ? Optional.of(profileMapper.map(row)) : Optional.empty();
+            }
+        }
+    }
+
+    /**
+     * Reads the complete chunking identity and validates its fingerprint and every chunk's stable ID
+     * in one snapshot. This lookup does not load tokenizer assets or infer identities for old data.
+     *
+     * @return the identity, or empty for a missing file, legacy data, or invalidated processing state
+     * @throws SQLException if reading fails or the stored profile or chunk identities are inconsistent
+     * @throws IllegalArgumentException if fileId is not positive
+     */
+    public Optional<ChunkingIdentity> findChunkingIdentity(long fileId) throws SQLException {
+        if (fileId <= 0) {
+            throw new IllegalArgumentException("fileId must be positive: " + fileId);
+        }
+
+        return storage.inScope(
+                () -> new SqliteChunkIdentityReader(connection).read(fileId).identity());
+    }
+
+    /** Writes the complete profile after all replacement chunks, metadata, and IDs have been saved. */
+    void saveChunkingIdentity(long fileId, ChunkingIdentity identity) throws SQLException {
+        try (var insert = connection.prepareStatement("""
+            INSERT INTO file_chunking_profiles(
+                file_id, extraction_version, chunking_version, tokenizer_algorithm, vocabulary_sha256,
+                vocabulary_size, max_input_tokens, special_token_count, max_tokens, overlap_tokens, fingerprint)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            insert.setLong(1, fileId);
+            insert.setString(2, identity.extractionVersion());
+            insert.setString(3, identity.chunkingVersion());
+            insert.setString(4, identity.tokenizer().algorithm());
+            insert.setString(5, identity.tokenizer().vocabularySha256());
+            insert.setInt(6, identity.tokenizer().vocabularySize());
+            insert.setInt(7, identity.tokenizer().maxInputTokens());
+            insert.setInt(8, identity.tokenizer().specialTokenCount());
+            insert.setInt(9, identity.maxTokens());
+            insert.setInt(10, identity.overlapTokens());
+            insert.setString(11, identity.fingerprint());
+
+            // Nested savepoint release does not check the deferred identity/profile foreign key.
+            if (insert.executeUpdate() != 1) {
+                throw new SQLException("Chunking identity insertion returned no row");
             }
         }
     }

@@ -5,7 +5,8 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
 
 /**
- * The tokenizer compatibility key and token limits used to produce a file's chunks.
+ * Legacy tokenizer key and token limits retained for older storage clients. Incremental indexing
+ * uses {@link dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity} for complete behavior compatibility.
  *
  * @param maxTokens total chunk budget including model special tokens
  * @param overlapTokens maximum shared content tokens between adjacent chunks

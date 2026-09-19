@@ -3,9 +3,11 @@ package dev.eyuppastirmaci.pecia.index;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.chunking.DocumentChunker;
 import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
@@ -25,6 +27,8 @@ import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
+import dev.eyuppastirmaci.pecia.tokenization.TokenizerCompatibility;
+import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -33,11 +37,11 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class FileIndexerIncrementalTest {
@@ -53,21 +57,22 @@ class FileIndexerIncrementalTest {
         ProjectContext context = context();
         AtomicInteger extractions = new AtomicInteger();
         AtomicInteger chunkings = new AtomicInteger();
-        FileIndexer indexer = countingIndexer(context, profile(context), extractions, chunkings);
+        FileIndexer indexer = countingIndexer(context, identity(context), extractions, chunkings);
         FileIndexer.Result first;
 
         try (var storage = SqliteStorage.open(context.databasePath(), root)) {
             first = indexer.index(SOURCE, storage);
             assertFalse(first.unchanged());
             assertEquals(
-                    profile(context),
-                    storage.files().findIndexingProfile(first.file().id()).orElseThrow());
+                    identity(context),
+                    storage.files().findChunkingIdentity(first.file().id()).orElseThrow());
         }
 
         byte[] databaseBefore = Files.readAllBytes(context.databasePath());
 
         try (var storage = SqliteStorage.openReadOnly(context.databasePath(), root)) {
             var chunksBefore = storage.chunks().findByFileId(first.file().id());
+            assertTrue(chunksBefore.stream().allMatch(chunk -> chunk.stableId().isPresent()));
             FileIndexer.Result repeated = indexer.index(SOURCE, storage);
 
             assertTrue(repeated.unchanged());
@@ -91,6 +96,11 @@ class FileIndexerIncrementalTest {
 
         try (var storage = SqliteStorage.open(context.databasePath(), root)) {
             var first = indexer.index(SOURCE, storage);
+            var initialId = storage.chunks()
+                    .findByFileId(first.file().id())
+                    .getFirst()
+                    .stableId()
+                    .orElseThrow();
             Files.writeString(file, "newneedle");
             Files.setLastModifiedTime(file, originalTime);
             var changed = indexer.index(SOURCE, storage);
@@ -99,6 +109,13 @@ class FileIndexerIncrementalTest {
             assertEquals(first.file().id(), changed.file().id());
             assertEquals(hash("newneedle"), changed.file().contentHash());
             assertEquals(1, changed.chunkCount());
+            assertEquals(
+                    initialId,
+                    storage.chunks()
+                            .findByFileId(changed.file().id())
+                            .getFirst()
+                            .stableId()
+                            .orElseThrow());
             assertTrue(storage.lexicalSearch()
                     .search(new SearchRequest("oldneedle"))
                     .isEmpty());
@@ -127,13 +144,29 @@ class FileIndexerIncrementalTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"maxTokens", "overlapTokens", "tokenizer"})
+    @ValueSource(
+            strings = {
+                "extractionVersion",
+                "chunkingVersion",
+                "algorithm",
+                "vocabularySha256",
+                "vocabularySize",
+                "maxInputTokens",
+                "specialTokenCount",
+                "maxTokens",
+                "overlapTokens"
+            })
     void changedProcessingProfilesForceReprocessingWithIdenticalBytes(String setting) throws Exception {
         Files.writeString(root.resolve(SOURCE), "needle");
         ProjectContext originalContext = context();
 
         try (var storage = SqliteStorage.open(originalContext.databasePath(), root)) {
             var first = new FileIndexer(originalContext).index(SOURCE, storage);
+            var originalId = storage.chunks()
+                    .findByFileId(first.file().id())
+                    .getFirst()
+                    .stableId()
+                    .orElseThrow();
             String config =
                     switch (setting) {
                         case "maxTokens" -> "[chunk]\nmax_tokens = 128\n";
@@ -142,11 +175,7 @@ class FileIndexerIncrementalTest {
                     };
             Files.writeString(root.resolve(".pecia.toml"), config);
             ProjectContext updatedContext = context();
-            IndexingProfile updated = profile(updatedContext);
-
-            if (setting.equals("tokenizer")) {
-                updated = new IndexingProfile("different-tokenizer", updated.maxTokens(), updated.overlapTokens());
-            }
+            ChunkingIdentity updated = changedIdentity(identity(updatedContext), setting);
 
             AtomicInteger extractions = new AtomicInteger();
             AtomicInteger chunkings = new AtomicInteger();
@@ -157,7 +186,14 @@ class FileIndexerIncrementalTest {
             assertEquals(first.file(), changed.file());
             assertEquals(
                     updated,
-                    storage.files().findIndexingProfile(first.file().id()).orElseThrow());
+                    storage.files().findChunkingIdentity(first.file().id()).orElseThrow());
+            assertNotEquals(
+                    originalId,
+                    storage.chunks()
+                            .findByFileId(first.file().id())
+                            .getFirst()
+                            .stableId()
+                            .orElseThrow());
             assertTrue(indexer.index(SOURCE, storage).unchanged());
             assertEquals(1, extractions.get());
             assertEquals(1, chunkings.get());
@@ -165,25 +201,98 @@ class FileIndexerIncrementalTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void legacyProfilesAndChangedDocumentTypesAreReprocessed(boolean changedType) throws Exception {
+    @ValueSource(strings = {"modelId", "revision"})
+    void modelProvenanceChangesSkipExtractionChunkingAndWrites(String setting) throws Exception {
         Files.writeString(root.resolve(SOURCE), "needle");
         ProjectContext context = context();
+        var original = MiniLmTokenizer.bundled().identity();
+        var updated = new TokenizerIdentity(
+                setting.equals("modelId") ? "different/model" : original.modelId(),
+                setting.equals("revision") ? "different-revision" : original.revision(),
+                original.algorithm(),
+                original.vocabularySha256(),
+                original.vocabularySize(),
+                original.maxInputTokens(),
+                original.specialTokenCount());
+        AtomicInteger extractions = new AtomicInteger();
+        AtomicInteger chunkings = new AtomicInteger();
+        FileIndexer indexer = countingIndexer(
+                context, ChunkingIdentity.from(context.loadedConfig().config(), updated), extractions, chunkings);
+        FileIndexer.Result first;
 
         try (var storage = SqliteStorage.open(context.databasePath(), root)) {
-            Document legacy = new Document(
-                    SOURCE, changedType ? DocumentType.MARKDOWN : DocumentType.PLAIN_TEXT, "needle", hash("needle"));
-            var file = changedType
-                    ? storage.replaceFile(legacy, List.of(), profile(context))
-                    : storage.replaceFile(legacy, List.of());
-            FileIndexer indexer = new FileIndexer(context);
+            first = new FileIndexer(context).index(SOURCE, storage);
+        }
+
+        byte[] databaseBefore = Files.readAllBytes(context.databasePath());
+
+        try (var storage = SqliteStorage.openReadOnly(context.databasePath(), root)) {
+            var chunksBefore = storage.chunks().findByFileId(first.file().id());
+            var result = indexer.index(SOURCE, storage);
+
+            assertTrue(result.unchanged());
+            assertEquals(first.file(), result.file());
+            assertEquals(0, result.chunkCount());
+            assertEquals(
+                    chunksBefore, storage.chunks().findByFileId(first.file().id()));
+            assertEquals(
+                    identity(context),
+                    storage.files().findChunkingIdentity(first.file().id()).orElseThrow());
+            assertEquals(0, extractions.get());
+            assertEquals(0, chunkings.get());
+        }
+
+        assertArrayEquals(databaseBefore, Files.readAllBytes(context.databasePath()));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "needle,unprofiled",
+        "needle,legacyProfile",
+        "needle,changedDocumentType",
+        "'',unprofiled",
+        "'',legacyProfile"
+    })
+    void legacyProfilesAndChangedDocumentTypesAreReprocessedOnce(String text, String storedState) throws Exception {
+        Files.writeString(root.resolve(SOURCE), text);
+        ProjectContext context = context();
+        var config = context.loadedConfig().config();
+        MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
+        Document legacy = new Document(
+                SOURCE,
+                storedState.equals("changedDocumentType") ? DocumentType.MARKDOWN : DocumentType.PLAIN_TEXT,
+                text,
+                hash(text));
+        var chunks = DocumentChunkerFactory.create(tokenizer, config.maxTokens(), config.overlapTokens())
+                .getChunker(legacy)
+                .chunk(legacy);
+
+        try (var storage = SqliteStorage.open(context.databasePath(), root)) {
+            var file =
+                    switch (storedState) {
+                        case "legacyProfile" ->
+                            storage.replaceFile(legacy, chunks, IndexingProfile.from(config, tokenizer.identity()));
+                        case "changedDocumentType" -> storage.replaceFile(legacy, chunks, identity(context));
+                        default -> storage.replaceFile(legacy, chunks);
+                    };
+            AtomicInteger extractions = new AtomicInteger();
+            AtomicInteger chunkings = new AtomicInteger();
+            FileIndexer indexer = countingIndexer(context, identity(context), extractions, chunkings);
             var result = indexer.index(SOURCE, storage);
 
             assertFalse(result.unchanged());
             assertEquals(file.id(), result.file().id());
             assertEquals(DocumentType.PLAIN_TEXT, result.file().documentType());
-            assertEquals(1, result.chunkCount());
+            assertEquals(text.isBlank() ? 0 : 1, result.chunkCount());
+            assertEquals(
+                    identity(context),
+                    storage.files().findChunkingIdentity(file.id()).orElseThrow());
+            assertTrue(storage.files().findIndexingProfile(file.id()).isEmpty());
+            assertTrue(storage.chunks().findByFileId(file.id()).stream()
+                    .allMatch(chunk -> chunk.stableId().isPresent()));
             assertTrue(indexer.index(SOURCE, storage).unchanged());
+            assertEquals(1, extractions.get());
+            assertEquals(1, chunkings.get());
         }
     }
 
@@ -202,8 +311,8 @@ class FileIndexerIncrementalTest {
             assertEquals(ExtractionException.Reason.TOO_LARGE, failure.reason());
             assertEquals(chunks, storage.chunks().findByFileId(first.file().id()));
             assertEquals(
-                    profile(originalContext),
-                    storage.files().findIndexingProfile(first.file().id()).orElseThrow());
+                    identity(originalContext),
+                    storage.files().findChunkingIdentity(first.file().id()).orElseThrow());
         }
     }
 
@@ -228,13 +337,14 @@ class FileIndexerIncrementalTest {
                             .reason());
             assertEquals(first.file(), storage.files().findByPath(SOURCE).orElseThrow());
             assertEquals(
-                    profile(context),
-                    storage.files().findIndexingProfile(first.file().id()).orElseThrow());
+                    identity(context),
+                    storage.files().findChunkingIdentity(first.file().id()).orElseThrow());
         }
     }
 
-    @Test
-    void failedProfileWritePreservesOldStateAndRetryProcessesTheChangedFile() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"file_chunking_profiles", "chunk_identities"})
+    void failedIdentityWritePreservesOldStateAndRetryProcessesTheChangedFile(String table) throws Exception {
         Path file = Files.writeString(root.resolve(SOURCE), "oldneedle");
         ProjectContext context = context();
 
@@ -245,15 +355,15 @@ class FileIndexerIncrementalTest {
             Files.writeString(file, "newneedle");
             sql(
                     context,
-                    "CREATE TRIGGER fail_profile BEFORE INSERT ON file_indexing_profiles "
-                            + "BEGIN SELECT RAISE(ABORT, 'injected'); END");
+                    "CREATE TRIGGER fail_identity BEFORE INSERT ON " + table
+                            + " BEGIN SELECT RAISE(ABORT, 'injected'); END");
 
             assertThrows(SQLException.class, () -> indexer.index(SOURCE, storage));
             assertEquals(first.file(), storage.files().findByPath(SOURCE).orElseThrow());
             assertEquals(chunks, storage.chunks().findByFileId(first.file().id()));
             assertEquals(
-                    profile(context),
-                    storage.files().findIndexingProfile(first.file().id()).orElseThrow());
+                    identity(context),
+                    storage.files().findChunkingIdentity(first.file().id()).orElseThrow());
             assertEquals(
                     1,
                     storage.lexicalSearch()
@@ -263,7 +373,7 @@ class FileIndexerIncrementalTest {
                     .search(new SearchRequest("newneedle"))
                     .isEmpty());
 
-            sql(context, "DROP TRIGGER fail_profile");
+            sql(context, "DROP TRIGGER fail_identity");
             assertFalse(indexer.index(SOURCE, storage).unchanged());
             assertTrue(indexer.index(SOURCE, storage).unchanged());
         }
@@ -295,7 +405,7 @@ class FileIndexerIncrementalTest {
                 context,
                 new DocumentExtractionService(new FileContentLoader(config.maxFileBytes()), changing),
                 DocumentChunkerFactory.create(MiniLmTokenizer.bundled(), config.maxTokens(), config.overlapTokens()),
-                profile(context));
+                identity(context));
 
         try (var storage = SqliteStorage.open(context.databasePath(), root)) {
             var first = indexer.index(SOURCE, storage);
@@ -313,7 +423,7 @@ class FileIndexerIncrementalTest {
     }
 
     private FileIndexer countingIndexer(
-            ProjectContext context, IndexingProfile profile, AtomicInteger extractions, AtomicInteger chunkings) {
+            ProjectContext context, ChunkingIdentity identity, AtomicInteger extractions, AtomicInteger chunkings) {
         var config = context.loadedConfig().config();
         TextDocumentExtractor delegate = new TextDocumentExtractor();
         DocumentExtractor extractor = new DocumentExtractor() {
@@ -339,16 +449,35 @@ class FileIndexerIncrementalTest {
                 context,
                 new DocumentExtractionService(new FileContentLoader(config.maxFileBytes()), extractor),
                 new DocumentChunkerFactory(chunker, chunker, chunker),
-                profile);
+                identity);
     }
 
     private ProjectContext context() throws Exception {
         return new ProjectContextResolver(new PeciaConfigLoader(new PeciaConfigParser())).resolve(root);
     }
 
-    private static IndexingProfile profile(ProjectContext context) {
-        return IndexingProfile.from(
+    private static ChunkingIdentity identity(ProjectContext context) {
+        return ChunkingIdentity.from(
                 context.loadedConfig().config(), MiniLmTokenizer.bundled().identity());
+    }
+
+    private static ChunkingIdentity changedIdentity(ChunkingIdentity original, String setting) {
+        TokenizerCompatibility tokenizer = original.tokenizer();
+        TokenizerCompatibility updated = new TokenizerCompatibility(
+                setting.equals("algorithm") ? "different-algorithm" : tokenizer.algorithm(),
+                setting.equals("vocabularySha256") ? "a".repeat(64) : tokenizer.vocabularySha256(),
+                setting.equals("vocabularySize") ? tokenizer.vocabularySize() + 1 : tokenizer.vocabularySize(),
+                setting.equals("maxInputTokens") ? tokenizer.maxInputTokens() + 1 : tokenizer.maxInputTokens(),
+                setting.equals("specialTokenCount")
+                        ? tokenizer.specialTokenCount() + 1
+                        : tokenizer.specialTokenCount());
+
+        return new ChunkingIdentity(
+                setting.equals("extractionVersion") ? "different-extraction" : original.extractionVersion(),
+                setting.equals("chunkingVersion") ? "different-chunking" : original.chunkingVersion(),
+                updated,
+                original.maxTokens(),
+                original.overlapTokens());
     }
 
     private static ContentHash hash(String text) {

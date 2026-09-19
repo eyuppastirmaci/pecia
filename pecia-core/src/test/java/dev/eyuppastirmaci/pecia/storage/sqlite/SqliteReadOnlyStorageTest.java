@@ -5,6 +5,7 @@ import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.inser
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertFile;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.insertHeading;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionOne;
+import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionThree;
 import static dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport.openVersionTwo;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -102,7 +103,7 @@ class SqliteReadOnlyStorageTest {
                     storage.lexicalSearch()
                             .search(new SearchRequest("JWT_SECRET"))
                             .size());
-            assertEquals(3, scalar(connection, "PRAGMA user_version"));
+            assertEquals(4, scalar(connection, "PRAGMA user_version"));
         }
 
         assertArrayEquals(before, Files.readAllBytes(database));
@@ -134,11 +135,17 @@ class SqliteReadOnlyStorageTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 2})
+    @ValueSource(ints = {1, 2, 3})
     void reportsMigrationForAValidHistoricalIndexWithoutUpgradingIt(int version) throws Exception {
         Path database = root.resolve("index.db");
 
-        try (Connection connection = version == 1 ? openVersionOne(root) : openVersionTwo(root)) {
+        try (Connection connection =
+                switch (version) {
+                    case 1 -> openVersionOne(root);
+                    case 2 -> openVersionTwo(root);
+                    case 3 -> openVersionThree(root);
+                    default -> throw new AssertionError(version);
+                }) {
             populate(connection);
         }
 
@@ -155,16 +162,24 @@ class SqliteReadOnlyStorageTest {
             assertEquals(version, scalar(connection, "PRAGMA user_version"));
             assertEquals(version, scalar(connection, "SELECT index_format_version FROM index_metadata"));
             assertEquals(
-                    version - 1, scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'chunks_fts'"));
+                    version >= 2 ? 1 : 0,
+                    scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'chunks_fts'"));
             assertEquals(
-                    0, scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'file_indexing_profiles'"));
+                    version >= 3 ? 1 : 0,
+                    scalar(connection, "SELECT count(*) FROM sqlite_schema WHERE name = 'file_indexing_profiles'"));
+            assertEquals(
+                    0,
+                    scalar(
+                            connection,
+                            "SELECT count(*) FROM sqlite_schema WHERE name IN"
+                                    + " ('file_chunking_profiles', 'chunk_identities')"));
             assertEquals(1, scalar(connection, "SELECT count(*) FROM chunks"));
             assertExclusiveAccess(connection);
         }
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {0, 4, 99})
+    @ValueSource(ints = {0, 5, 99})
     void rejectsUnsupportedSchemaVersionsWithoutAdoptingOrChangingThem(int version) throws Exception {
         Path database = root.resolve("index.db");
 

@@ -13,8 +13,8 @@ import java.util.Objects;
 final class SqliteSchemaInitializer {
 
     private static final String SCHEMA_RESOURCE = "/db/migration/V1__create_initial_schema.sql";
-    private static final int SCHEMA_VERSION = 3;
-    private static final int INDEX_FORMAT_VERSION = 3;
+    private static final int SCHEMA_VERSION = 4;
+    private static final int INDEX_FORMAT_VERSION = 4;
     private static final Map<String, String> REQUIRED_COLUMNS = Map.of(
             "files", "id, source_path, document_type, content_hash",
             "chunks", "id, file_id, chunk_index, content, start_line, end_line",
@@ -26,18 +26,28 @@ final class SqliteSchemaInitializer {
     private final String rootUri;
     private final SqliteFtsSchema fts;
     private final SqliteIndexingProfileSchema profiles;
+    private final SqliteChunkIdentitySchema identities;
 
     private SqliteSchemaInitializer(
-            Connection connection, String rootUri, SqliteFtsSchema fts, SqliteIndexingProfileSchema profiles) {
+            Connection connection,
+            String rootUri,
+            SqliteFtsSchema fts,
+            SqliteIndexingProfileSchema profiles,
+            SqliteChunkIdentitySchema identities) {
         this.connection = Objects.requireNonNull(connection, "connection");
         this.rootUri = Objects.requireNonNull(rootUri, "rootUri");
         this.fts = Objects.requireNonNull(fts, "fts");
         this.profiles = Objects.requireNonNull(profiles, "profiles");
+        this.identities = Objects.requireNonNull(identities, "identities");
     }
 
     static SqliteSchemaInitializer load(Connection connection, String rootUri) throws IOException {
         return new SqliteSchemaInitializer(
-                connection, rootUri, SqliteFtsSchema.load(), SqliteIndexingProfileSchema.load());
+                connection,
+                rootUri,
+                SqliteFtsSchema.load(),
+                SqliteIndexingProfileSchema.load(),
+                SqliteChunkIdentitySchema.load());
     }
 
     void validateReadOnly() throws SQLException {
@@ -113,8 +123,14 @@ final class SqliteSchemaInitializer {
         initialize(schema, ftsMigration, profiles.script(), ftsCheck);
     }
 
-    /** Serializes validation, creation and upgrade to prevent concurrent duplicate migrations. */
     void initialize(String schema, String ftsMigration, String profileMigration, FtsCheck ftsCheck)
+            throws SQLException {
+        initialize(schema, ftsMigration, profileMigration, identities.script(), ftsCheck);
+    }
+
+    /** Serializes validation, creation and upgrade to prevent concurrent duplicate migrations. */
+    void initialize(
+            String schema, String ftsMigration, String profileMigration, String identityMigration, FtsCheck ftsCheck)
             throws SQLException {
         try (var statement = connection.createStatement()) {
             statement.execute("BEGIN IMMEDIATE");
@@ -145,8 +161,8 @@ final class SqliteSchemaInitializer {
                     createInitialSchema(statement, schema);
                 }
 
-                applyMigrations(statement, version, ftsMigration, profileMigration);
-                validateSchema(INDEX_FORMAT_VERSION);
+                applyMigrations(statement, version, ftsMigration, profileMigration, identityMigration);
+                validateStoredSchema(SCHEMA_VERSION);
                 statement.execute("COMMIT");
             } catch (SQLException | RuntimeException | Error failure) {
                 try {
@@ -169,8 +185,12 @@ final class SqliteSchemaInitializer {
             fts.validate(connection);
         }
 
-        if (version == SCHEMA_VERSION) {
+        if (version >= 3) {
             profiles.validate(connection);
+        }
+
+        if (version >= 4) {
+            identities.validate(connection);
         }
     }
 
@@ -188,16 +208,25 @@ final class SqliteSchemaInitializer {
         validateSchema(1);
     }
 
-    private void applyMigrations(Statement statement, int version, String ftsMigration, String profileMigration)
+    private void applyMigrations(
+            Statement statement, int version, String ftsMigration, String profileMigration, String identityMigration)
             throws SQLException {
         if (version < 2) {
             statement.executeUpdate(ftsMigration);
             fts.validate(connection);
         }
 
-        if (version < SCHEMA_VERSION) {
+        if (version < 3) {
             statement.executeUpdate(profileMigration);
             profiles.validate(connection);
+        }
+
+        if (version < 4) {
+            statement.executeUpdate(identityMigration);
+            identities.validate(connection);
+        }
+
+        if (version < SCHEMA_VERSION) {
             statement.executeUpdate("UPDATE index_metadata SET index_format_version = "
                     + INDEX_FORMAT_VERSION
                     + " WHERE singleton = 1");
