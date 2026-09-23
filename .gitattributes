@@ -1,3 +1,6 @@
+# Bundled SQL migrations keep LF on every checkout so each platform packages identical resources.
+*.sql text eol=lf
+
 # Preserve the exact bytes of the checksum-verified upstream vocabulary.
 pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/vocab.txt -text
 
