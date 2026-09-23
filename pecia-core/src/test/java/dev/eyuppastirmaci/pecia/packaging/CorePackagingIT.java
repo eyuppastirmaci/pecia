@@ -116,18 +116,10 @@ class CorePackagingIT {
         }
 
         assertTrue(urls.size() > 1, "The consumer needs the packaged runtime dependencies");
-        // Copy only the standalone consumer and its nested classes, excluding all test
-        // helpers/resources.
-        Path consumerDirectory = Files.createDirectories(fixture.resolve("consumer-classes"));
-        Path packagePath = Path.of("dev/eyuppastirmaci/pecia/packaging");
-        Path destination = Files.createDirectories(consumerDirectory.resolve(packagePath));
-        try (var classes = Files.list(requiredPath("pecia.it.testClasses").resolve(packagePath))) {
-            for (Path type : classes.filter(
-                            path -> path.getFileName().toString().matches("PackagedCoreConsumer(?:\\$[^/]+)?\\.class"))
-                    .toList()) {
-                Files.copy(type, destination.resolve(type.getFileName()));
-            }
-        }
+        // Copy only the standalone consumer package, excluding all test helpers and resources.
+        Path consumerDirectory = PackagedCoreRunner.copyConsumerClasses(
+                PackagedCoreRunner.consumerClasses(requiredPath("pecia.it.testClasses")),
+                fixture.resolve("consumer-classes"));
         urls.add(consumerDirectory.toUri().toURL());
 
         // The platform parent prevents Maven's production and test classpaths from satisfying missing
@@ -146,7 +138,7 @@ class CorePackagingIT {
                 assertThrows(ClassNotFoundException.class, () -> consumerLoader.loadClass(unavailable), unavailable);
             }
 
-            Class<?> consumer = consumerLoader.loadClass("dev.eyuppastirmaci.pecia.packaging.PackagedCoreConsumer");
+            Class<?> consumer = consumerLoader.loadClass(PackagedCoreRunner.CONSUMER);
 
             try {
                 consumer.getMethod(method, Path.class, Path.class, Path.class)
