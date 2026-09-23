@@ -237,7 +237,7 @@ class PackagedCliIT {
         Path database = project.resolve(".pecia/index.db");
         Path initializationLog = sandbox.resolve("index-initialization.log");
 
-        Result first = run(project, List.of(initializationLogging(initializationLog)), "index");
+        Result first = run(project, List.of(OfflineSandbox.initializationLogArgument(initializationLog)), "index");
 
         assertIndexSummary(first, database, 3, 3);
         assertTrue(initialized(initializationLog, "dev/eyuppastirmaci/pecia/tokenization/MiniLmTokenizer"));
@@ -341,7 +341,7 @@ class PackagedCliIT {
             Path log = sandbox.resolve("discovery-initialization-" + index + ".log");
             Result result = run(
                     project,
-                    List.of(initializationLogging(log)),
+                    List.of(OfflineSandbox.initializationLogArgument(log)),
                     commands.get(index).toArray(String[]::new));
 
             assertSuccess(result);
@@ -383,7 +383,7 @@ class PackagedCliIT {
 
         Result identifier = run(
                 workingDirectory,
-                List.of(initializationLogging(initializationLog)),
+                List.of(OfflineSandbox.initializationLogArgument(initializationLog)),
                 "query",
                 "JWT_SECRET",
                 "--root",
@@ -881,10 +881,6 @@ class PackagedCliIT {
                         + chunks
                         + "\nrejected: 0\nfailed: 0\n",
                 result.out());
-    }
-
-    private static String initializationLogging(Path destination) {
-        return "-Xlog:class+init=info:file=" + destination;
     }
 
     private static boolean initialized(Path log, String className) throws IOException {
