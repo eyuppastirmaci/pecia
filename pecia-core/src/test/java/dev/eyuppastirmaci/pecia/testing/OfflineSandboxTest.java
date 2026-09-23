@@ -191,7 +191,7 @@ class OfflineSandboxTest {
         Files.writeString(
                 run.initializationLog(),
                 "[0.123s][info][class,init] 1 Initializing 'dev/eyuppastirmaci/pecia/Bootstrap' (0x00000000)\n"
-                    + "[0.124s][info][class,init] 2 Initializing 'dev/eyuppastirmaci/pecia/testing/NetworkGuard'\n");
+                        + "[0.124s][info][class,init] 2 Initializing 'dev/eyuppastirmaci/pecia/testing/NetworkGuard'\n");
 
         run.verifyLexical("dev/eyuppastirmaci/pecia/Bootstrap");
     }

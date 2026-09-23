@@ -133,8 +133,7 @@ final class IndexDeletionPlanner {
      * filesystems otherwise resolve an old spelling to a renamed entry, which would retain a stale duplicate. The
      * target and its ancestors keep the caller's spelling, which discovery also used for the stored paths.
      */
-    private BasicFileAttributes readSpelledAttributes(Path path, Map<Path, Set<String>> listings)
-            throws IOException {
+    private BasicFileAttributes readSpelledAttributes(Path path, Map<Path, Set<String>> listings) throws IOException {
         BasicFileAttributes attributes = readAttributes(path);
 
         if (path.startsWith(context.target())
