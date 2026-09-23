@@ -3,6 +3,7 @@ package dev.eyuppastirmaci.pecia.index;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
@@ -10,8 +11,10 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Plans missing-file cleanup without modifying storage or following symbolic links. */
@@ -29,7 +32,8 @@ final class IndexDeletionPlanner {
     /**
      * Returns an immutable, path-sorted list of absent manifest entries in the scanned scope.
      * Discovered candidates are retained even if extraction failed. Excluded paths and paths replaced
-     * by directories or links are retained. The caller must revalidate before applying this advisory
+     * by directories or links are retained. A stored spelling below the target that now exists only with a
+     * different case or Unicode normalization is absent. The caller must revalidate before applying this advisory
      * plan because filesystem state can change after detection.
      *
      * @throws IOException if discovery is incomplete, the target is no longer a real directory, or
@@ -49,6 +53,8 @@ final class IndexDeletionPlanner {
         }
 
         requireTargetDirectory();
+        // Listings are cached per plan so the caller's revalidation observes the filesystem again.
+        Map<Path, Set<String>> listings = new HashMap<>();
         List<StoredFile> missing = new ArrayList<>();
 
         for (StoredFile file : manifest) {
@@ -62,7 +68,7 @@ final class IndexDeletionPlanner {
                 continue;
             }
 
-            if (isMissingSource(source)) {
+            if (isMissingSource(source, listings)) {
                 missing.add(file);
             }
         }
@@ -72,7 +78,7 @@ final class IndexDeletionPlanner {
         return List.copyOf(missing);
     }
 
-    private boolean isMissingSource(Path source) throws IOException {
+    private boolean isMissingSource(Path source, Map<Path, Set<String>> listings) throws IOException {
         GitignoreStack gitignore = new GitignoreStack();
         boolean missingDirectory = false;
 
@@ -85,7 +91,7 @@ final class IndexDeletionPlanner {
 
             if (!missingDirectory) {
                 try {
-                    if (!readAttributes(directory).isDirectory()) {
+                    if (!readSpelledAttributes(directory, listings).isDirectory()) {
                         return false;
                     }
                 } catch (NoSuchFileException absent) {
@@ -114,12 +120,49 @@ final class IndexDeletionPlanner {
         }
 
         try {
-            readAttributes(source);
+            readSpelledAttributes(source, listings);
 
             return false;
         } catch (NoSuchFileException absent) {
             return true;
         }
+    }
+
+    /**
+     * Reads attributes only if the stored spelling exists below the target. Case- or normalization-insensitive
+     * filesystems otherwise resolve an old spelling to a renamed entry, which would retain a stale duplicate. The
+     * target and its ancestors keep the caller's spelling, which discovery also used for the stored paths.
+     */
+    private BasicFileAttributes readSpelledAttributes(Path path, Map<Path, Set<String>> listings)
+            throws IOException {
+        BasicFileAttributes attributes = readAttributes(path);
+
+        if (path.startsWith(context.target())
+                && !path.equals(context.target())
+                && !listedNames(path.getParent(), listings)
+                        .contains(path.getFileName().toString())) {
+            throw new NoSuchFileException(path.toString(), null, "Only a differently spelled entry exists");
+        }
+
+        return attributes;
+    }
+
+    private static Set<String> listedNames(Path directory, Map<Path, Set<String>> listings) throws IOException {
+        Set<String> names = listings.get(directory);
+
+        if (names == null) {
+            names = new HashSet<>();
+
+            try (DirectoryStream<Path> entries = Files.newDirectoryStream(directory)) {
+                for (Path entry : entries) {
+                    names.add(entry.getFileName().toString());
+                }
+            }
+
+            listings.put(directory, names);
+        }
+
+        return names;
     }
 
     private void requireTargetDirectory() throws IOException {

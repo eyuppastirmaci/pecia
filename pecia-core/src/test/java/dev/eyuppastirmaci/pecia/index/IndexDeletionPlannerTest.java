@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
@@ -22,6 +23,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class IndexDeletionPlannerTest {
@@ -153,6 +155,56 @@ class IndexDeletionPlannerTest {
                 .isEmpty());
     }
 
+    @ParameterizedTest
+    @CsvSource({"Guide.txt, guide.txt", "Ödeme.txt, Ödeme.txt"})
+    void plansFilesWhoseStoredSpellingWasRenamedAway(String original, String renamed) throws Exception {
+        ProjectContext context = context(root);
+        Files.writeString(root.resolve(original), "renamed");
+        StoredFile stored = stored(1, onlySource(context));
+        renameSpelling(root.resolve(original), renamed);
+        assumeFalse(
+                onlySource(context).equals(stored.sourcePath()), "Filesystem does not preserve this spelling change");
+
+        assertEquals(List.of(stored), new IndexDeletionPlanner(context).plan(scan(context), List.of(stored)));
+    }
+
+    @Test
+    void plansFilesBelowADirectoryWhoseStoredSpellingWasRenamedAway() throws Exception {
+        ProjectContext context = context(root);
+        Files.createDirectory(root.resolve("Docs"));
+        Files.writeString(root.resolve("Docs/a.txt"), "renamed");
+        StoredFile stored = stored(1, onlySource(context));
+        renameSpelling(root.resolve("Docs"), "docs");
+
+        assertEquals(List.of(stored), new IndexDeletionPlanner(context).plan(scan(context), List.of(stored)));
+    }
+
+    @Test
+    void caseSensitiveFilesystemsRetainDistinctSpellings() throws Exception {
+        assumeFalse(caseInsensitive(), "Filesystem folds case");
+        ProjectContext context = context(root);
+        Files.writeString(root.resolve("Guide.txt"), "upper");
+        Files.writeString(root.resolve("guide.txt"), "lower");
+
+        assertTrue(new IndexDeletionPlanner(context)
+                .plan(new WalkResult(List.of(), List.of()), List.of(stored(1, "Guide.txt"), stored(2, "guide.txt")))
+                .isEmpty());
+    }
+
+    @Test
+    void childTargetKeepsTheCallersSpellingOnCaseInsensitiveFilesystems() throws Exception {
+        assumeTrue(caseInsensitive(), "Filesystem is case-sensitive");
+        Files.createDirectory(root.resolve("Docs"));
+        Files.writeString(root.resolve("Docs/present.txt"), "present");
+        ProjectContext context = context(root.resolve("docs"));
+        StoredFile deleted = stored(1, "docs/deleted.txt");
+
+        assertEquals(
+                List.of(deleted),
+                new IndexDeletionPlanner(context)
+                        .plan(new WalkResult(List.of(), List.of()), List.of(deleted, stored(2, "docs/present.txt"))));
+    }
+
     @Test
     void refusesIncompleteScanEvenWhenManifestIsEmpty() throws Exception {
         ProjectContext context = context(root);
@@ -224,6 +276,29 @@ class IndexDeletionPlannerTest {
         }
     }
 
+    /** Renames through a temporary name because a case-only move is a no-op on case-insensitive filesystems. */
+    private static void renameSpelling(Path path, String name) throws IOException {
+        Path temporary = Files.move(path, path.resolveSibling(name + ".renaming"));
+        Files.move(temporary, path.resolveSibling(name));
+    }
+
+    private boolean caseInsensitive() throws IOException {
+        Path probe = Files.writeString(root.resolve("CaseProbe.tmp"), "");
+
+        try {
+            return Files.exists(root.resolve("caseprobe.tmp"));
+        } finally {
+            Files.delete(probe);
+        }
+    }
+
+    private Path onlySource(ProjectContext context) throws IOException {
+        List<Path> files = scan(context).files();
+        assertEquals(1, files.size());
+
+        return context.sourcePath(files.getFirst());
+    }
+
     private ProjectContext context(Path target) throws IOException {
         Files.writeString(root.resolve(".pecia.toml"), "[index]\ninclude = ['**/*.txt']\n");
 
@@ -242,6 +317,10 @@ class IndexDeletionPlannerTest {
     }
 
     private StoredFile stored(long id, String path) {
-        return new StoredFile(id, Path.of(path), DocumentType.PLAIN_TEXT, ContentHash.sha256(new byte[0]));
+        return stored(id, Path.of(path));
+    }
+
+    private StoredFile stored(long id, Path path) {
+        return new StoredFile(id, path, DocumentType.PLAIN_TEXT, ContentHash.sha256(new byte[0]));
     }
 }
