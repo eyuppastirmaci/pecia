@@ -3,6 +3,7 @@ package dev.eyuppastirmaci.pecia.index;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
@@ -78,6 +79,28 @@ class IndexCleanupTest {
         IndexResult repeated = service.index(root);
         assertEquals(1, repeated.unchangedFiles());
         assertEquals(0, repeated.deletedFiles());
+    }
+
+    @Test
+    void childTargetTypedWithAnotherCaseReusesTheStoredSpelling() throws Exception {
+        Files.writeString(root.resolve(".pecia.toml"), "[index]\ninclude = ['**/*.txt']\n");
+        Files.createDirectory(root.resolve("Docs"));
+        Files.writeString(root.resolve("Docs/a.txt"), "targetneedle");
+        service.index(root);
+        Path alias = root.resolve("docs");
+        assumeTrue(Files.isDirectory(alias), "Filesystem is case-sensitive");
+
+        IndexResult child = service.index(alias);
+
+        assertEquals(0, child.indexedFiles());
+        assertEquals(1, child.unchangedFiles());
+        try (var storage = SqliteStorage.openReadOnly(child.context().databasePath(), root)) {
+            assertEquals(
+                    List.of(Path.of("Docs/a.txt")),
+                    storage.lexicalSearch().search(new SearchRequest("targetneedle")).stream()
+                            .map(SearchHit::sourcePath)
+                            .toList());
+        }
     }
 
     @Test

@@ -23,7 +23,8 @@ public final class ProjectContextResolver {
      * Uses the existing nearest-config/Git-root rules for a directory target. Relative store paths
      * resolve against the loaded project root; absolute paths may be outside it. Existing store
      * ancestors are resolved to their real paths so aliases cannot hide the index from discovery.
-     * Storage opening remains responsible for validating database ownership and schema.
+     * Target components below the project root take their on-disk spelling. Storage opening remains
+     * responsible for validating database ownership and schema.
      *
      * @throws IOException if the target is not a real directory, contains a symbolic link, or
      *     paths/config cannot be read
@@ -45,6 +46,7 @@ public final class ProjectContextResolver {
         }
 
         LoadedConfig loaded = configLoader.load(normalized);
+        Path canonicalTarget = canonicalBelowRoot(normalized, loaded.root());
         Path database =
                 loaded.root().resolve(Path.of(loaded.config().storePath())).normalize();
         Path existing = database;
@@ -59,6 +61,20 @@ public final class ProjectContextResolver {
             throw new IOException("Database path must identify a file: " + database);
         }
 
-        return new ProjectContext(normalized, loaded, database);
+        return new ProjectContext(canonicalTarget, loaded, database);
+    }
+
+    /**
+     * Replaces the target components below the project root with their on-disk spelling. Case- or
+     * normalization-insensitive filesystems otherwise accept a differently spelled child target and would store a
+     * second project-relative path for the same file. The root keeps the caller's spelling so unrelated ancestor
+     * aliases, such as Windows short names, do not change absolute paths.
+     */
+    private static Path canonicalBelowRoot(Path target, Path root) throws IOException {
+        // The target was checked to contain no symbolic links, so this changes spelling only.
+        Path realTarget = target.toRealPath(LinkOption.NOFOLLOW_LINKS);
+        Path realRoot = root.toRealPath(LinkOption.NOFOLLOW_LINKS);
+
+        return root.resolve(realRoot.relativize(realTarget));
     }
 }

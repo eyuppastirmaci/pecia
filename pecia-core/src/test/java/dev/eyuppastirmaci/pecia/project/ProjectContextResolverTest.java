@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
@@ -18,6 +19,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class ProjectContextResolverTest {
@@ -194,6 +196,21 @@ class ProjectContextResolverTest {
         assertEquals(real.resolve("index.txt"), context.databasePath());
         assertFalse(new IndexService(loader).preview(root).walkResult().files().contains(Path.of("data/index.txt")));
         assertThrows(IOException.class, () -> resolver.resolve(alias));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"Src/Docs, src/docs", "Src/Ödeme, Src/Ödeme"})
+    void childTargetsTakeTheOnDiskSpellingBelowTheProjectRoot(String onDisk, String typed) throws IOException {
+        config(".pecia/index.db");
+        Path child = Files.createDirectories(root.resolve(onDisk));
+        Path alias = root.resolve(typed);
+        assumeTrue(Files.isDirectory(alias), "Filesystem distinguishes these spellings");
+
+        ProjectContext context = resolver.resolve(alias);
+
+        assertEquals(child, context.target());
+        assertEquals(root, context.projectRoot());
+        assertEquals(Path.of(onDisk, "a.txt"), context.sourcePath(Path.of("a.txt")));
     }
 
     private void config(String store) throws IOException {

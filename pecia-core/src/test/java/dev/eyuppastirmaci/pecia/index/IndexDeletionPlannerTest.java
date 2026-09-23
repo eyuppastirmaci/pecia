@@ -192,11 +192,14 @@ class IndexDeletionPlannerTest {
     }
 
     @Test
-    void childTargetKeepsTheCallersSpellingOnCaseInsensitiveFilesystems() throws Exception {
+    void targetKeepsTheCallersSpellingOnCaseInsensitiveFilesystems() throws Exception {
         assumeTrue(caseInsensitive(), "Filesystem is case-sensitive");
         Files.createDirectory(root.resolve("Docs"));
         Files.writeString(root.resolve("Docs/present.txt"), "present");
-        ProjectContext context = context(root.resolve("docs"));
+        ProjectContext resolved = context(root);
+        // The resolver canonicalizes child targets; the planner must still not fail on a caller-spelled target.
+        ProjectContext context =
+                new ProjectContext(root.resolve("docs"), resolved.loadedConfig(), resolved.databasePath());
         StoredFile deleted = stored(1, "docs/deleted.txt");
 
         assertEquals(
