@@ -37,6 +37,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -47,6 +48,12 @@ class FileIndexerTest {
 
     @TempDir
     Path root;
+
+    @BeforeEach
+    void useCanonicalRoot() throws IOException {
+        // Resolved contexts use on-disk spellings; Windows runners may expose temp directories by short names.
+        root = root.toRealPath();
+    }
 
     @ParameterizedTest
     @CsvSource({"notes.txt,PLAIN_TEXT", "guide.md,MARKDOWN", "Auth.java,SOURCE_CODE", "settings.yaml,STRUCTURED_TEXT"})

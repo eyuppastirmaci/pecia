@@ -200,8 +200,8 @@ class IndexDeletionPlannerTest {
         Files.writeString(root.resolve("Docs/present.txt"), "present");
         ProjectContext resolved = context(root);
         // The resolver canonicalizes child targets; the planner must still not fail on a caller-spelled target.
-        ProjectContext context =
-                new ProjectContext(root.resolve("docs"), resolved.loadedConfig(), resolved.databasePath());
+        ProjectContext context = new ProjectContext(
+                resolved.projectRoot().resolve("docs"), resolved.loadedConfig(), resolved.databasePath());
         StoredFile deleted = stored(1, "docs/deleted.txt");
 
         assertEquals(
