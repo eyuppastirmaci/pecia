@@ -17,8 +17,8 @@ import java.util.stream.Collectors;
 /** Runs the standalone consumer with an explicit artifact classpath in a separate JVM. */
 final class PackagedCoreRunner {
 
-    private static final String CONSUMER = "dev.eyuppastirmaci.pecia.packaging.PackagedCoreConsumer";
-    private static final Path PACKAGE = Path.of("dev/eyuppastirmaci/pecia/packaging");
+    static final String CONSUMER = "dev.eyuppastirmaci.pecia.packaging.consumer.PackagedCoreConsumer";
+    private static final Path PACKAGE = Path.of("dev/eyuppastirmaci/pecia/packaging/consumer");
     private final Path coreJar;
     private final Path runtimeDirectory;
     private final Path sandbox;
@@ -39,7 +39,7 @@ final class PackagedCoreRunner {
         Objects.requireNonNull(sandbox, "sandbox");
         Path jar = requireJar(coreJar);
         Path runtime = requireDirectory(runtimeDirectory);
-        Path testPackage = requireDirectory(testClasses.resolve(PACKAGE));
+        List<Path> consumerClasses = consumerClasses(testClasses);
         Path output = requireDirectory(sandbox);
         List<Path> artifacts = new ArrayList<>(List.of(jar));
         try (var paths = Files.list(runtime)) {
@@ -54,30 +54,43 @@ final class PackagedCoreRunner {
             throw new IOException("No packaged runtime JARs in " + runtime);
         }
 
-        List<Path> consumerClasses;
-        try (var paths = Files.list(testPackage)) {
-            consumerClasses = paths.filter(
-                            path -> path.getFileName().toString().matches("PackagedCoreConsumer(?:\\$[^/]+)?\\.class"))
+        artifacts.add(copyConsumerClasses(consumerClasses, output.resolve("consumer-classes")));
+        return new PackagedCoreRunner(jar, runtime, output, artifacts);
+    }
+
+    /**
+     * Lists the standalone consumer classes. Every class in the consumer package belongs to the consumer; test
+     * classes are excluded so build-only code cannot reach the isolated classpath.
+     */
+    static List<Path> consumerClasses(Path testClasses) throws IOException {
+        Path consumerPackage = requireDirectory(testClasses.resolve(PACKAGE));
+        List<Path> classes;
+        try (var paths = Files.list(consumerPackage)) {
+            classes = paths.filter(path -> path.getFileName().toString().endsWith(".class"))
+                    .filter(path -> !path.getFileName().toString().matches(".*(?:Test|IT)(?:\\$[^/]+)?\\.class"))
                     .sorted()
                     .toList();
         }
-        if (!consumerClasses.contains(testPackage.resolve("PackagedCoreConsumer.class"))) {
-            throw new IOException("Missing standalone consumer in " + testPackage);
+        if (!classes.contains(consumerPackage.resolve("PackagedCoreConsumer.class"))) {
+            throw new IOException("Missing standalone consumer in " + consumerPackage);
         }
-        for (Path type : consumerClasses) {
+        for (Path type : classes) {
             if (!Files.isRegularFile(type)) {
                 throw new IOException("Consumer class is not a regular file: " + type);
             }
         }
+        return classes;
+    }
 
+    /** Copies consumer classes into a new directory and returns that classpath root. */
+    static Path copyConsumerClasses(List<Path> classes, Path directory) throws IOException {
         // A fresh directory cannot retain helpers or resources from an earlier run.
-        Path isolated = Files.createDirectory(output.resolve("consumer-classes"));
+        Path isolated = Files.createDirectory(directory);
         Path destination = Files.createDirectories(isolated.resolve(PACKAGE));
-        for (Path type : consumerClasses) {
+        for (Path type : classes) {
             Files.copy(type, destination.resolve(type.getFileName()));
         }
-        artifacts.add(isolated);
-        return new PackagedCoreRunner(jar, runtime, output, artifacts);
+        return isolated;
     }
 
     List<String> command(String scenario, Path project) throws IOException {

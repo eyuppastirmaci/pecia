@@ -29,7 +29,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class PackagedCoreRunnerTest {
 
-    private static final Path PACKAGE = Path.of("dev/eyuppastirmaci/pecia/packaging");
+    private static final Path PACKAGE = Path.of("dev/eyuppastirmaci/pecia/packaging/consumer");
 
     @TempDir
     Path fixture;
@@ -52,8 +52,10 @@ class PackagedCoreRunnerTest {
         Path consumerPackage = Files.createDirectories(testClasses.resolve(PACKAGE));
         Files.write(consumerPackage.resolve("PackagedCoreConsumer.class"), new byte[] {1});
         Files.write(consumerPackage.resolve("PackagedCoreConsumer$Nested.class"), new byte[] {2});
-        Files.write(consumerPackage.resolve("CorePackagingIT.class"), new byte[] {3});
+        Files.write(consumerPackage.resolve("PipelineScenario.class"), new byte[] {7});
         Files.write(consumerPackage.resolve("PackagedCoreConsumerTest.class"), new byte[] {4});
+        Files.write(consumerPackage.resolve("ScenarioIT$Nested.class"), new byte[] {8});
+        Files.write(consumerPackage.getParent().resolve("CorePackagingIT.class"), new byte[] {3});
         Files.writeString(testClasses.resolve("fixture.txt"), "must not leak into the consumer");
         Path bootstrap = Files.createDirectories(testClasses.resolve("dev/eyuppastirmaci/pecia"));
         Files.write(bootstrap.resolve("Bootstrap.class"), new byte[] {5});
@@ -78,7 +80,7 @@ class PackagedCoreRunnerTest {
                 List.of(command.get(classpathOption + 1).split(Pattern.quote(File.pathSeparator))));
         assertEquals(
                 List.of(
-                        "dev.eyuppastirmaci.pecia.packaging.PackagedCoreConsumer",
+                        "dev.eyuppastirmaci.pecia.packaging.consumer.PackagedCoreConsumer",
                         "lexical-lifecycle",
                         project.toString(),
                         coreJar.toString(),
@@ -92,7 +94,8 @@ class PackagedCoreRunnerTest {
             assertEquals(
                     Set.of(
                             PACKAGE.resolve("PackagedCoreConsumer.class"),
-                            PACKAGE.resolve("PackagedCoreConsumer$Nested.class")),
+                            PACKAGE.resolve("PackagedCoreConsumer$Nested.class"),
+                            PACKAGE.resolve("PipelineScenario.class")),
                     files.filter(Files::isRegularFile).map(isolated::relativize).collect(Collectors.toSet()));
         }
     }
@@ -216,7 +219,7 @@ class PackagedCoreRunnerTest {
     private void compileProbe() throws IOException {
         Path source = fixture.resolve("PackagedCoreConsumer.java");
         Files.writeString(source, """
-            package dev.eyuppastirmaci.pecia.packaging;
+            package dev.eyuppastirmaci.pecia.packaging.consumer;
             public final class PackagedCoreConsumer {
                 public static void main(String[] args) throws Exception {
                     switch (args[0]) {
