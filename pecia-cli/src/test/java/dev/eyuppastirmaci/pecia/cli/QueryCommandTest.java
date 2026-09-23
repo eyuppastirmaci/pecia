@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -26,6 +27,7 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -40,6 +42,12 @@ class QueryCommandTest {
     private final PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
     private final StringWriter out = new StringWriter();
     private final StringWriter err = new StringWriter();
+
+    @BeforeEach
+    void useCanonicalRoot() throws IOException {
+        // Resolved contexts use on-disk spellings; Windows runners may expose temp directories by short names.
+        root = root.toRealPath();
+    }
 
     @Test
     void printsOrderedPathsFullLineRangesRawScoresAndOptionalHeadings() throws Exception {
