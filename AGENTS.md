@@ -14,7 +14,7 @@ Follow the [Google Java Style Guide](https://google.github.io/styleguide/javagui
 - Keep overloads together, declare local variables near their first use, and use one statement per line.
 - Use `UpperCamelCase` for classes, `lowerCamelCase` for methods and variables, and `UPPER_SNAKE_CASE` for constants.
 - Follow the guide's public API Javadoc requirements and exceptions for self-explanatory members and overrides. Use traditional `/** ... */` Javadoc. Do not use `///` Markdown documentation comments because Pecia targets Java 21.
-- Use `palantir-java-format` for Java source and test code with four-space indentation and a 120-character line width. Preserve the exact contents of test fixtures and other resources.
+- Use `palantir-java-format` for Java source and test code with four-space indentation and a 120-character line width. Spotless enforces this formatting, import order, trailing-whitespace removal, and final newlines during `verify`. It covers only `src/main/java` and `src/test/java`; preserve the exact contents of test fixtures and other resources.
 
 ### Record documentation
 
@@ -41,8 +41,9 @@ Keep record Javadocs concise: usually one or two summary sentences, plus only th
 - Run verification from the repository root with JDK 21. Newer JDKs may be used only if the configured build still targets Java 21 and all configured tooling supports that JDK:
 
 ```sh
+bash ./mvnw -B -ntp spotless:apply             # format Java sources and tests
 bash ./mvnw -B -ntp test                       # unit tests
-bash ./mvnw -B -ntp verify                     # unit and packaged acceptance tests
+bash ./mvnw -B -ntp verify                     # unit and packaged acceptance tests, then formatting check
 bash ./mvnw -B -ntp -pl pecia-core -am verify  # independent core verification
 ```
 
