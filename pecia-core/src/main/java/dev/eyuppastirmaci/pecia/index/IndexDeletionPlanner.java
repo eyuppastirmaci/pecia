@@ -46,10 +46,11 @@ final class IndexDeletionPlanner {
             throw new IOException("Deletion planning requires a complete scan");
         }
 
-        Set<Path> discovered = new HashSet<>();
+        // Compare exact spellings: Windows path equality ignores case and would hide case-only renames.
+        Set<String> discovered = new HashSet<>();
 
         for (Path candidate : scan.files()) {
-            discovered.add(context.sourcePath(candidate));
+            discovered.add(FileWalker.portablePath(context.sourcePath(candidate)));
         }
 
         requireTargetDirectory();
@@ -62,7 +63,7 @@ final class IndexDeletionPlanner {
 
             if (!source.startsWith(context.target())
                     || source.equals(context.target())
-                    || discovered.contains(file.sourcePath())
+                    || discovered.contains(FileWalker.portablePath(file.sourcePath()))
                     || context.storageFiles().contains(source)
                     || !filter.matches(file.sourcePath())) {
                 continue;
