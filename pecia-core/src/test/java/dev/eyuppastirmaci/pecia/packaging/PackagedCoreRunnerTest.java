@@ -270,6 +270,7 @@ class PackagedCoreRunnerTest {
         }
         try (var output = new JarOutputStream(Files.newOutputStream(path), manifest)) {
             // An empty valid JAR is sufficient for process/classpath mechanics tests.
+            output.finish();
         }
         return path;
     }

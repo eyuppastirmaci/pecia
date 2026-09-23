@@ -11,6 +11,7 @@ import java.security.Permission;
 import java.util.Objects;
 
 /** Denies and records network operations in a dedicated JDK 21 acceptance-test process. */
+// SecurityManager is deprecated for removal; JDK 21 still installs it, which the build's JDK range pins.
 @SuppressWarnings("removal")
 public final class NetworkGuard extends SecurityManager {
 
@@ -51,6 +52,7 @@ public final class NetworkGuard extends SecurityManager {
     }
 
     @Override
+    // The deprecated overload must still be denied because callers can reach it on JDK 21.
     @SuppressWarnings("deprecation")
     public void checkMulticast(InetAddress address, byte ttl) {
         checkMulticast(address);

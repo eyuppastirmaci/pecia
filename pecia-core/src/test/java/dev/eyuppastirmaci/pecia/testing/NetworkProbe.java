@@ -6,6 +6,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 
 /** Exercises the real JVM networking APIs to prove the child process's guard is enforcing its policy. */
+// Reads the SecurityManager, deprecated for removal, to confirm that NetworkGuard is installed.
 @SuppressWarnings("removal")
 public final class NetworkProbe {
 

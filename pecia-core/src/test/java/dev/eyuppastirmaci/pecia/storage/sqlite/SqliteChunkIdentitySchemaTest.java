@@ -474,12 +474,11 @@ class SqliteChunkIdentitySchemaTest {
     private void assertRejectedWithoutMutation(Path database) throws Exception {
         byte[] before = Files.readAllBytes(database);
         for (boolean readOnly : List.of(false, true)) {
-            SQLException failure = assertThrows(SQLException.class, () -> {
-                try (SqliteStorage ignored =
-                        readOnly ? SqliteStorage.openReadOnly(database, root) : SqliteStorage.open(database, root)) {
-                    throw new AssertionError("Damaged schema was accepted");
-                }
-            });
+            SQLException failure = assertThrows(
+                    SQLException.class,
+                    () -> (readOnly ? SqliteStorage.openReadOnly(database, root) : SqliteStorage.open(database, root))
+                            .close(),
+                    "Damaged schema was accepted");
             if (readOnly) {
                 assertEquals(
                         IndexAccessException.Reason.CORRUPT_INDEX,

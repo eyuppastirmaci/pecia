@@ -258,7 +258,7 @@ class SqliteReadOnlyStorageTest {
     void readsCommittedWalContentWithoutCheckpointingOrIgnoringIt() throws Exception {
         Path database = root.resolve("index.db");
 
-        try (SqliteStorage ignored = SqliteStorage.open(database, root)) {}
+        SqliteStorage.open(database, root).close();
 
         try (Connection writer = raw(database)) {
             try (Statement statement = writer.createStatement();

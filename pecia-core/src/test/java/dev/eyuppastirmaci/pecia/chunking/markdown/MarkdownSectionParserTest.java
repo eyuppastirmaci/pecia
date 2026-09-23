@@ -156,6 +156,8 @@ class MarkdownSectionParserTest {
     }
 
     @SafeVarargs
+    // List.of copies the array and never exposes it, so passing the generic varargs array is safe.
+    @SuppressWarnings("varargs")
     private void assertPaths(String text, List<String>... expected) {
         List<MarkdownSection> sections = parser.parse(text);
         assertEquals(

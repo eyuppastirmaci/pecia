@@ -261,10 +261,9 @@ final class SqliteSchemaInitializer {
                 }
             }
 
-            try (var query = connection.createStatement();
-                    var ignored =
-                            query.executeQuery("SELECT " + table.getValue() + " FROM " + table.getKey() + " LIMIT 0")) {
+            try (var query = connection.createStatement()) {
                 // Preparing the projection checks every required column even when the table is empty.
+                query.execute("SELECT " + table.getValue() + " FROM " + table.getKey() + " LIMIT 0");
             }
         }
     }

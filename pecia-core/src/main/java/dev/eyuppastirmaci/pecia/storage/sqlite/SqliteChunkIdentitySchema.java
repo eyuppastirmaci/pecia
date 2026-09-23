@@ -104,16 +104,14 @@ final class SqliteChunkIdentitySchema {
             }
         }
 
-        try (var statement = connection.createStatement();
-                var ignored = statement.executeQuery("""
-                    SELECT file_id, extraction_version, chunking_version, tokenizer_algorithm,
-                           vocabulary_sha256, vocabulary_size, max_input_tokens, special_token_count,
-                           max_tokens, overlap_tokens, fingerprint FROM main.file_chunking_profiles LIMIT 0
-                    """)) {}
-
-        try (var statement = connection.createStatement();
-                var ignored = statement.executeQuery(
-                        "SELECT chunk_id, file_id, stable_id FROM main.chunk_identities LIMIT 0")) {}
+        try (var statement = connection.createStatement()) {
+            statement.execute("""
+                SELECT file_id, extraction_version, chunking_version, tokenizer_algorithm,
+                       vocabulary_sha256, vocabulary_size, max_input_tokens, special_token_count,
+                       max_tokens, overlap_tokens, fingerprint FROM main.file_chunking_profiles LIMIT 0
+                """);
+            statement.execute("SELECT chunk_id, file_id, stable_id FROM main.chunk_identities LIMIT 0");
+        }
     }
 
     private static String canonical(String sql) {

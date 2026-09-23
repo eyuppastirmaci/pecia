@@ -133,7 +133,7 @@ class SqliteStorageTest {
     void rejectsAnotherProjectAndReleasesTheFailedConnection() throws Exception {
         Path database = root.resolve("index.db");
 
-        try (SqliteStorage ignored = SqliteStorage.open(database, root)) {}
+        SqliteStorage.open(database, root).close();
 
         Path other = Files.createDirectory(root.resolve("other"));
         byte[] before = Files.readAllBytes(database);
