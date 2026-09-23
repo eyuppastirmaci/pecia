@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -29,6 +30,12 @@ class ProjectContextResolverTest {
 
     private final PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
     private final ProjectContextResolver resolver = new ProjectContextResolver(loader);
+
+    @BeforeEach
+    void useCanonicalRoot() throws IOException {
+        // Resolved contexts use on-disk spellings; Windows runners may expose temp directories by short names.
+        root = root.toRealPath();
+    }
 
     @Test
     void defaultsUseTheTargetAndDoNotCreateAnything() throws IOException {
@@ -200,7 +207,7 @@ class ProjectContextResolverTest {
 
     @ParameterizedTest
     @CsvSource({"Src/Docs, src/docs", "Src/Ödeme, Src/Ödeme"})
-    void childTargetsTakeTheOnDiskSpellingBelowTheProjectRoot(String onDisk, String typed) throws IOException {
+    void childTargetsTakeTheirOnDiskSpelling(String onDisk, String typed) throws IOException {
         config(".pecia/index.db");
         Path child = Files.createDirectories(root.resolve(onDisk));
         Path alias = root.resolve(typed);

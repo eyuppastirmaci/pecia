@@ -46,10 +46,11 @@ final class IndexDeletionPlanner {
             throw new IOException("Deletion planning requires a complete scan");
         }
 
-        Set<Path> discovered = new HashSet<>();
+        // Compare exact spellings: Windows path equality ignores case and would hide case-only renames.
+        Set<String> discovered = new HashSet<>();
 
         for (Path candidate : scan.files()) {
-            discovered.add(context.sourcePath(candidate));
+            discovered.add(FileWalker.portablePath(context.sourcePath(candidate)));
         }
 
         requireTargetDirectory();
@@ -62,7 +63,7 @@ final class IndexDeletionPlanner {
 
             if (!source.startsWith(context.target())
                     || source.equals(context.target())
-                    || discovered.contains(file.sourcePath())
+                    || discovered.contains(FileWalker.portablePath(file.sourcePath()))
                     || context.storageFiles().contains(source)
                     || !filter.matches(file.sourcePath())) {
                 continue;
@@ -133,8 +134,7 @@ final class IndexDeletionPlanner {
      * filesystems otherwise resolve an old spelling to a renamed entry, which would retain a stale duplicate. The
      * target and its ancestors keep the caller's spelling, which discovery also used for the stored paths.
      */
-    private BasicFileAttributes readSpelledAttributes(Path path, Map<Path, Set<String>> listings)
-            throws IOException {
+    private BasicFileAttributes readSpelledAttributes(Path path, Map<Path, Set<String>> listings) throws IOException {
         BasicFileAttributes attributes = readAttributes(path);
 
         if (path.startsWith(context.target())

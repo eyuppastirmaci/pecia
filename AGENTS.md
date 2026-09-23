@@ -14,7 +14,8 @@ Follow the [Google Java Style Guide](https://google.github.io/styleguide/javagui
 - Keep overloads together, declare local variables near their first use, and use one statement per line.
 - Use `UpperCamelCase` for classes, `lowerCamelCase` for methods and variables, and `UPPER_SNAKE_CASE` for constants.
 - Follow the guide's public API Javadoc requirements and exceptions for self-explanatory members and overrides. Use traditional `/** ... */` Javadoc. Do not use `///` Markdown documentation comments because Pecia targets Java 21.
-- Use `palantir-java-format` for Java source and test code with four-space indentation and a 120-character line width. Preserve the exact contents of test fixtures and other resources.
+- Use `palantir-java-format` for Java source and test code with four-space indentation and a 120-character line width. Spotless enforces this formatting, import order, trailing-whitespace removal, and final newlines during `verify`. It covers only `src/main/java` and `src/test/java`; preserve the exact contents of test fixtures and other resources.
+- Compile without warnings. The build uses `-Xlint:all` (except `serial`, because Pecia never uses Java serialization) with `-Werror`. Fix warnings instead of suppressing them; when suppression is unavoidable, apply it at the narrowest scope with a comment stating why.
 
 ### Record documentation
 
@@ -38,11 +39,12 @@ Keep record Javadocs concise: usually one or two summary sentences, plus only th
 
 - Preserve Maven test discovery: use `*Test` for unit tests and `*IT` for packaged acceptance tests. The `*IT` suffix is a project exception to Google's test-class naming convention.
 - Add or update meaningful tests when behavior changes. Use relevant existing tests for behavior-preserving refactors; documentation and formatting edits do not require new tests.
-- Run verification from the repository root with JDK 21. Newer JDKs may be used only if the configured build still targets Java 21 and all configured tooling supports that JDK:
+- Run verification from the repository root with JDK 21 and the Maven wrapper, never a system Maven. Maven Enforcer requires JDK 21 and the wrapper's Maven version because the packaged offline tests install a `SecurityManager`, which JDK 24+ cannot install. The shipped JAR still runs on Java 21+:
 
 ```sh
+bash ./mvnw -B -ntp spotless:apply             # format Java sources and tests
 bash ./mvnw -B -ntp test                       # unit tests
-bash ./mvnw -B -ntp verify                     # unit and packaged acceptance tests
+bash ./mvnw -B -ntp verify                     # unit and packaged acceptance tests, then formatting check
 bash ./mvnw -B -ntp -pl pecia-core -am verify  # independent core verification
 ```
 

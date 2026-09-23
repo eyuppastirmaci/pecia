@@ -80,10 +80,10 @@ final class SqliteIndexingProfileSchema {
             }
         }
 
-        try (var statement = connection.createStatement();
-                var ignored = statement.executeQuery(
-                        "SELECT file_id, tokenizer_key, max_tokens, overlap_tokens FROM main.file_indexing_profiles"
-                                + " LIMIT 0")) {}
+        try (var statement = connection.createStatement()) {
+            statement.execute(
+                    "SELECT file_id, tokenizer_key, max_tokens, overlap_tokens FROM main.file_indexing_profiles LIMIT 0");
+        }
     }
 
     private static String canonical(String sql) {

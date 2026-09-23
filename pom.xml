@@ -19,6 +19,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <picocli.version>4.7.7</picocli.version>
         <surefire.version>3.5.2</surefire.version>
+        <spotless.version>3.10.2</spotless.version>
+        <palantir-java-format.version>2.98.0</palantir-java-format.version>
+        <enforcer.version>3.6.3</enforcer.version>
+        <extra-enforcer-rules.version>1.12.1</extra-enforcer-rules.version>
     </properties>
 
     <dependencyManagement>
@@ -68,6 +72,14 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.13.0</version>
+                    <configuration>
+                        <showWarnings>true</showWarnings>
+                        <failOnWarning>true</failOnWarning>
+                        <compilerArgs>
+                            <!-- Pecia never uses Java serialization; exceptions stay inside the running process. -->
+                            <arg>-Xlint:all,-serial</arg>
+                        </compilerArgs>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -103,7 +115,98 @@
                     <artifactId>maven-shade-plugin</artifactId>
                     <version>3.6.0</version>
                 </plugin>
+                <plugin>
+                    <groupId>com.diffplug.spotless</groupId>
+                    <artifactId>spotless-maven-plugin</artifactId>
+                    <version>${spotless.version}</version>
+                    <configuration>
+                        <java>
+                            <!-- Resources, golden fixtures and the tokenizer vocabulary are never formatted. -->
+                            <includes>
+                                <include>src/main/java/**/*.java</include>
+                                <include>src/test/java/**/*.java</include>
+                            </includes>
+                            <palantirJavaFormat>
+                                <version>${palantir-java-format.version}</version>
+                                <style>PALANTIR</style>
+                            </palantirJavaFormat>
+                            <removeUnusedImports/>
+                            <importOrder>
+                                <order>\#,</order>
+                            </importOrder>
+                            <trimTrailingWhitespace/>
+                            <endWithNewline/>
+                        </java>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                            <phase>verify</phase>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>${enforcer.version}</version>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.codehaus.mojo</groupId>
+                            <artifactId>extra-enforcer-rules</artifactId>
+                            <version>${extra-enforcer-rules.version}</version>
+                        </dependency>
+                    </dependencies>
+                    <executions>
+                        <execution>
+                            <id>enforce-build-environment</id>
+                            <goals>
+                                <goal>enforce</goal>
+                            </goals>
+                            <configuration>
+                                <rules>
+                                    <!-- Packaged offline tests install a SecurityManager, which JDK 24+ removes. -->
+                                    <requireJavaVersion>
+                                        <version>[21,22)</version>
+                                    </requireJavaVersion>
+                                    <!-- Matches the wrapper so local builds and CI use the same Maven. -->
+                                    <requireMavenVersion>
+                                        <version>[3.9.11]</version>
+                                    </requireMavenVersion>
+                                    <dependencyConvergence/>
+                                </rules>
+                            </configuration>
+                        </execution>
+                        <execution>
+                            <!-- Runs after reactor modules are packaged and before the CLI fat JAR is shaded. -->
+                            <id>enforce-no-duplicate-classes</id>
+                            <phase>prepare-package</phase>
+                            <goals>
+                                <goal>enforce</goal>
+                            </goals>
+                            <configuration>
+                                <rules>
+                                    <banDuplicateClasses>
+                                        <findAllDuplicates>true</findAllDuplicates>
+                                        <ignoreWhenIdentical>true</ignoreWhenIdentical>
+                                    </banDuplicateClasses>
+                                </rules>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
     </build>
 </project>

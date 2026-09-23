@@ -1,5 +1,6 @@
 package dev.eyuppastirmaci.pecia.testing;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -119,6 +120,17 @@ public final class OfflineSandbox {
         return new Run(Files.createTempDirectory(directory, "run-"), environment.snapshot());
     }
 
+    /**
+     * Returns a JVM argument that records class initialization in {@code log}. JVM logging separates options with
+     * ':', so the path is quoted to protect Windows drive letters. Windows process creation wraps arguments that
+     * contain spaces in quotes without escaping embedded quotes, so they are escaped there.
+     */
+    public static String initializationLogArgument(Path log) {
+        String quote = File.separatorChar == '\\' ? "\\\"" : "\"";
+
+        return "-Xlog:class+init=info:file=" + quote + log.toString().replace('\\', '/') + quote;
+    }
+
     /** Removes only the exact JDK 21 startup diagnostics; all application stderr remains visible. */
     public static String applicationStderr(String stderr) {
         String normalized = stderr.replace("\r\n", "\n");
@@ -166,9 +178,7 @@ public final class OfflineSandbox {
             arguments.add("-Xbootclasspath/a:" + guardJar);
             arguments.add("-Djava.security.manager=" + NetworkGuard.class.getName());
             arguments.add("-Dpecia.offline.audit=" + auditLog());
-            // JVM logging uses ':' as a separator, so quote the output for Windows drive paths.
-            arguments.add("-Xlog:class+init=info:file=\""
-                    + initializationLog().toString().replace('\\', '/') + "\"");
+            arguments.add(initializationLogArgument(initializationLog()));
             return List.copyOf(arguments);
         }
 

@@ -23,8 +23,8 @@ public final class ProjectContextResolver {
      * Uses the existing nearest-config/Git-root rules for a directory target. Relative store paths
      * resolve against the loaded project root; absolute paths may be outside it. Existing store
      * ancestors are resolved to their real paths so aliases cannot hide the index from discovery.
-     * Target components below the project root take their on-disk spelling. Storage opening remains
-     * responsible for validating database ownership and schema.
+     * The target takes its on-disk spelling, so the target, project root and database share one spelling.
+     * Storage opening remains responsible for validating database ownership and schema.
      *
      * @throws IOException if the target is not a real directory, contains a symbolic link, or
      *     paths/config cannot be read
@@ -45,8 +45,11 @@ public final class ProjectContextResolver {
             throw new IOException("Target must be a directory: " + normalized);
         }
 
-        LoadedConfig loaded = configLoader.load(normalized);
-        Path canonicalTarget = canonicalBelowRoot(normalized, loaded.root());
+        // The target contains no symbolic links, so this changes only its spelling: case, Unicode normalization
+        // and Windows short names. Otherwise a differently spelled target would store a second project-relative
+        // path for the same file, and the project root would not match the canonical database path.
+        Path canonicalTarget = normalized.toRealPath(LinkOption.NOFOLLOW_LINKS);
+        LoadedConfig loaded = configLoader.load(canonicalTarget);
         Path database =
                 loaded.root().resolve(Path.of(loaded.config().storePath())).normalize();
         Path existing = database;
@@ -62,19 +65,5 @@ public final class ProjectContextResolver {
         }
 
         return new ProjectContext(canonicalTarget, loaded, database);
-    }
-
-    /**
-     * Replaces the target components below the project root with their on-disk spelling. Case- or
-     * normalization-insensitive filesystems otherwise accept a differently spelled child target and would store a
-     * second project-relative path for the same file. The root keeps the caller's spelling so unrelated ancestor
-     * aliases, such as Windows short names, do not change absolute paths.
-     */
-    private static Path canonicalBelowRoot(Path target, Path root) throws IOException {
-        // The target was checked to contain no symbolic links, so this changes spelling only.
-        Path realTarget = target.toRealPath(LinkOption.NOFOLLOW_LINKS);
-        Path realRoot = root.toRealPath(LinkOption.NOFOLLOW_LINKS);
-
-        return root.resolve(realRoot.relativize(realTarget));
     }
 }

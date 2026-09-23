@@ -162,8 +162,10 @@ class IndexDeletionPlannerTest {
         Files.writeString(root.resolve(original), "renamed");
         StoredFile stored = stored(1, onlySource(context));
         renameSpelling(root.resolve(original), renamed);
+        // Compare strings because Windows path equality ignores case.
         assumeFalse(
-                onlySource(context).equals(stored.sourcePath()), "Filesystem does not preserve this spelling change");
+                onlySource(context).toString().equals(stored.sourcePath().toString()),
+                "Filesystem does not preserve this spelling change");
 
         assertEquals(List.of(stored), new IndexDeletionPlanner(context).plan(scan(context), List.of(stored)));
     }
@@ -198,8 +200,8 @@ class IndexDeletionPlannerTest {
         Files.writeString(root.resolve("Docs/present.txt"), "present");
         ProjectContext resolved = context(root);
         // The resolver canonicalizes child targets; the planner must still not fail on a caller-spelled target.
-        ProjectContext context =
-                new ProjectContext(root.resolve("docs"), resolved.loadedConfig(), resolved.databasePath());
+        ProjectContext context = new ProjectContext(
+                resolved.projectRoot().resolve("docs"), resolved.loadedConfig(), resolved.databasePath());
         StoredFile deleted = stored(1, "docs/deleted.txt");
 
         assertEquals(

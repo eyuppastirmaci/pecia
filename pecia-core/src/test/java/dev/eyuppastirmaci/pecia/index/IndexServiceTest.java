@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,6 +23,12 @@ class IndexServiceTest {
     Path root;
 
     private final IndexService service = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
+
+    @BeforeEach
+    void useCanonicalRoot() throws IOException {
+        // Resolved contexts use on-disk spellings; Windows runners may expose temp directories by short names.
+        root = root.toRealPath();
+    }
 
     @Test
     void rejectsMissingConfigurationLoaderDuringConstruction() {

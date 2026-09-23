@@ -80,9 +80,9 @@ final class SqliteFtsSchema {
 
         // Preparing the projection opens the virtual table and checks its columns, without scanning
         // chunk content.
-        try (var statement = connection.createStatement();
-                var ignored = statement.executeQuery(
-                        "SELECT rowid, content, headings, source_path FROM main.chunks_fts LIMIT 0")) {}
+        try (var statement = connection.createStatement()) {
+            statement.execute("SELECT rowid, content, headings, source_path FROM main.chunks_fts LIMIT 0");
+        }
     }
 
     private static String canonical(String sql) {

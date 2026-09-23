@@ -61,10 +61,22 @@
                             <version>${picocli.version}</version>
                         </path>
                     </annotationProcessorPaths>
-                    <compilerArgs>
-                        <arg>-Aproject=${project.groupId}/${project.artifactId}</arg>
+                    <compilerArgs combine.children="append">
+                        <!-- picocli-codegen inspects annotations without claiming them, which javac reports. -->
+                        <arg>-Xlint:-processing</arg>
                     </compilerArgs>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <!-- Only main sources declare picocli commands; test compilation has no consumer. -->
+                            <compilerArgs combine.children="append">
+                                <arg>-Aproject=${project.groupId}/${project.artifactId}</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -28,6 +29,18 @@ class OfflineSandboxTest {
 
     @TempDir
     Path sandbox;
+
+    @Test
+    void initializationLogArgumentKeepsAPathWithSpacesAndADriveColonInOneQuotedValue() {
+        Path log = sandbox.resolve("packaged core").resolve("initialization.log");
+        String path = log.toString().replace('\\', '/');
+        // Windows process creation does not escape embedded quotes, so only Windows escapes them here.
+        String quote = OS.WINDOWS.isCurrentOs() ? "\\\"" : "\"";
+
+        assertEquals(
+                "-Xlog:class+init=info:file=" + quote + path + quote, OfflineSandbox.initializationLogArgument(log));
+        assertFalse(path.contains("\\"));
+    }
 
     @Test
     void guardJarContainsOnlyStandaloneNetworkGuardAndProbeClasses() throws Exception {
@@ -191,7 +204,7 @@ class OfflineSandboxTest {
         Files.writeString(
                 run.initializationLog(),
                 "[0.123s][info][class,init] 1 Initializing 'dev/eyuppastirmaci/pecia/Bootstrap' (0x00000000)\n"
-                    + "[0.124s][info][class,init] 2 Initializing 'dev/eyuppastirmaci/pecia/testing/NetworkGuard'\n");
+                        + "[0.124s][info][class,init] 2 Initializing 'dev/eyuppastirmaci/pecia/testing/NetworkGuard'\n");
 
         run.verifyLexical("dev/eyuppastirmaci/pecia/Bootstrap");
     }

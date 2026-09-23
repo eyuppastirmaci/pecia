@@ -199,9 +199,9 @@ class SqliteFtsMigrationTest {
         Path anotherProject = Files.createDirectory(root.resolve("another-project"));
         byte[] originalDatabase = Files.readAllBytes(database);
 
-        SQLException failure = assertThrows(SQLException.class, () -> {
-            try (SqliteStorage ignored = SqliteStorage.open(database, anotherProject)) {}
-        });
+        SQLException failure = assertThrows(
+                SQLException.class,
+                () -> SqliteStorage.open(database, anotherProject).close());
         assertTrue(failure.getMessage().contains("another project root"));
         assertArrayEquals(originalDatabase, Files.readAllBytes(database));
         try (Connection connection = raw(database)) {
@@ -236,9 +236,8 @@ class SqliteFtsMigrationTest {
         }
         byte[] damagedDatabase = Files.readAllBytes(database);
 
-        assertThrows(SQLException.class, () -> {
-            try (SqliteStorage ignored = SqliteStorage.open(database, root)) {}
-        });
+        assertThrows(
+                SQLException.class, () -> SqliteStorage.open(database, root).close());
 
         assertArrayEquals(damagedDatabase, Files.readAllBytes(database));
         try (Connection connection = raw(database)) {
