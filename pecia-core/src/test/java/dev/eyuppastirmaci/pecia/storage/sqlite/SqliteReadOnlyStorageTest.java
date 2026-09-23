@@ -28,6 +28,7 @@ import java.util.Properties;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -40,7 +41,8 @@ class SqliteReadOnlyStorageTest {
 
     @Test
     void searchesAnExistingIndexWithoutChangingItsBytesAndClosesTheOwnedConnection() throws Exception {
-        Path database = root.resolve("İndex #?%.db");
+        // JDBC URIs treat '#', '?' and '%' specially; Windows forbids '?' in file names, so it is omitted there.
+        Path database = root.resolve(OS.WINDOWS.isCurrentOs() ? "İndex #%.db" : "İndex #?%.db");
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             populate(storage.connection());
