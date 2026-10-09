@@ -46,8 +46,10 @@ final class PackagedCliAssertions {
                 result.out());
     }
 
-    static boolean initialized(Path log, String className) throws IOException {
-        return Files.readString(log).contains("Initializing '" + className + "'");
+    /** Reports whether a JVM class-initialization log, which uses internal slash-separated names, includes type. */
+    static boolean initialized(Path log, Class<?> type) throws IOException {
+        String internalName = type.getName().replace('.', '/');
+        return Files.readString(log).contains("Initializing '" + internalName + "'");
     }
 
     static void assertConciseFailure(Result result, String expectedMessage) {

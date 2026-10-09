@@ -9,8 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.Bootstrap;
 import dev.eyuppastirmaci.pecia.cli.packaging.PackagedCli.Result;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -186,8 +188,8 @@ class PackagedCliDiscoveryIT {
                     commands.get(index).toArray(String[]::new));
 
             assertSuccess(result);
-            assertTrue(initialized(log, "dev/eyuppastirmaci/pecia/Bootstrap"), "The JVM probe must be active");
-            assertFalse(initialized(log, "dev/eyuppastirmaci/pecia/tokenization/MiniLmTokenizer"));
+            assertTrue(initialized(log, Bootstrap.class), "The JVM probe must be active");
+            assertFalse(initialized(log, MiniLmTokenizer.class));
             assertEquals(before, cli.projectEntries());
         }
     }

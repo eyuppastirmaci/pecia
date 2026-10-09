@@ -6,9 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.Bootstrap;
 import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.testing.OfflineEnvironment;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -113,14 +115,13 @@ final class PackagedCli {
 
             String error = Files.readString(stderr).replace("\r\n", "\n");
             if (evidence != null) {
-                evidence.verifyLexical("dev.eyuppastirmaci.pecia.Bootstrap");
+                evidence.verifyLexical(Bootstrap.class.getName());
                 error = OfflineSandbox.applicationStderr(error);
                 List<String> options = List.of(arguments);
                 if (options.contains("query") || options.contains("--dry-run") || options.contains("--help")) {
                     assertFalse(
                             OfflineEnvironment.initialized(
-                                    evidence.initializationLog(),
-                                    "dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer"),
+                                    evidence.initializationLog(), MiniLmTokenizer.class.getName()),
                             "Query, preview and help must not initialize the tokenizer");
                 }
             }

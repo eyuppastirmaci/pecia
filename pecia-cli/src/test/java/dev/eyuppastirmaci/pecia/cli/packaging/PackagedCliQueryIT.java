@@ -9,11 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.Bootstrap;
 import dev.eyuppastirmaci.pecia.cli.packaging.PackagedCli.Result;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -105,8 +107,8 @@ class PackagedCliQueryIT {
                 identifier.out());
         assertTrue(identifier.out().endsWith("\n\n"), identifier.out());
         assertFalse(identifier.out().contains("\u001b"));
-        assertTrue(initialized(initializationLog, "dev/eyuppastirmaci/pecia/Bootstrap"));
-        assertFalse(initialized(initializationLog, "dev/eyuppastirmaci/pecia/tokenization/MiniLmTokenizer"));
+        assertTrue(initialized(initializationLog, Bootstrap.class));
+        assertFalse(initialized(initializationLog, MiniLmTokenizer.class));
 
         Result limited = cli.run(workingDirectory, "query", "JWT_SECRET", "--root", project.toString(), "--limit", "1");
 

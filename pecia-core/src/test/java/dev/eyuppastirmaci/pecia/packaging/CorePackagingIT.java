@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
@@ -28,8 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class CorePackagingIT {
 
-    private static final String TOKENIZER_RESOURCES =
-            MiniLmTokenizer.class.getPackageName().replace('.', '/') + "/all-MiniLM-L6-v2/";
+    private static final String TOKENIZER_RESOURCES = packageEntry(MiniLmTokenizer.class) + "all-MiniLM-L6-v2/";
     private static final String VOCABULARY_SHA256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3";
 
     @TempDir
@@ -160,7 +160,7 @@ class CorePackagingIT {
     void preservesTheVocabularyAndRequiredLicenseResources() throws Exception {
         try (JarFile jar = new JarFile(requiredPath("pecia.it.jar").toFile())) {
             assertTrue(
-                    jar.stream().noneMatch(entry -> entry.getName().startsWith("dev/eyuppastirmaci/pecia/testing/")),
+                    jar.stream().noneMatch(entry -> entry.getName().startsWith(packageEntry(OfflineSandbox.class))),
                     "Test-only offline support must not be included in the core distribution");
             byte[] vocabulary = readEntry(jar, TOKENIZER_RESOURCES + "vocab.txt");
             assertEquals(
@@ -188,7 +188,7 @@ class CorePackagingIT {
         try (JarFile jar = new JarFile(requiredPath("pecia.it.jar").toFile())) {
             assertNotNull(jar.getManifest(), "The core JAR must have a manifest");
             assertNull(jar.getManifest().getMainAttributes().getValue(Attributes.Name.MAIN_CLASS));
-            assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/index/IndexService.class"));
+            assertNotNull(jar.getJarEntry(classEntry(IndexService.class)));
             for (String migration : List.of(
                     "V1__create_initial_schema.sql",
                     "V2__add_chunk_fts.sql",
@@ -224,6 +224,15 @@ class CorePackagingIT {
         assertTrue(Files.exists(path), "Missing build output: " + path);
 
         return path;
+    }
+
+    private static String classEntry(Class<?> type) {
+        return type.getName().replace('.', '/') + ".class";
+    }
+
+    /** Returns the JAR directory entry, with a trailing slash, of the package containing type. */
+    private static String packageEntry(Class<?> type) {
+        return type.getPackageName().replace('.', '/') + "/";
     }
 
     private static byte[] readEntry(JarFile jar, String name) throws IOException {

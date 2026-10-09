@@ -1,5 +1,6 @@
 package dev.eyuppastirmaci.pecia.packaging;
 
+import dev.eyuppastirmaci.pecia.packaging.consumer.PackagedCoreConsumer;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import java.io.File;
 import java.io.IOException;
@@ -17,8 +18,9 @@ import java.util.stream.Collectors;
 /** Runs the standalone consumer with an explicit artifact classpath in a separate JVM. */
 final class PackagedCoreRunner {
 
-    static final String CONSUMER = "dev.eyuppastirmaci.pecia.packaging.consumer.PackagedCoreConsumer";
-    private static final Path PACKAGE = Path.of("dev/eyuppastirmaci/pecia/packaging/consumer");
+    static final String CONSUMER = PackagedCoreConsumer.class.getName();
+    private static final Path PACKAGE =
+            Path.of(PackagedCoreConsumer.class.getPackageName().replace('.', '/'));
     private final Path coreJar;
     private final Path runtimeDirectory;
     private final Path sandbox;

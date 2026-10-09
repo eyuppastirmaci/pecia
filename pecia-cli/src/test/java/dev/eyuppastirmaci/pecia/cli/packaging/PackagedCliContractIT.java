@@ -5,7 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.Bootstrap;
 import dev.eyuppastirmaci.pecia.cli.packaging.PackagedCli.Result;
+import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.search.QueryService;
+import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -19,8 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class PackagedCliContractIT {
 
-    private static final String TOKENIZER_PATH =
-            MiniLmTokenizer.class.getPackageName().replace('.', '/') + "/all-MiniLM-L6-v2/";
+    private static final String TOKENIZER_PATH = packageEntry(MiniLmTokenizer.class) + "all-MiniLM-L6-v2/";
     private static final String VOCABULARY_SHA256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3";
 
     @TempDir
@@ -64,13 +67,13 @@ class PackagedCliContractIT {
     void executableJarIncludesCoreVocabularyAndLicenses() throws Exception {
         try (JarFile jar = new JarFile(cli.executableJar().toFile())) {
             assertEquals(
-                    "dev.eyuppastirmaci.pecia.Bootstrap",
+                    Bootstrap.class.getName(),
                     jar.getManifest().getMainAttributes().getValue("Main-Class"));
-            assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/index/IndexService.class"));
-            assertNotNull(jar.getJarEntry("dev/eyuppastirmaci/pecia/search/QueryService.class"));
+            assertNotNull(jar.getJarEntry(classEntry(IndexService.class)));
+            assertNotNull(jar.getJarEntry(classEntry(QueryService.class)));
             assertNotNull(jar.getJarEntry("picocli/CommandLine.class"));
             assertTrue(
-                    jar.stream().noneMatch(entry -> entry.getName().startsWith("dev/eyuppastirmaci/pecia/testing/")),
+                    jar.stream().noneMatch(entry -> entry.getName().startsWith(packageEntry(OfflineSandbox.class))),
                     "Test-only offline support must not be included in the CLI distribution");
             assertTrue(
                     jar.stream()
@@ -100,6 +103,15 @@ class PackagedCliContractIT {
             assertTrue(commonmarkLicense.contains("Copyright (c) 2015, Atlassian Pty Ltd"));
             assertTrue(commonmarkLicense.contains("Redistribution and use in source and binary forms"));
         }
+    }
+
+    private static String classEntry(Class<?> type) {
+        return type.getName().replace('.', '/') + ".class";
+    }
+
+    /** Returns the JAR directory entry, with a trailing slash, of the package containing type. */
+    private static String packageEntry(Class<?> type) {
+        return type.getPackageName().replace('.', '/') + "/";
     }
 
     private static byte[] resource(JarFile jar, String path) throws IOException {

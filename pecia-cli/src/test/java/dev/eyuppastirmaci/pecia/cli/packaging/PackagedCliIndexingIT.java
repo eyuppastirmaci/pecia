@@ -17,6 +17,7 @@ import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -53,7 +54,7 @@ class PackagedCliIndexingIT {
         Result first = cli.run(project, List.of(OfflineSandbox.initializationLogArgument(initializationLog)), "index");
 
         assertIndexSummary(first, database, 3, 3);
-        assertTrue(initialized(initializationLog, "dev/eyuppastirmaci/pecia/tokenization/MiniLmTokenizer"));
+        assertTrue(initialized(initializationLog, MiniLmTokenizer.class));
         assertFalse(Files.exists(project.resolve(".pecia.toml")));
 
         try (SqliteStorage storage = SqliteStorage.openReadOnly(database, project)) {
