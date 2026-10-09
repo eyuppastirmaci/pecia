@@ -9,6 +9,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqlitePath;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -17,6 +18,8 @@ import java.sql.DriverManager;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class IndexCleanupTest {
 
@@ -101,6 +104,31 @@ class IndexCleanupTest {
                             .map(SearchHit::sourcePath)
                             .toList());
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"docs", "Docs"})
+    void caseOnlyRenamedChildTargetRemovesTheOldSpellingThroughEitherSpelling(String typed) throws Exception {
+        Files.writeString(root.resolve(".pecia.toml"), "[index]\ninclude = ['**/*.txt']\n");
+        Files.createDirectory(root.resolve("docs"));
+        Files.writeString(root.resolve("docs/a.txt"), "childcaseneedle");
+        service.index(root);
+        renameSpelling(root.resolve("docs"), "Docs");
+        assumeTrue(Files.isDirectory(root.resolve("docs")), "Filesystem is case-sensitive");
+
+        IndexResult child = service.index(root.resolve(typed));
+
+        assertEquals(IndexResult.Status.COMPLETE, child.status());
+        assertEquals(1, child.indexedFiles());
+        assertEquals(1, child.deletedFiles());
+        try (var storage = SqliteStorage.openReadOnly(child.context().databasePath(), root)) {
+            assertEquals(
+                    List.of("Docs/a.txt"),
+                    storage.lexicalSearch().search(new SearchRequest("childcaseneedle")).stream()
+                            .map(hit -> SqlitePath.encode(hit.sourcePath()))
+                            .toList());
+        }
+        assertEquals(1, service.index(root).unchangedFiles());
     }
 
     @Test

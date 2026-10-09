@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.text.Normalizer;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -208,6 +209,57 @@ class IndexDeletionPlannerTest {
                 List.of(deleted),
                 new IndexDeletionPlanner(context)
                         .plan(new WalkResult(List.of(), List.of()), List.of(deleted, stored(2, "docs/present.txt"))));
+    }
+
+    @Test
+    void plansRecordsStoredUnderAnotherCaseOfTheTargetDirectory() throws Exception {
+        assumeTrue(caseInsensitive(), "Filesystem is case-sensitive");
+        Files.createDirectory(root.resolve("Docs"));
+        Files.writeString(root.resolve("Docs/present.txt"), "present");
+        ProjectContext context = context(root.resolve("docs"));
+        StoredFile oldSpelling = stored(1, "docs/present.txt");
+        StoredFile current = stored(2, "Docs/present.txt");
+
+        assertEquals("Docs", context.target().getFileName().toString());
+        assertEquals(
+                List.of(oldSpelling),
+                new IndexDeletionPlanner(context).plan(scan(context), List.of(oldSpelling, current)));
+    }
+
+    @Test
+    void plansRecordsStoredUnderAnotherNormalizationOfTheTargetDirectory() throws Exception {
+        String composed = Normalizer.normalize("Ödeme", Normalizer.Form.NFC);
+        String decomposed = Normalizer.normalize("Ödeme", Normalizer.Form.NFD);
+        Files.createDirectory(root.resolve(composed));
+        Files.writeString(root.resolve(composed).resolve("present.txt"), "present");
+        assumeTrue(Files.isDirectory(root.resolve(decomposed)), "Filesystem distinguishes Unicode normalization");
+        ProjectContext context = context(root.resolve(composed));
+        StoredFile oldSpelling = stored(1, Path.of(decomposed, "present.txt"));
+
+        assertEquals(List.of(oldSpelling), new IndexDeletionPlanner(context).plan(scan(context), List.of(oldSpelling)));
+    }
+
+    @Test
+    void retainsMissingRecordsInADistinctDirectoryThatDiffersOnlyInCase() throws Exception {
+        assumeFalse(caseInsensitive(), "Filesystem folds case");
+        Files.createDirectory(root.resolve("Docs"));
+        Files.createDirectory(root.resolve("docs"));
+        ProjectContext context = context(root.resolve("Docs"));
+
+        assertTrue(new IndexDeletionPlanner(context)
+                .plan(scan(context), List.of(stored(1, "docs/missing.txt")))
+                .isEmpty());
+    }
+
+    @Test
+    void retainsMissingRecordsBelowALinkToTheTargetDirectory() throws Exception {
+        Path target = Files.createDirectory(root.resolve("docs"));
+        createLink(root.resolve("alias"), target);
+        ProjectContext context = context(target);
+
+        assertTrue(new IndexDeletionPlanner(context)
+                .plan(scan(context), List.of(stored(1, "alias/missing.txt")))
+                .isEmpty());
     }
 
     @Test
