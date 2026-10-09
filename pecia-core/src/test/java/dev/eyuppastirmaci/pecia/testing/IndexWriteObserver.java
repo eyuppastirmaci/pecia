@@ -1,6 +1,5 @@
 package dev.eyuppastirmaci.pecia.testing;
 
-import dev.eyuppastirmaci.pecia.storage.sqlite.SqlitePath;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -27,6 +26,9 @@ import org.sqlite.SQLiteConfig;
  * triggers in the test database that log every row image written to the per-file tables into a test-owned table.
  * Storage validates its own schema objects by name, so these extra objects do not affect indexing or queries.
  * Writes to derived state ({@code chunks_fts}) and index-wide metadata are not logged.
+ *
+ * <p>Paths are compared in their stored slash-separated spelling rather than as {@link Path} values, because
+ * Windows path equality ignores case and would merge the old and new spellings of a case-only rename.
  */
 public final class IndexWriteObserver {
 
@@ -101,7 +103,7 @@ public final class IndexWriteObserver {
             if (entry.chunkId() != null) {
                 ChunkRow chunk = require(chunkRows, entry.chunkId(), entry);
                 fileId = chunk.fileId();
-                touchedChunks.add(new ChunkKey(decode(require(filePaths, fileId, entry)), chunk.index()));
+                touchedChunks.add(new ChunkKey(require(filePaths, fileId, entry), chunk.index()));
             } else {
                 fileId = entry.fileId();
             }
@@ -109,13 +111,10 @@ public final class IndexWriteObserver {
             touchedPaths.add(require(filePaths, fileId, entry));
         }
 
-        Set<Path> touchedFiles = new HashSet<>();
-        touchedPaths.forEach(path -> touchedFiles.add(decode(path)));
-
         return new Writes(
                 log.size(),
-                written(before.files(), after.files(), touchedFiles),
-                retained(before.files(), after.files(), touchedFiles),
+                written(before.files(), after.files(), touchedPaths),
+                retained(before.files(), after.files(), touchedPaths),
                 removed(before.files(), after.files()),
                 written(before.chunks(), after.chunks(), touchedChunks),
                 retained(before.chunks(), after.chunks(), touchedChunks),
@@ -156,10 +155,6 @@ public final class IndexWriteObserver {
         }
 
         return value;
-    }
-
-    private static Path decode(String sourcePath) {
-        return SqlitePath.decode(sourcePath);
     }
 
     private static void install(Connection connection) throws SQLException {
@@ -219,15 +214,15 @@ public final class IndexWriteObserver {
      */
     public record Writes(
             int writeCount,
-            SortedSet<Path> writtenFiles,
-            SortedSet<Path> retainedFiles,
-            SortedSet<Path> removedFiles,
+            SortedSet<String> writtenFiles,
+            SortedSet<String> retainedFiles,
+            SortedSet<String> removedFiles,
             SortedSet<ChunkKey> writtenChunks,
             SortedSet<ChunkKey> retainedChunks,
             SortedSet<ChunkKey> removedChunks) {}
 
-    /** A chunk located by its project-relative source path and zero-based position. */
-    public record ChunkKey(Path sourcePath, int chunkIndex) implements Comparable<ChunkKey> {
+    /** A chunk located by its stored slash-separated source path and zero-based position. */
+    public record ChunkKey(String sourcePath, int chunkIndex) implements Comparable<ChunkKey> {
 
         @Override
         public int compareTo(ChunkKey other) {
@@ -295,15 +290,13 @@ public final class IndexWriteObserver {
             return new State(Map.copyOf(files), Map.copyOf(chunks));
         }
 
-        Set<Path> files() {
-            Set<Path> paths = new HashSet<>();
-            filePaths.values().forEach(path -> paths.add(decode(path)));
-            return paths;
+        Set<String> files() {
+            return new HashSet<>(filePaths.values());
         }
 
         Set<ChunkKey> chunks() {
             Set<ChunkKey> keys = new HashSet<>();
-            chunkRows.values().forEach(row -> keys.add(new ChunkKey(decode(filePaths.get(row.fileId())), row.index())));
+            chunkRows.values().forEach(row -> keys.add(new ChunkKey(filePaths.get(row.fileId()), row.index())));
             return keys;
         }
     }

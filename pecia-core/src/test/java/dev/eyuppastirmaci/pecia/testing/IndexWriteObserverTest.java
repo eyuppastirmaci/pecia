@@ -9,12 +9,12 @@ import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
+import dev.eyuppastirmaci.pecia.storage.sqlite.SqlitePath;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.testing.IndexWriteObserver.ChunkKey;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import org.junit.jupiter.api.BeforeEach;
@@ -141,8 +141,14 @@ class IndexWriteObserverTest {
         }
     }
 
-    private static SortedSet<Path> sorted(Path... paths) {
-        return new TreeSet<>(Set.of(paths));
+    private static SortedSet<String> sorted(Path... paths) {
+        SortedSet<String> encoded = new TreeSet<>();
+
+        for (Path path : paths) {
+            encoded.add(SqlitePath.encode(path));
+        }
+
+        return encoded;
     }
 
     /* Every corpus file is a single line, so each produces exactly one chunk at index zero. */
@@ -150,7 +156,7 @@ class IndexWriteObserverTest {
         SortedSet<ChunkKey> keys = new TreeSet<>();
 
         for (Path path : paths) {
-            keys.add(new ChunkKey(path, 0));
+            keys.add(new ChunkKey(SqlitePath.encode(path), 0));
         }
 
         return keys;
