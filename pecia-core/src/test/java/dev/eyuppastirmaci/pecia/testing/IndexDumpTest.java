@@ -129,6 +129,23 @@ class IndexDumpTest {
         assertNotEquals(notesBefore.score(), notesAfter.score());
     }
 
+    @Test
+    void textSerializationKeepsOneEntryPerLineAndDistinguishesDumps() throws Exception {
+        Path root = createCorpus(sandbox.resolve("project"));
+        IndexDump dump = indexAndDump(root);
+        String text = dump.toText();
+        int hits =
+                dump.queries().stream().mapToInt(query -> query.hits().size()).sum();
+        int entries =
+                1 + dump.files().size() + dump.chunks().size() + dump.ftsRows().size() + QUERIES.size() + hits;
+
+        assertEquals(entries, text.lines().count());
+        assertTrue(text.contains("String JWT_SECRET;\\r\\n}"), text);
+        assertEquals(text, dump(root).toText());
+        Files.writeString(root.resolve("notes.txt"), "needle notes needlx\n");
+        assertNotEquals(text, indexAndDump(root).toText());
+    }
+
     private Path createCorpus(Path root) throws IOException {
         Files.createDirectories(root.resolve("docs"));
         Files.createDirectories(root.resolve("src"));

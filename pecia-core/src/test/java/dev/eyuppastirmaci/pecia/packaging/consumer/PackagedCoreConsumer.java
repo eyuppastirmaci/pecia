@@ -6,12 +6,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Entry point for the isolated packaged-core consumer. Every class in this package is copied onto the
  * consumer classpath, so the package must contain only consumer code.
  */
 public final class PackagedCoreConsumer {
+
+    private static final Set<String> SCENARIOS = Set.of(
+            "lexical-lifecycle",
+            "lexical-reopen",
+            "lexical-determinism",
+            "lexical-determinism-reversed",
+            "lexical-incremental");
 
     private PackagedCoreConsumer() {}
 
@@ -23,7 +31,7 @@ public final class PackagedCoreConsumer {
             throw new IllegalArgumentException("Expected scenario, project directory, core JAR, and runtime directory");
         }
         String scenario = args[0];
-        if (!scenario.equals("lexical-lifecycle") && !scenario.equals("lexical-reopen")) {
+        if (!SCENARIOS.contains(scenario)) {
             throw new IllegalArgumentException("Unknown packaged-core scenario: " + scenario);
         }
         Path root = Path.of(args[1]).toRealPath();
@@ -51,11 +59,16 @@ public final class PackagedCoreConsumer {
                 // These dependencies must be absent, not merely unused by this invocation.
             }
         }
-        LexicalLifecycleScenario lexical = new LexicalLifecycleScenario(root);
-        if (scenario.equals("lexical-lifecycle")) {
-            lexical.runLifecycle();
-        } else {
-            lexical.verifyReopened();
+        switch (scenario) {
+            case "lexical-lifecycle" -> new LexicalLifecycleScenario(root).runLifecycle();
+            case "lexical-reopen" -> new LexicalLifecycleScenario(root).verifyReopened();
+            // The dump precedes the success marker on standard output for the packaging test to compare.
+            case "lexical-determinism" -> System.out.print(new LexicalHardeningScenario(root).indexCorpus(false));
+            case "lexical-determinism-reversed" ->
+                System.out.print(new LexicalHardeningScenario(root).indexCorpus(true));
+            case "lexical-incremental" ->
+                System.out.print(new LexicalHardeningScenario(root).verifyIncrementalLifecycle());
+            default -> throw new IllegalStateException(scenario);
         }
         System.out.println("PACKAGED_CORE_OK " + scenario);
     }

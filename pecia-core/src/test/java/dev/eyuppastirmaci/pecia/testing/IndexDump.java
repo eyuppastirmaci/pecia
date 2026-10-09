@@ -75,6 +75,30 @@ public record IndexDump(
         return new IndexDump(stored.formatVersion(), stored.files(), stored.chunks(), stored.ftsRows(), results);
     }
 
+    /**
+     * Serializes the dump with one entry per line, escaping backslashes and line breaks, so dumps produced by
+     * separate processes can be exchanged as text and compared exactly.
+     */
+    public String toText() {
+        StringBuilder text = new StringBuilder("format " + formatVersion + "\n");
+        files.forEach(file -> appendLine(text, "file", file));
+        chunks.forEach(chunk -> appendLine(text, "chunk", chunk));
+        ftsRows.forEach(row -> appendLine(text, "fts", row));
+
+        for (QueryEntry query : queries) {
+            appendLine(text, "query", query.query());
+            query.hits().forEach(hit -> appendLine(text, "hit", hit));
+        }
+
+        return text.toString();
+    }
+
+    private static void appendLine(StringBuilder text, String kind, Object value) {
+        String escaped =
+                String.valueOf(value).replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n");
+        text.append(kind).append(' ').append(escaped).append('\n');
+    }
+
     private static Connection openReadOnly(Path database) throws SQLException {
         SQLiteConfig config = new SQLiteConfig();
         config.setReadOnly(true);

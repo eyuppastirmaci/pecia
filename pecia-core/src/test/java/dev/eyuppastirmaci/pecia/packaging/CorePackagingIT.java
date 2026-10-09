@@ -7,7 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
+import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.testing.IndexDump;
+import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
@@ -102,6 +107,83 @@ class CorePackagingIT {
                 runner.runOffline("lexical-reopen", project, offline).stdout().strip());
     }
 
+    @Test
+    void indexesTheSharedCorpusIdenticallyInSeparatePackagedCoreProcesses() throws Exception {
+        Path sandbox =
+                Files.createDirectory(fixture.resolve("forked determinism")).toRealPath();
+        Path first = Files.createDirectory(fixture.resolve("determinism first")).toRealPath();
+        Path second = Files.createDirectories(fixture.resolve("determinism second/nested root"))
+                .toRealPath();
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+
+        String firstDump = packagedDump(runner, "lexical-determinism", first, offline);
+        String secondDump = packagedDump(runner, "lexical-determinism-reversed", second, offline);
+
+        assertEquals(
+                LexicalTestCorpus.files().size(),
+                firstDump.lines().filter(line -> line.startsWith("file ")).count());
+        assertEquals(firstDump, secondDump);
+        // The development build must agree with the packaged artifact; it does not replace the packaged runs above.
+        assertEquals(
+                firstDump,
+                developmentDump(
+                        Files.createDirectory(fixture.resolve("development")).toRealPath()));
+    }
+
+    @Test
+    void followsUnchangedRerunsAndCaseOnlyRenamesInAPackagedCoreProcess() throws Exception {
+        Path sandbox =
+                Files.createDirectory(fixture.resolve("forked incremental")).toRealPath();
+        Path project =
+                Files.createDirectory(fixture.resolve("incremental project")).toRealPath();
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+
+        String report = packagedDump(runner, "lexical-incremental", project, offline);
+
+        // The consumer probes the filesystem itself; agreeing here shows which rename branch actually ran.
+        assertEquals("CASE_FOLDING " + foldsCase(fixture) + "\n", report);
+    }
+
+    private static boolean foldsCase(Path directory) throws IOException {
+        Path probe = Files.writeString(directory.resolve("CaseProbe.tmp"), "");
+
+        try {
+            return Files.exists(directory.resolve("caseprobe.tmp"));
+        } finally {
+            Files.delete(probe);
+        }
+    }
+
+    /* Returns the scenario's standard output before its success marker. */
+    private static String packagedDump(PackagedCoreRunner runner, String scenario, Path project, OfflineSandbox offline)
+            throws Exception {
+        String stdout = runner.runOffline(scenario, project, offline).stdout().replace("\r\n", "\n");
+        String marker = "PACKAGED_CORE_OK " + scenario + "\n";
+        assertTrue(stdout.endsWith(marker), stdout);
+        return stdout.substring(0, stdout.length() - marker.length());
+    }
+
+    private static String developmentDump(Path project) throws Exception {
+        Files.createDirectory(project.resolve(".git"));
+        LexicalTestCorpus.write(project);
+        IndexResult result = new IndexService(new PeciaConfigLoader(new PeciaConfigParser())).index(project);
+        assertEquals(IndexResult.Status.COMPLETE, result.status());
+        return IndexDump.read(result.context().databasePath(), project, LexicalTestCorpus.QUERIES)
+                .toText();
+    }
+
     private void runConsumer(String method) throws Exception {
         Path coreJar = requiredPath("pecia.it.jar");
         Path runtimeDirectory = requiredPath("pecia.it.runtimeDirectory");
@@ -118,10 +200,10 @@ class CorePackagingIT {
         }
 
         assertTrue(urls.size() > 1, "The consumer needs the packaged runtime dependencies");
-        // Copy only the standalone consumer package, excluding all test helpers and resources.
+        // Copy only the consumer package and allowlisted support types, excluding other test helpers and resources.
+        Path testClasses = requiredPath("pecia.it.testClasses");
         Path consumerDirectory = PackagedCoreRunner.copyConsumerClasses(
-                PackagedCoreRunner.consumerClasses(requiredPath("pecia.it.testClasses")),
-                fixture.resolve("consumer-classes"));
+                testClasses, PackagedCoreRunner.consumerClasses(testClasses), fixture.resolve("consumer-classes"));
         urls.add(consumerDirectory.toUri().toURL());
 
         // The platform parent prevents Maven's production and test classpaths from satisfying missing
