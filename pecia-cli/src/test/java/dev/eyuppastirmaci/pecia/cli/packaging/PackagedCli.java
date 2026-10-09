@@ -133,13 +133,17 @@ final class PackagedCli {
         }
     }
 
+    /**
+     * Runs a command that must succeed without changing the project: no entry may be created or deleted, and every
+     * file, including the index and any journal or write-ahead-log sidecar, must keep its bytes.
+     */
     Result runReadOnly(Path directory, String... arguments) throws Exception {
         List<Path> entries = projectEntries();
         Map<Path, ContentHash> contents = projectContents();
         Result result = run(directory, arguments);
         assertSuccess(result);
-        assertEquals(entries, projectEntries(), "Query/preview must not create or delete project entries");
-        assertEquals(contents, projectContents(), "Query/preview must preserve source and index bytes");
+        assertEquals(entries, projectEntries(), "A read-only run must not create or delete project entries");
+        assertEquals(contents, projectContents(), "A read-only run must preserve source and index bytes");
         return result;
     }
 

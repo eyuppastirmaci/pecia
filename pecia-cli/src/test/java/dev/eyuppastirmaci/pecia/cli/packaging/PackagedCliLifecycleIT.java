@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.cli.packaging;
 
 import static dev.eyuppastirmaci.pecia.cli.packaging.PackagedCliAssertions.assertIndexSummary;
+import static dev.eyuppastirmaci.pecia.cli.packaging.PackagedCliAssertions.hitLocations;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -202,13 +203,6 @@ class PackagedCliLifecycleIT {
             [store]
             path = 'state/search.db'
             """.formatted(maxTokens, concurrency));
-    }
-
-    private static List<String> hitLocations(Result result) {
-        return result.out()
-                .lines()
-                .filter(line -> !line.isBlank() && !line.startsWith(" "))
-                .toList();
     }
 
     private static List<Double> bm25Scores(Result result) {

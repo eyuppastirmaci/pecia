@@ -22,6 +22,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -191,5 +193,27 @@ class PackagedCliIndexingIT {
         assertSuccess(query);
         assertEquals("No results.\n", query.out());
         assertIndexSummary(cli.run(project, "index"), project.resolve(".pecia/index.db"), 0, 0);
+    }
+
+    @Test
+    void unchangedAndTimestampOnlyRerunsLeaveEveryProjectAndIndexByteUntouched() throws Exception {
+        cli.enableOffline();
+        Files.createDirectories(project.resolve("docs"));
+        Files.createDirectories(project.resolve("src"));
+        Path guide =
+                Files.writeString(project.resolve("docs/Ödeme.md"), "# Ödeme rehberi\n\nİstanbul ödeme notları.\n");
+        Files.writeString(project.resolve("src/Auth.java"), "class Auth {\r\n    String JWT_SECRET;\r\n}\r\n");
+        Files.write(
+                project.resolve("notes.txt"), "\uFEFFnotes with a byte order mark\n".getBytes(StandardCharsets.UTF_8));
+        Files.writeString(project.resolve("empty.txt"), "");
+        Path database = project.resolve(".pecia/index.db");
+        assertIndexSummary(cli.run(project, "index"), database, 4, 3);
+
+        // runReadOnly compares every project entry and file hash, including the index and its sidecar files.
+        assertIndexSummary(cli.runReadOnly(project, "index"), database, 4, 0, 0);
+        Files.setLastModifiedTime(
+                guide,
+                FileTime.from(Files.getLastModifiedTime(guide).toInstant().plus(Duration.ofHours(1))));
+        assertIndexSummary(cli.runReadOnly(project, "index"), database, 4, 0, 0);
     }
 }

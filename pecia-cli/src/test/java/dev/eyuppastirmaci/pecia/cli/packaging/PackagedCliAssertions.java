@@ -8,6 +8,7 @@ import dev.eyuppastirmaci.pecia.cli.packaging.PackagedCli.Result;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /** Assertions on packaged CLI process results shared by the scenario suites. */
 final class PackagedCliAssertions {
@@ -44,6 +45,14 @@ final class PackagedCliAssertions {
                         + chunks
                         + "\nrejected: 0\nfailed: 0\n",
                 result.out());
+    }
+
+    /** Returns the location header of each query hit, in rank order. */
+    static List<String> hitLocations(Result result) {
+        return result.out()
+                .lines()
+                .filter(line -> !line.isBlank() && !line.startsWith(" "))
+                .toList();
     }
 
     /** Reports whether a JVM class-initialization log, which uses internal slash-separated names, includes type. */
