@@ -263,6 +263,17 @@ class IndexDeletionPlannerTest {
     }
 
     @Test
+    void plansStoredConfigurationFilesInScopeEvenThoughTheyExist() throws Exception {
+        Path child = Files.createDirectory(root.resolve("child"));
+        ProjectContext context = context(child);
+        Files.writeString(child.resolve(".pecia.toml"), "[index]\n");
+        StoredFile nested = stored(1, "child/.pecia.toml");
+        StoredFile outside = stored(2, ".pecia.toml");
+
+        assertEquals(List.of(nested), new IndexDeletionPlanner(context).plan(scan(context), List.of(nested, outside)));
+    }
+
+    @Test
     void refusesIncompleteScanEvenWhenManifestIsEmpty() throws Exception {
         ProjectContext context = context(root);
         Files.createDirectories(root.resolve("broken/.gitignore"));

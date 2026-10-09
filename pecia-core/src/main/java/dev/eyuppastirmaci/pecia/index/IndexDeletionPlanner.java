@@ -35,7 +35,8 @@ final class IndexDeletionPlanner {
      * by directories or links are retained. A stored spelling below the target that now exists only with a
      * different case or Unicode normalization is absent. The scope also covers records stored under another
      * spelling of the target directory itself, such as {@code docs/} after a case-only rename to {@code Docs/};
-     * those records are absent too. The caller must revalidate before applying this advisory plan because
+     * those records are absent too. Stored {@code .pecia.toml} records in scope are always planned, because
+     * discovery never admits configuration files. The caller must revalidate before applying this advisory plan because
      * filesystem state can change after detection.
      *
      * @throws IOException if discovery is incomplete, the target is no longer a real directory, or
@@ -66,9 +67,17 @@ final class IndexDeletionPlanner {
 
             if (!(startsWithExactly(source, context.target()) || isBelowTargetAlias(file.sourcePath(), targetAliases))
                     || sameSpelling(source, context.target())
-                    || discovered.contains(FileWalker.portablePath(file.sourcePath()))
-                    || context.storageFiles().contains(source)
-                    || !filter.matches(file.sourcePath())) {
+                    || context.storageFiles().contains(source)) {
+                continue;
+            }
+
+            // Earlier versions admitted configuration files; remove them even though the file still exists.
+            if (FileWalker.isConfigFile(file.sourcePath())) {
+                missing.add(file);
+                continue;
+            }
+
+            if (discovered.contains(FileWalker.portablePath(file.sourcePath())) || !filter.matches(file.sourcePath())) {
                 continue;
             }
 
