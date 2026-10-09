@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.cli.packaging.PackagedCli.Result;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -18,7 +19,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class PackagedCliContractIT {
 
-    private static final String TOKENIZER_PATH = "dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/";
+    private static final String TOKENIZER_PATH =
+            MiniLmTokenizer.class.getPackageName().replace('.', '/') + "/all-MiniLM-L6-v2/";
     private static final String VOCABULARY_SHA256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3";
 
     @TempDir

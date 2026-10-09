@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
@@ -27,7 +28,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class CorePackagingIT {
 
-    private static final String TOKENIZER_RESOURCES = "dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/";
+    private static final String TOKENIZER_RESOURCES =
+            MiniLmTokenizer.class.getPackageName().replace('.', '/') + "/all-MiniLM-L6-v2/";
     private static final String VOCABULARY_SHA256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3";
 
     @TempDir
