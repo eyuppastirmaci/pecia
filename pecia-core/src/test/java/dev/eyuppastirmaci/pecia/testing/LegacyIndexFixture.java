@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
@@ -68,6 +69,41 @@ public final class LegacyIndexFixture {
         return database;
     }
 
+    /**
+     * Installs the current-version fixture like {@link #install}, then applies one documented damage to the copy, so
+     * the copy is rejected for exactly that reason and not because of its stored project root.
+     *
+     * @return the damaged database, at the project's default index path
+     */
+    public static Path installDamaged(Damage damage, Path projectRoot) throws IOException, SQLException {
+        Path root = projectRoot.toRealPath();
+        Path database = install(VERSIONS[VERSIONS.length - 1], root);
+
+        switch (damage) {
+            case TRUNCATED -> {
+                // Cut inside the third page, after the header but before the schema and data are complete.
+                byte[] bytes = Files.readAllBytes(database);
+                int pageSize = ((bytes[16] & 0xff) << 8) | (bytes[17] & 0xff);
+                Files.write(database, Arrays.copyOf(bytes, pageSize * 2 + pageSize / 2));
+            }
+            case FOREIGN_PROJECT ->
+                execute(
+                        database,
+                        "UPDATE index_metadata SET project_root_uri = '"
+                                + root.resolveSibling(root.getFileName() + "-other")
+                                        .toUri()
+                                        .toASCIIString()
+                                + "'");
+            case FUTURE_SCHEMA -> execute(database, "PRAGMA user_version = " + (VERSIONS[VERSIONS.length - 1] + 1));
+            case FORMAT_MISMATCH ->
+                execute(
+                        database,
+                        "UPDATE index_metadata SET index_format_version = " + (VERSIONS[VERSIONS.length - 1] + 1));
+        }
+
+        return database;
+    }
+
     /** Returns the committed fixture's bytes after checking them against {@link #CHECKSUMS}. */
     public static byte[] verifiedBytes(int version) throws IOException {
         String resource = RESOURCE_DIRECTORY + "schema-v" + version + ".db";
@@ -117,7 +153,26 @@ public final class LegacyIndexFixture {
         }
     }
 
+    private static void execute(Path database, String sql) throws SQLException {
+        try (Connection connection = open(database);
+                var statement = connection.createStatement()) {
+            statement.executeUpdate(sql);
+        }
+    }
+
     private static Connection open(Path database) throws SQLException {
         return JDBC.createConnection("jdbc:sqlite:" + database.toUri().toASCIIString(), new Properties());
+    }
+
+    /** A single damage applied to a working copy of the current-version fixture. */
+    public enum Damage {
+        /** The file cut in the middle of its third page. */
+        TRUNCATED,
+        /** The stored project root names a sibling project. */
+        FOREIGN_PROJECT,
+        /** The schema version is one above the current version. */
+        FUTURE_SCHEMA,
+        /** The schema version is current, but the stored index format version is one above it. */
+        FORMAT_MISMATCH
     }
 }

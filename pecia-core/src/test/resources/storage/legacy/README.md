@@ -32,6 +32,17 @@ The corpus is the shared lexical test corpus (`dev.eyuppastirmaci.pecia.testing.
 
 `index_metadata.project_root_uri` stores the absolute project root of the machine that wrote the index. These fixtures were written in `/tmp/pecia-legacy-fixture/vN/project` (stored as `file:///private/tmp/...` on macOS). Tests copy a fixture into a temporary project and rewrite only this value on the copy; the committed files are never opened directly.
 
+## Damaged and mismatched copies
+
+Rejection tests derive damaged indexes at test time from a working copy of `schema-v4.db` whose project root has already been rewritten, so each copy fails for exactly one reason rather than for its stored root. `LegacyIndexFixture.installDamaged` applies one of these changes:
+
+| Damage | Change to the copy | Expected reason |
+| --- | --- | --- |
+| Truncated | Cut to two and a half pages (page size from the header) | `CORRUPT_INDEX` |
+| Foreign project | `project_root_uri` set to a sibling project | `WRONG_PROJECT` |
+| Future schema | `PRAGMA user_version` set one above the current version | `INCOMPATIBLE` |
+| Format mismatch | `index_format_version` set one above the current version | `INCOMPATIBLE` |
+
 ## Regenerating
 
 The fixtures were generated on macOS arm64 with Temurin 21.0.12.1 and sqlite-jdbc 3.53.4.0. Generating each fixture twice in the same directory produced byte-identical files, so a fixture regenerated under the same conditions must match the SHA-256 above. Tests verify these checksums before using a fixture.
