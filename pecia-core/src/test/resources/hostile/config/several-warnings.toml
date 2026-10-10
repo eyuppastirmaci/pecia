@@ -1,0 +1,10 @@
+zeta = 1
+
+[chunk]
+max_token = 1
+
+[store]
+paths = "x"
+
+[chunk.extra]
+foo = 1

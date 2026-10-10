@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
+import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.index.IndexException;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
@@ -176,6 +177,7 @@ class HostileInputCorpusTest {
             IndexResult result = indexService.index(root);
             assertEquals(
                     configCase.status(), result.status(), () -> result.issues().toString());
+            assertEquals(configCase.warnings(root.resolve(PeciaConfigFile.FILE_NAME)), result.warnings());
             return;
         }
 
@@ -457,12 +459,19 @@ class HostileInputCorpusTest {
      * One configuration case from the manifest.
      *
      * @param status the expected indexing status of an accepted case, or null for a rejected case
+     * @param expectedWarnings the warnings an accepted case must produce, in order; empty when it must produce none
      * @param stage {@code load} or {@code indexing} for a rejected case
      * @param exception the simple class name of the expected exception
      * @param message a fragment of the expected exception message
      */
     record ConfigCase(
-            String id, IndexResult.Status status, String stage, String exception, String message, byte[] bytes) {
+            String id,
+            IndexResult.Status status,
+            List<ExpectedWarning> expectedWarnings,
+            String stage,
+            String exception,
+            String message,
+            byte[] bytes) {
 
         static ConfigCase from(TomlTable row) throws IOException {
             String id = required(row, "id");
@@ -473,13 +482,15 @@ class HostileInputCorpusTest {
                 case "accepted" -> {
                     assertNull(row.get("stage"), id + ": an accepted case has no stage");
                     var status = IndexResult.Status.valueOf(required(row, "status"));
-                    yield new ConfigCase(id, status, null, null, null, bytes);
+                    yield new ConfigCase(id, status, ExpectedWarning.list(row), null, null, null, bytes);
                 }
                 case "rejected" -> {
                     assertNull(row.get("status"), id + ": a rejected case has no status");
+                    assertNull(row.get("warnings"), id + ": a rejected configuration produces no warnings");
                     String stage = required(row, "stage");
                     assertTrue(stage.equals("load") || stage.equals("indexing"), id + ": unknown stage " + stage);
-                    yield new ConfigCase(id, null, stage, required(row, "exception"), required(row, "message"), bytes);
+                    yield new ConfigCase(
+                            id, null, List.of(), stage, required(row, "exception"), required(row, "message"), bytes);
                 }
                 default -> throw new AssertionError(id + ": unknown outcome " + outcome);
             };
@@ -489,9 +500,44 @@ class HostileInputCorpusTest {
             return "load".equals(stage);
         }
 
+        /** Returns the warnings an accepted case must produce for the configuration file at {@code source}. */
+        List<Warning> warnings(Path source) {
+            return expectedWarnings.stream()
+                    .map(expected -> new Warning(
+                            Warning.Code.valueOf(expected.code()),
+                            source,
+                            new Warning.Position(expected.line(), expected.column()),
+                            expected.message()))
+                    .toList();
+        }
+
         @Override
         public String toString() {
             return id;
+        }
+    }
+
+    /** A warning listed for a configuration case; its source is the case's configuration file. */
+    record ExpectedWarning(String code, int line, int column, String message) {
+
+        static List<ExpectedWarning> list(TomlTable row) {
+            TomlArray array = row.getArray("warnings");
+            List<ExpectedWarning> warnings = new ArrayList<>();
+
+            for (int index = 0; array != null && index < array.size(); index++) {
+                TomlTable warning = array.getTable(index);
+                Long line = warning.getLong("line");
+                Long column = warning.getLong("column");
+                assertNotNull(line, () -> "Expected warning needs a line: " + warning.toJson());
+                assertNotNull(column, () -> "Expected warning needs a column: " + warning.toJson());
+                warnings.add(new ExpectedWarning(
+                        required(warning, "code"),
+                        Math.toIntExact(line),
+                        Math.toIntExact(column),
+                        required(warning, "message")));
+            }
+
+            return List.copyOf(warnings);
         }
     }
 
