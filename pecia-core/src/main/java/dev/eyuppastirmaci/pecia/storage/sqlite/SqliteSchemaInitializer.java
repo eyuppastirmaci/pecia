@@ -63,6 +63,12 @@ final class SqliteSchemaInitializer {
                     version = result.getInt(1);
                 }
 
+                // An empty unversioned file is what an interrupted first run leaves; indexing initializes it.
+                if (version == 0 && firstSchemaObject() == null) {
+                    throw new IndexAccessException(
+                            IndexAccessException.Reason.NOT_FOUND, "Index has not been created yet; run index first");
+                }
+
                 if (version < 1 || version > SCHEMA_VERSION) {
                     throw new IndexAccessException(
                             IndexAccessException.Reason.INCOMPATIBLE, "Unsupported SQLite schema version: " + version);
@@ -269,12 +275,22 @@ final class SqliteSchemaInitializer {
     }
 
     private void requireEmptyDatabase() throws SQLException {
+        String existing = firstSchemaObject();
+
+        if (existing != null) {
+            // Another application's database must be reported, not adopted, just as a read-only open does.
+            throw new IndexAccessException(
+                    IndexAccessException.Reason.INCOMPATIBLE,
+                    "Cannot initialize a non-empty unversioned database: " + existing);
+        }
+    }
+
+    /** Returns the name of any user-defined schema object, or null when the database is empty. */
+    private String firstSchemaObject() throws SQLException {
         try (var statement = connection.createStatement();
                 var result = statement.executeQuery(
                         "SELECT name FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' LIMIT 1")) {
-            if (result.next()) {
-                throw new SQLException("Cannot initialize a non-empty unversioned database: " + result.getString(1));
-            }
+            return result.next() ? result.getString(1) : null;
         }
     }
 

@@ -50,6 +50,23 @@ class SqliteWritableValidationTest {
     }
 
     @Test
+    void foreignUnversionedDatabaseIsIncompatible() throws Exception {
+        Files.delete(database);
+        try (var connection =
+                        JDBC.createConnection("jdbc:sqlite:" + database.toUri().toASCIIString(), new Properties());
+                var statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE notes(text TEXT)");
+        }
+
+        byte[] before = Files.readAllBytes(database);
+        IndexAccessException failure =
+                assertThrows(IndexAccessException.class, () -> SqliteStorage.open(database, root));
+
+        assertEquals(IndexAccessException.Reason.INCOMPATIBLE, failure.reason());
+        assertArrayEquals(before, Files.readAllBytes(database));
+    }
+
+    @Test
     void truncatedIndexIsCorrupt() throws Exception {
         byte[] bytes = Files.readAllBytes(database);
         int pageSize = ((bytes[16] & 0xff) << 8) | (bytes[17] & 0xff);

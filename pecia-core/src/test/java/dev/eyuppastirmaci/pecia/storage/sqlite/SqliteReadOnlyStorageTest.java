@@ -181,6 +181,24 @@ class SqliteReadOnlyStorageTest {
     }
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void reportsAnEmptyUnversionedDatabaseAsNotCreatedWithoutChangingIt(boolean zeroBytes) throws Exception {
+        Path database = root.resolve("index.db");
+
+        if (zeroBytes) {
+            Files.write(database, new byte[0]);
+        } else {
+            try (Connection connection = raw(database)) {
+                // VACUUM writes the database header without creating any schema object.
+                execute(connection, "VACUUM");
+            }
+            assertTrue(Files.size(database) > 0, "The empty database must have a header");
+        }
+
+        assertRejectedWithoutModification(database, root, IndexAccessException.Reason.NOT_FOUND);
+    }
+
+    @ParameterizedTest
     @ValueSource(ints = {0, 5, 99})
     void rejectsUnsupportedSchemaVersionsWithoutAdoptingOrChangingThem(int version) throws Exception {
         Path database = root.resolve("index.db");
