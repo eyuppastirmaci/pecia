@@ -47,7 +47,7 @@ Rejection tests derive damaged indexes at test time from a working copy of `sche
 
 The fixtures were generated on macOS arm64 with Temurin 21.0.12.1 and sqlite-jdbc 3.53.4.0. Generating each fixture twice in the same directory produced byte-identical files, so a fixture regenerated under the same conditions must match the SHA-256 above. Tests verify these checksums before using a fixture.
 
-1. Export the writing commit and build its core with runtime dependencies:
+1. Export the writing commit and build its core with runtime dependencies. The commits that wrote the fixtures above predate the Gradle build, so they build with Maven, which leaves the JAR at `<build>/pecia-core/target/pecia-core-0.1.0-SNAPSHOT.jar`:
 
    ```sh
    git archive <commit> | tar -x -C <build>
@@ -55,17 +55,23 @@ The fixtures were generated on macOS arm64 with Temurin 21.0.12.1 and sqlite-jdb
    bash ./mvnw -B -ntp -pl pecia-core dependency:copy-dependencies -DincludeScope=runtime -DoutputDirectory=<deps>
    ```
 
-2. Write the corpus with the current test classes (after `test-compile` in this repository):
+   A commit with the Gradle build leaves the JAR at `<build>/pecia-core/build/libs/pecia-core-0.1.0-SNAPSHOT.jar` and its runtime dependencies in `<deps>` = `<build>/pecia-core/build/it-runtime`:
 
    ```sh
-   java -cp pecia-core/target/test-classes generator/WriteCorpus.java /tmp/pecia-legacy-fixture/vN/project
+   cd <build> && ./gradlew :pecia-core:jar :pecia-core:itRuntime
    ```
 
-3. Index it with that commit's code. `8b56827` predates `IndexService.index`, so V1 uses its own generator:
+2. Write the corpus with the current test classes (after `./gradlew :pecia-core:testClasses` in this repository):
 
    ```sh
-   java -cp "<build>/pecia-core/target/pecia-core-0.1.0-SNAPSHOT.jar:<deps>/*" generator/GenerateV1Index.java /tmp/pecia-legacy-fixture/v1/project
-   java -cp "<build>/pecia-core/target/pecia-core-0.1.0-SNAPSHOT.jar:<deps>/*" generator/GenerateIndex.java /tmp/pecia-legacy-fixture/vN/project
+   java -cp pecia-core/build/classes/java/test generator/WriteCorpus.java /tmp/pecia-legacy-fixture/vN/project
+   ```
+
+3. Index it with that commit's code, using the JAR from step 1 as `<core-jar>` and its dependencies as `<deps>`. `8b56827` predates `IndexService.index`, so V1 uses its own generator:
+
+   ```sh
+   java -cp "<core-jar>:<deps>/*" generator/GenerateV1Index.java /tmp/pecia-legacy-fixture/v1/project
+   java -cp "<core-jar>:<deps>/*" generator/GenerateIndex.java /tmp/pecia-legacy-fixture/vN/project
    ```
 
 4. Copy `/tmp/pecia-legacy-fixture/vN/project/.pecia/index.db` to `schema-vN.db`, write its dump with `python3 -I generator/dump-fixture.py schema-vN.db > schema-vN.sql`, and record the commit, size, and SHA-256 in the table above.

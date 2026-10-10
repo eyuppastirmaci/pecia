@@ -211,7 +211,7 @@ class CorePackagingIT {
                 testClasses, PackagedCoreRunner.consumerClasses(testClasses), fixture.resolve("consumer-classes"));
         urls.add(consumerDirectory.toUri().toURL());
 
-        // The platform parent prevents Maven's production and test classpaths from satisfying missing
+        // The platform parent prevents the build's production and test classpaths from satisfying missing
         // JAR contents.
         try (URLClassLoader consumerLoader =
                 new URLClassLoader(urls.toArray(URL[]::new), ClassLoader.getPlatformClassLoader())) {

@@ -34,10 +34,10 @@ final class PackagedCli {
         this.executableJar = executableJar;
     }
 
-    /** Locates the Failsafe-supplied JAR and creates an empty project whose path contains spaces. */
+    /** Locates the build-supplied JAR and creates an empty project whose path contains spaces. */
     static PackagedCli create(Path sandbox) throws IOException {
         String jarProperty = System.getProperty("pecia.it.jar");
-        assertNotNull(jarProperty, "Failsafe must supply the packaged CLI JAR path");
+        assertNotNull(jarProperty, "The build must supply the packaged CLI JAR path");
         Path executableJar = Path.of(jarProperty);
         assertTrue(executableJar.isAbsolute(), "The CLI JAR path must be absolute");
         assertTrue(Files.isRegularFile(executableJar), "Missing packaged CLI JAR: " + executableJar);

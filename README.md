@@ -32,30 +32,30 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 
 ## Building and testing
 
-Requires JDK 21+. The Maven Wrapper is included, so no Maven installation is needed.
+Building needs JDK 17 or newer to run Gradle; the build itself compiles and tests on JDK 21, which Gradle downloads if it is not installed. The Gradle Wrapper is included, so no Gradle installation is needed. The CLI JAR runs on Java 21+.
 
-The project has two Maven modules: `pecia-core` provides document discovery, extraction, chunking, and token counting; `pecia-cli` provides the terminal commands and depends on `pecia-core`.
+The project has two Gradle modules: `pecia-core` provides document discovery, extraction, chunking, and token counting; `pecia-cli` provides the terminal commands and depends on `pecia-core`.
 
 Run these commands from the repository root:
 
 ```
-./mvnw test           # run unit tests in both modules
-./mvnw clean package  # run unit tests and build both JARs
-./mvnw clean verify   # also run acceptance tests against the packaged JARs
+./gradlew test                  # run unit tests in both modules
+./gradlew :pecia-cli:shadowJar  # build the CLI JAR without running tests
+./gradlew build                 # run all tests and checks, including acceptance tests against the packaged JARs
 ```
 
-On Windows use `.\mvnw.cmd` instead of `./mvnw`.
+On Windows use `gradlew.bat` instead of `./gradlew`.
 
 ## Commands
 
 ```
-java -jar pecia-cli/target/pecia.jar --help                             # list commands
-java -jar pecia-cli/target/pecia.jar --version                          # print version
-java -jar pecia-cli/target/pecia.jar init                               # write a default .pecia.toml into the current directory
-java -jar pecia-cli/target/pecia.jar index . --dry-run                  # list candidate files without writing an index
-java -jar pecia-cli/target/pecia.jar index .                            # build the local SQLite lexical index
-java -jar pecia-cli/target/pecia.jar query "authentication middleware"  # search the current project's index with BM25
-java -jar pecia-cli/target/pecia.jar query "JWT_SECRET" --root /path/to/project --limit 5
+java -jar pecia-cli/build/libs/pecia.jar --help                             # list commands
+java -jar pecia-cli/build/libs/pecia.jar --version                          # print version
+java -jar pecia-cli/build/libs/pecia.jar init                               # write a default .pecia.toml into the current directory
+java -jar pecia-cli/build/libs/pecia.jar index . --dry-run                  # list candidate files without writing an index
+java -jar pecia-cli/build/libs/pecia.jar index .                            # build the local SQLite lexical index
+java -jar pecia-cli/build/libs/pecia.jar query "authentication middleware"  # search the current project's index with BM25
+java -jar pecia-cli/build/libs/pecia.jar query "JWT_SECRET" --root /path/to/project --limit 5
 ```
 
 Run `index` before `query`. The query defaults are `--root .` and `--limit 10`.

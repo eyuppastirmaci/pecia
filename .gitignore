@@ -1,11 +1,8 @@
-target/
-!.mvn/wrapper/maven-wrapper.jar
+.gradle/
 
 # Pecia's own output, created when the tool runs inside this repo
 .pecia/
 .pecia.toml
-!**/src/main/**/target/
-!**/src/test/**/target/
 .kotlin
 
 ### IntelliJ IDEA ###

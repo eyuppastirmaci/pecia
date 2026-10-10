@@ -30,20 +30,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: maven
 
-      - name: Verify (Linux)
-        if: runner.os == 'Linux'
-        run: bash ./mvnw -B -ntp verify
+      # Validates the wrapper JAR and caches Gradle's downloads between runs.
+      - uses: gradle/actions/setup-gradle@v6
 
-      # macOS resolves /var through a symbolic link, which path-validation tests reject.
-      - name: Verify (macOS)
-        if: runner.os == 'macOS'
-        run: bash ./mvnw -B -ntp -DargLine=-Djava.io.tmpdir=/private/tmp verify
+      - name: Verify (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: ./gradlew check
 
       - name: Verify (Windows)
         if: runner.os == 'Windows'
-        run: .\mvnw.cmd -B -ntp verify
+        run: .\gradlew.bat check
 
       - name: Upload test reports
         if: failure()
@@ -51,8 +48,8 @@ jobs:
         with:
           name: test-reports-${{ matrix.os }}
           path: |
-            **/target/surefire-reports/
-            **/target/failsafe-reports/
+            **/build/reports/
+            **/build/test-results/
           retention-days: 7
 
   core-verify:
@@ -66,8 +63,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: maven
 
-      # Proves the core library builds and passes its packaged tests without the CLI module.
+      - uses: gradle/actions/setup-gradle@v6
+
+      # Proves the core library builds and passes its packaged tests without running any CLI task.
       - name: Verify core independently
-        run: bash ./mvnw -B -ntp -pl pecia-core -am verify
+        run: ./gradlew :pecia-core:check

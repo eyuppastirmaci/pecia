@@ -168,7 +168,8 @@ class QueryCommandTest {
     void missingIndexProvidesAnIndexCommandWithoutCreatingAnything() throws Exception {
         assertEquals(1, run("needle", "--root", root.toString()));
         assertTrue(err.toString().contains("INDEX_NOT_FOUND"));
-        assertTrue(err.toString().contains("Run: java -jar "));
+        // Tests run from class directories, so the hint names the JAR the build produces.
+        assertTrue(err.toString().contains("Run: java -jar 'pecia-cli/build/libs/pecia.jar'"), err.toString());
         assertTrue(err.toString().contains(" index '" + root + "'"));
         assertFalse(err.toString().contains("\tat "));
         assertEquals("", out.toString());
