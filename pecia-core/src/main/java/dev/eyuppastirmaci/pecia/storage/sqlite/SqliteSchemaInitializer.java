@@ -84,11 +84,8 @@ final class SqliteSchemaInitializer {
                     failure.addSuppressed(rollbackFailure);
                 }
 
-                if (failure instanceof SQLException sql
-                        && !(sql instanceof IndexAccessException)
-                        && isInvalidSchema(sql)) {
-                    throw new IndexAccessException(
-                            IndexAccessException.Reason.CORRUPT_INDEX, "Could not validate existing index", sql);
+                if (failure instanceof SQLException sql) {
+                    throw classifiedValidationFailure(sql);
                 }
 
                 throw failure;
@@ -133,26 +130,18 @@ final class SqliteSchemaInitializer {
             String schema, String ftsMigration, String profileMigration, String identityMigration, FtsCheck ftsCheck)
             throws SQLException {
         try (var statement = connection.createStatement()) {
-            statement.execute("BEGIN IMMEDIATE");
+            try {
+                // Taking the write lock reads the database header, so a damaged file can already fail here.
+                statement.execute("BEGIN IMMEDIATE");
+            } catch (SQLException failure) {
+                throw classifiedValidationFailure(failure);
+            }
 
             try {
-                int version;
-
-                try (var result = statement.executeQuery("PRAGMA user_version")) {
-                    result.next();
-                    version = result.getInt(1);
-                }
-
-                if (version < 0 || version > SCHEMA_VERSION) {
-                    throw new SQLException(
-                            "Unsupported SQLite schema version: " + version + "; expected 1 through " + SCHEMA_VERSION);
-                }
+                int version = validateExistingIndex(statement);
 
                 if (version == 0) {
                     requireEmptyDatabase();
-                } else {
-                    // Reject foreign or invalid indexes before the capability probe or any migration.
-                    validateStoredSchema(version);
                 }
 
                 ftsCheck.verify(connection);
@@ -174,6 +163,51 @@ final class SqliteSchemaInitializer {
                 throw failure;
             }
         }
+    }
+
+    /**
+     * Reads the schema version and validates an existing index before the capability probe or any migration, and
+     * classifies failures as the read-only path does: an unsupported version is incompatible, and invalid stored
+     * structure is corrupt. Later migration failures keep their own classification.
+     *
+     * @return the stored schema version, or 0 for a new database
+     */
+    private int validateExistingIndex(Statement statement) throws SQLException {
+        try {
+            int version;
+
+            try (var result = statement.executeQuery("PRAGMA user_version")) {
+                result.next();
+                version = result.getInt(1);
+            }
+
+            if (version < 0 || version > SCHEMA_VERSION) {
+                throw new IndexAccessException(
+                        IndexAccessException.Reason.INCOMPATIBLE,
+                        "Unsupported SQLite schema version: " + version + "; expected 1 through " + SCHEMA_VERSION);
+            }
+
+            if (version > 0) {
+                // Reject foreign or invalid indexes before the capability probe or any migration.
+                validateStoredSchema(version);
+            }
+
+            return version;
+        } catch (SQLException failure) {
+            throw classifiedValidationFailure(failure);
+        }
+    }
+
+    /* Shared by read-only and writable opens; the message keeps the original detail for diagnostics. */
+    private static SQLException classifiedValidationFailure(SQLException failure) {
+        if (!(failure instanceof IndexAccessException) && isInvalidSchema(failure)) {
+            return new IndexAccessException(
+                    IndexAccessException.Reason.CORRUPT_INDEX,
+                    "Could not validate existing index: " + failure.getMessage(),
+                    failure);
+        }
+
+        return failure;
     }
 
     private void validateStoredSchema(int version) throws SQLException {
