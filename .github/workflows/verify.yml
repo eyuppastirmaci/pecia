@@ -2,7 +2,8 @@ name: Verify
 
 on:
   push:
-    branches: [main]
+    # experiment/ branches measure candidate changes without a pull request.
+    branches: [main, 'experiment/**']
   pull_request:
     branches: [main]
   # Lets an experiment branch run the same checks without opening a pull request.
@@ -44,12 +45,13 @@ jobs:
         if: runner.os == 'Windows'
         run: .\gradlew.bat check --profile
 
-      # Test results and Gradle's profile report from every run, so timings can be compared between runs.
+      # Test results and Gradle's profile report from every run, so timings can be compared between runs. Artifact names
+      # include the attempt, because a re-run cannot upload an artifact name that its run already has.
       - name: Upload test timings
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: test-timings-${{ matrix.os }}
+          name: test-timings-${{ matrix.os }}-attempt-${{ github.run_attempt }}
           path: |
             **/build/test-results/**/*.xml
             build/reports/profile/
@@ -59,7 +61,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports-${{ matrix.os }}
+          name: test-reports-${{ matrix.os }}-attempt-${{ github.run_attempt }}
           path: |
             **/build/reports/
             **/build/test-results/
@@ -87,7 +89,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: test-timings-core-verify
+          name: test-timings-core-verify-attempt-${{ github.run_attempt }}
           path: |
             **/build/test-results/**/*.xml
             build/reports/profile/
