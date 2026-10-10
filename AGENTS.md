@@ -1,6 +1,6 @@
 # Project instructions
 
-Pecia uses Java 21 and Maven. Keep indexing, storage, and search behavior in `pecia-core`; keep command parsing and terminal output in `pecia-cli`.
+Pecia uses Java 21 and Gradle. Keep indexing, storage, and search behavior in `pecia-core`; keep command parsing and terminal output in `pecia-cli`.
 
 ## Java code style
 
@@ -14,7 +14,7 @@ Follow the [Google Java Style Guide](https://google.github.io/styleguide/javagui
 - Keep overloads together, declare local variables near their first use, and use one statement per line.
 - Use `UpperCamelCase` for classes, `lowerCamelCase` for methods and variables, and `UPPER_SNAKE_CASE` for constants.
 - Follow the guide's public API Javadoc requirements and exceptions for self-explanatory members and overrides. Use traditional `/** ... */` Javadoc. Do not use `///` Markdown documentation comments because Pecia targets Java 21.
-- Use `palantir-java-format` for Java source and test code with four-space indentation and a 120-character line width. Spotless enforces this formatting, import order, trailing-whitespace removal, and final newlines during `verify`. It covers only `src/main/java` and `src/test/java`; preserve the exact contents of test fixtures and other resources.
+- Use `palantir-java-format` for Java source and test code with four-space indentation and a 120-character line width. Spotless enforces this formatting, import order, trailing-whitespace removal, and final newlines during `check`. It covers only `src/main/java`, `src/test/java`, and `src/testFixtures/java`; preserve the exact contents of test fixtures and other resources.
 - Compile without warnings. The build uses `-Xlint:all` (except `serial`, because Pecia never uses Java serialization) with `-Werror`. Fix warnings instead of suppressing them; when suppression is unavoidable, apply it at the narrowest scope with a comment stating why.
 
 ### Record documentation
@@ -37,18 +37,18 @@ Keep record Javadocs concise: usually one or two summary sentences, plus only th
 
 ## Verification
 
-- Preserve Maven test discovery: use `*Test` for unit tests and `*IT` for packaged acceptance tests. The `*IT` suffix is a project exception to Google's test-class naming convention.
+- Preserve test discovery: `*Test` classes run in the `test` task and `*IT` packaged acceptance tests in `integrationTest`, which fails when it finds none. The `*IT` suffix is a project exception to Google's test-class naming convention.
 - Add or update meaningful tests when behavior changes. Use relevant existing tests for behavior-preserving refactors; documentation and formatting edits do not require new tests.
 - Before changing the SQLite schema, add a fixture written by the outgoing version, as `pecia-core/src/test/resources/storage/legacy/README.md` describes, so the new migration is tested against real data. Never edit committed fixtures; add new ones.
-- Run verification from the repository root with JDK 21 and the Maven wrapper, never a system Maven. Maven Enforcer requires JDK 21 and the wrapper's Maven version because the packaged offline tests install a `SecurityManager`, which JDK 24+ cannot install. The shipped JAR still runs on Java 21+:
+- Run verification from the repository root with the Gradle wrapper, never a system Gradle. The build compiles and runs every test JVM on a JDK 21 toolchain, because the packaged offline tests install a `SecurityManager`, which JDK 24+ cannot install; Gradle uses an installed JDK 21 and downloads one only when none is installed. The shipped JAR still runs on Java 21+:
 
 ```sh
-bash ./mvnw -B -ntp spotless:apply             # format Java sources and tests
-bash ./mvnw -B -ntp test                       # unit tests
-bash ./mvnw -B -ntp verify                     # unit and packaged acceptance tests, then formatting check
-bash ./mvnw -B -ntp -pl pecia-core -am verify  # independent core verification
+./gradlew spotlessApply      # format Java sources and tests
+./gradlew test               # unit tests
+./gradlew check              # unit and packaged acceptance tests, formatting, and dependency checks
+./gradlew :pecia-core:check  # independent core verification
 ```
 
-- Choose checks according to the change. Include packaged acceptance tests when changing CLI behavior, packaging, or public core integration; use `clean verify` when a clean build is needed.
-- On macOS, add `-DargLine=-Djava.io.tmpdir=/private/tmp` to avoid the `/var` symlink conflicting with path-validation tests. On Windows, use `.\mvnw.cmd` instead of `bash ./mvnw`.
+- Choose checks according to the change. Include packaged acceptance tests when changing CLI behavior, packaging, or public core integration; use `clean check` when a clean build is needed.
+- Test JVMs receive the real path of the temporary directory, so macOS needs no extra flag. On Windows, use `gradlew.bat` instead of `./gradlew`.
 - Check whitespace with `git diff --check` and report which checks ran and their actual results. Do not rerun a passing suite without a relevant change or unresolved concern.

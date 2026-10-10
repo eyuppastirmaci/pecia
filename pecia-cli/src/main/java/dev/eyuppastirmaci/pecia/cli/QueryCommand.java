@@ -125,7 +125,7 @@ public class QueryCommand implements Callable<Integer> {
             // Development launchers may not expose a filesystem JAR; point to the build artifact instead.
         }
 
-        return "pecia-cli/target/pecia.jar";
+        return "pecia-cli/build/libs/pecia.jar";
     }
 
     private static String shellQuote(String value) {
