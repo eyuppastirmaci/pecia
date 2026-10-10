@@ -79,6 +79,7 @@ class PackagedCliDiscoveryIT {
         assertSuccess(result);
         assertEquals("""
             config: defaults (no .pecia.toml found)
+            semantic: disabled
             3 file(s) would be indexed:
               Dockerfile
               Main.JS
@@ -112,7 +113,8 @@ class PackagedCliDiscoveryIT {
 
         assertSuccess(result);
         assertEquals(
-                "config: " + project.resolve(".pecia.toml") + "\n" + "1 file(s) would be indexed:\n  keep.md\n",
+                "config: " + project.resolve(".pecia.toml")
+                        + "\nsemantic: disabled\n1 file(s) would be indexed:\n  keep.md\n",
                 result.out());
         assertEquals(config, Files.readString(project.resolve(".pecia.toml")));
         assertEquals(before, cli.projectEntries());
@@ -163,7 +165,8 @@ class PackagedCliDiscoveryIT {
 
         assertEquals(1, result.exitCode());
         assertEquals(
-                "config: defaults (no .pecia.toml found)\n" + "1 file(s) would be indexed:\n  good.md\n", result.out());
+                "config: defaults (no .pecia.toml found)\nsemantic: disabled\n1 file(s) would be indexed:\n  good.md\n",
+                result.out());
         assertTrue(result.err().startsWith("warning: " + invalidIgnore + ": "), result.err());
         assertTrue(
                 result.err().endsWith("pecia index: incomplete scan; listed files are only partial results\n"),
