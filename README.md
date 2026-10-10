@@ -64,7 +64,7 @@ Run `index` before `query`. The query defaults are `--root .` and `--limit 10`.
 
 ### 📂 File discovery
 
-Pecia selects files using `.gitignore` rules and the include/exclude patterns in `.pecia.toml`. It skips symbolic links and internal index files; `--dry-run` previews this selection without processing file contents.
+Pecia selects files using `.gitignore` rules and the include/exclude patterns in `.pecia.toml`. It skips symbolic links, internal index files, and its own `.pecia.toml` configuration files, which include patterns cannot admit; `--dry-run` previews this selection without processing file contents.
 
 ### ✂️ Extraction and chunking
 

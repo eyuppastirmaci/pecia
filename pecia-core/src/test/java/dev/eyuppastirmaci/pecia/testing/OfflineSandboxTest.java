@@ -25,7 +25,8 @@ class OfflineSandboxTest {
     private static final String REMOVAL_WARNING =
             "WARNING: The Security Manager is deprecated and will be removed in a future release\n";
     private static final String STARTUP_WARNINGS = MANAGER_WARNING + REMOVAL_WARNING;
-    private static final String GUARD_PACKAGE = "dev/eyuppastirmaci/pecia/testing/";
+    private static final String GUARD_PACKAGE =
+            NetworkGuard.class.getPackageName().replace('.', '/') + "/";
 
     @TempDir
     Path sandbox;

@@ -30,6 +30,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class PackagedCoreRunnerTest {
 
     private static final Path PACKAGE = Path.of("dev/eyuppastirmaci/pecia/packaging/consumer");
+    private static final Path SUPPORT_PACKAGE = Path.of("dev/eyuppastirmaci/pecia/testing");
 
     @TempDir
     Path fixture;
@@ -56,6 +57,13 @@ class PackagedCoreRunnerTest {
         Files.write(consumerPackage.resolve("PackagedCoreConsumerTest.class"), new byte[] {4});
         Files.write(consumerPackage.resolve("ScenarioIT$Nested.class"), new byte[] {8});
         Files.write(consumerPackage.getParent().resolve("CorePackagingIT.class"), new byte[] {3});
+        Path supportPackage = Files.createDirectories(testClasses.resolve(SUPPORT_PACKAGE));
+        Files.write(supportPackage.resolve("IndexDump.class"), new byte[] {9});
+        Files.write(supportPackage.resolve("IndexDump$ChunkEntry.class"), new byte[] {10});
+        Files.write(supportPackage.resolve("LexicalTestCorpus.class"), new byte[] {11});
+        Files.write(supportPackage.resolve("IndexDumpTest.class"), new byte[] {12});
+        Files.write(supportPackage.resolve("IndexDumpTest$Nested.class"), new byte[] {13});
+        Files.write(supportPackage.resolve("OfflineSandbox.class"), new byte[] {14});
         Files.writeString(testClasses.resolve("fixture.txt"), "must not leak into the consumer");
         Path bootstrap = Files.createDirectories(testClasses.resolve("dev/eyuppastirmaci/pecia"));
         Files.write(bootstrap.resolve("Bootstrap.class"), new byte[] {5});
@@ -67,7 +75,7 @@ class PackagedCoreRunnerTest {
     }
 
     @Test
-    void copiesOnlyConsumerClassesAndBuildsAnExplicitClasspathWithSpaceContainingPaths() throws Exception {
+    void copiesOnlyConsumerAndSupportClassesAndBuildsAnExplicitClasspathWithSpaceContainingPaths() throws Exception {
         PackagedCoreRunner runner = prepare();
         List<String> command = runner.command("lexical-lifecycle", project);
         int classpathOption = command.indexOf("-cp");
@@ -95,7 +103,10 @@ class PackagedCoreRunnerTest {
                     Set.of(
                             PACKAGE.resolve("PackagedCoreConsumer.class"),
                             PACKAGE.resolve("PackagedCoreConsumer$Nested.class"),
-                            PACKAGE.resolve("PipelineScenario.class")),
+                            PACKAGE.resolve("PipelineScenario.class"),
+                            SUPPORT_PACKAGE.resolve("IndexDump.class"),
+                            SUPPORT_PACKAGE.resolve("IndexDump$ChunkEntry.class"),
+                            SUPPORT_PACKAGE.resolve("LexicalTestCorpus.class")),
                     files.filter(Files::isRegularFile).map(isolated::relativize).collect(Collectors.toSet()));
         }
     }
@@ -110,7 +121,8 @@ class PackagedCoreRunnerTest {
                 "empty-runtime",
                 "directory-dependency",
                 "missing-consumer",
-                "directory-consumer"
+                "directory-consumer",
+                "missing-support"
             })
     void rejectsMissingOrInvalidArtifactsBeforeCreatingConsumerOutput(String failure) throws Exception {
         switch (failure) {
@@ -132,6 +144,8 @@ class PackagedCoreRunnerTest {
                 Files.delete(consumer);
                 Files.createDirectory(consumer);
             }
+            case "missing-support" ->
+                Files.delete(testClasses.resolve(SUPPORT_PACKAGE).resolve("IndexDump.class"));
             default -> throw new AssertionError(failure);
         }
 

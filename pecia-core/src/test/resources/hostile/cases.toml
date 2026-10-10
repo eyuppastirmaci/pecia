@@ -1,0 +1,753 @@
+# Hostile content inputs. Each case indexes one file from content/ in an otherwise empty project.
+# outcome is "indexed" with an exact chunk count, or "rejected" with the ExtractionException reason.
+# sha256 detects accidental conversion of the raw bytes after checkout or resource copying.
+
+[[content]]
+id = "empty"
+input = "content/empty.txt"
+sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+outcome = "indexed"
+chunks = 0
+description = "Zero bytes."
+
+[[content]]
+id = "whitespace-only"
+input = "content/whitespace-only.txt"
+sha256 = "b393638a1dd0b83304119f163bc3ee77464669be2c1df58506033e9e4012face"
+outcome = "indexed"
+chunks = 0
+description = "Spaces, a tab, CRLF, LF and a no-break space."
+
+[[content]]
+id = "bom-only"
+input = "content/bom-only.txt"
+sha256 = "f1945cd6c19e56b3c1c78943ef5ec18116907a4ca1efc40a57d48ab1db7adfc5"
+outcome = "indexed"
+chunks = 0
+description = "A UTF-8 byte order mark and nothing else."
+
+[[content]]
+id = "bom-then-text"
+input = "content/bom-then-text.txt"
+sha256 = "aa8b0fe59d720218da2acd675855c6d05111c88cf525777bfe544bc9831fc649"
+outcome = "indexed"
+chunks = 1
+description = "A UTF-8 byte order mark before ordinary text."
+
+[[content]]
+id = "malformed-utf8"
+input = "content/malformed-utf8.txt"
+sha256 = "2cc6c9d1d964987e9f951d8d102319ac3c364720efa728ace2a33923239ee796"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "A lead byte followed by a non-continuation byte."
+
+[[content]]
+id = "truncated-utf8"
+input = "content/truncated-utf8.txt"
+sha256 = "8b29668724b0f65af2675c2d8e8788414d375a2ce8f945ce7c094ba0cc59da83"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "A multibyte sequence cut off at end of file."
+
+[[content]]
+id = "overlong-utf8"
+input = "content/overlong-utf8.txt"
+sha256 = "cf7a46ca04951d9f56b40ff3652a9d516207bc59398a623026dbed7589b3fb70"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "An overlong two-byte encoding of '/'."
+
+[[content]]
+id = "encoded-surrogate"
+input = "content/encoded-surrogate.txt"
+sha256 = "6594295591a9d2314c3b04a8b9fe4717e98b466875ac3f37d80a5b25a4a72918"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "A UTF-16 surrogate encoded as three UTF-8 bytes."
+
+[[content]]
+id = "utf16le-bom"
+input = "content/utf16le-bom.txt"
+sha256 = "993cb0dce776303a4f89146399a8463606dd03c20f16bd0d8e19e49088965050"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "UTF-16LE text with its byte order mark."
+
+[[content]]
+id = "utf16be-bom"
+input = "content/utf16be-bom.txt"
+sha256 = "3b4c3c0f7bede19e4712b4fc40bc1ecbb8758ab2dfb38f2d2a62029e9197ffc0"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "UTF-16BE text with its byte order mark."
+
+[[content]]
+id = "utf16le-no-bom"
+input = "content/utf16le-no-bom.txt"
+sha256 = "e4c63ef3db0cd7ccfb3361aa715ffb7d0b7e6a1a137488647c0229cf471cae30"
+outcome = "rejected"
+reason = "BINARY_CONTENT"
+description = "UTF-16LE text without a byte order mark."
+
+[[content]]
+id = "utf16be-no-bom"
+input = "content/utf16be-no-bom.txt"
+sha256 = "20719cf38412250ce161eb81ae5f2d5e4fdf52a1d650ed36f4c6bf3a68fb49b4"
+outcome = "rejected"
+reason = "BINARY_CONTENT"
+description = "UTF-16BE text without a byte order mark."
+
+[[content]]
+id = "nul-byte"
+input = "content/nul-byte.txt"
+sha256 = "27e0d416e1e28a473f30409448cdd03b04d66e199b48f5d703e5d4b508eb60a4"
+outcome = "rejected"
+reason = "BINARY_CONTENT"
+description = "Text containing a NUL byte."
+
+[[content]]
+id = "control-characters"
+input = "content/control-characters.txt"
+sha256 = "5b63bea1632fbee68db8b6172e284eee24ff222671ce07fc7e7461b4183579a8"
+outcome = "rejected"
+reason = "BINARY_CONTENT"
+description = "Text containing a run of C0 control characters."
+
+[[content]]
+id = "mixed-line-endings"
+input = "content/mixed-line-endings.txt"
+sha256 = "e79ea07e9497d521b4c68b556e99de08ca4278b405fb5c59d5a52b8a4f78ceca"
+outcome = "indexed"
+chunks = 1
+description = "CRLF, LF and CR terminators in one file, with no final newline."
+
+[[content]]
+id = "long-line"
+input = "content/long-line.txt"
+sha256 = "98c8dbe3c8631ff9bb378231dbe86f412f2ad1c4cfd1370375cd9dc3c838ad22"
+outcome = "indexed"
+chunks = 9
+description = "A single 10,000-byte line that exceeds the token budget many times."
+
+# Hostile configuration files. Each case uses one file from config/ as .pecia.toml in a project with one text file.
+# An accepted case expects the recorded indexing status. A rejected case expects the exception and a message
+# fragment at the recorded stage: "load" (configuration loading) or "indexing" (later validation); either way
+# indexing must fail before creating storage.
+
+[[config]]
+id = "malformed-toml"
+input = "config/malformed-toml.toml"
+sha256 = "ea5eb3d583eb1d90d044ad3bf4f7e025146fce62c63bb4ee6a487a5f6fbd27e4"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "Invalid .pecia.toml:"
+description = "An unterminated table header."
+
+[[config]]
+id = "duplicate-key"
+input = "config/duplicate-key.toml"
+sha256 = "be59cd57161036fd44419654e6ee671d176f34a883b5901425b802f5e6100a2e"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "previously defined"
+description = "The same key twice in one table."
+
+[[config]]
+id = "invalid-utf8"
+input = "config/invalid-utf8.toml"
+sha256 = "8d8bc69277a719e8f040ef49ce2ada81ae4e57bb947586391b31a3599ada9c5c"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "the file is not valid UTF-8"
+description = "Malformed UTF-8 bytes in a comment."
+
+[[config]]
+id = "byte-order-mark"
+input = "config/byte-order-mark.toml"
+sha256 = "9575b5626bc9c0ba530cd84dff4ceba079e7aae6a6da487a80afc9fec391e8f0"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A UTF-8 byte order mark before the first table."
+
+[[config]]
+id = "section-as-value"
+input = "config/section-as-value.toml"
+sha256 = "2c36b8d58cd7927ef87f6b771d7ae49853c8605501ddd5945145a7d03cac3d58"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "chunk must be a table"
+description = "A known section written as a plain value."
+
+[[config]]
+id = "string-for-integer"
+input = "config/string-for-integer.toml"
+sha256 = "fe53a471042787a792b60bcfcb62976c2e0d4b927cb066876c42244ddd41f7c2"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "chunk.max_tokens must be an integer"
+description = "A string where an integer is expected."
+
+[[config]]
+id = "float-for-integer"
+input = "config/float-for-integer.toml"
+sha256 = "c250cc7384e13a19c3d3c3aeacf19f6bb54786044b82cfbeaeb339b03ad621d3"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "chunk.max_tokens must be an integer"
+description = "A float where an integer is expected."
+
+[[config]]
+id = "string-for-list"
+input = "config/string-for-list.toml"
+sha256 = "a9896d35f0e52f538453b343a6c7e656f688d8b6cca95def1b0af5d1900e17e7"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "index.include must be an array of strings"
+description = "A string where a list is expected."
+
+[[config]]
+id = "non-string-list-item"
+input = "config/non-string-list-item.toml"
+sha256 = "6694d519e507cb0e4f9e632863c8d2c1f7ea6d5703044037ada966293cedd3d5"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "index.include must contain only strings"
+description = "An integer inside a list of globs."
+
+[[config]]
+id = "integer-for-string"
+input = "config/integer-for-string.toml"
+sha256 = "e8b8874bd74b5b618c71aab94ff39e228513548236819aeb5a52a66a977c0816"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "store.path must be a string"
+description = "An integer where a string is expected."
+
+[[config]]
+id = "misspelled-key"
+input = "config/misspelled-key.toml"
+sha256 = "1b2722a3ebf3f1ce5d95945e4dfeb55ef37dcd2dca8f4caf58105accb3193b9a"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A misspelled key, ignored so its default applies."
+note = "Pecia does not report unknown keys yet; this case changes when it does."
+
+[[config]]
+id = "unknown-section"
+input = "config/unknown-section.toml"
+sha256 = "242ed459397b735fa67befafd60f0b12089ef7773694262a8b43229c14f462a2"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A table Pecia does not define."
+note = "Pecia does not report unknown keys yet; this case changes when it does."
+
+[[config]]
+id = "negative-max-tokens"
+input = "config/negative-max-tokens.toml"
+sha256 = "951e633944a18aae3d53e52bfa21c54bcede912005800a2890da56daddde5256"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "chunk.max_tokens must be positive"
+description = "A negative token budget."
+
+[[config]]
+id = "negative-overlap"
+input = "config/negative-overlap.toml"
+sha256 = "08c5b9b46dee704a7953a93d5b9592093163548baed64d58d760978f5ce1cc9e"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "chunk.overlap_tokens must be between 0 and max_tokens"
+description = "A negative overlap."
+
+[[config]]
+id = "integer-overflow"
+input = "config/integer-overflow.toml"
+sha256 = "10d30293529eae1550ca28e5349d57ee3a20df1f814cfadbaeb0a70909e78a1e"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "chunk.max_tokens must be a 32-bit integer"
+description = "An integer above the 32-bit range."
+
+[[config]]
+id = "integer-underflow"
+input = "config/integer-underflow.toml"
+sha256 = "5441dd28ee36dac01eb84d89bfffe4f9c0baffce09d38ded6fc72b1b91267113"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "index.max_file_bytes must be a 32-bit integer"
+description = "An integer below the 32-bit range."
+
+[[config]]
+id = "max-tokens-256"
+input = "config/max-tokens-256.toml"
+sha256 = "cdb2567782812c58417790827f6116f7ed25fae356a1ce7be733455510f5f097"
+outcome = "accepted"
+status = "COMPLETE"
+description = "The largest token budget the tokenizer accepts."
+
+[[config]]
+id = "max-tokens-257"
+input = "config/max-tokens-257.toml"
+sha256 = "4967e639ee4eebf5c948f30a46282cf1a9511c55d055ce7baeaf9e8e86e7e30b"
+outcome = "rejected"
+stage = "indexing"
+exception = "IllegalArgumentException"
+message = "maxTokens must be greater than 2 and at most 256"
+description = "One token above the largest budget."
+
+[[config]]
+id = "max-tokens-3"
+input = "config/max-tokens-3.toml"
+sha256 = "1b8827ccd64a544ce09f373819d6ec0a4c25b67871925c330491aade916a7810"
+outcome = "accepted"
+status = "COMPLETE"
+description = "The smallest token budget, leaving one content token."
+
+[[config]]
+id = "max-tokens-2"
+input = "config/max-tokens-2.toml"
+sha256 = "9326548d09bb4a8c5cf8c0a6a9a8e5fa738d75e05c7fa41a05144d0f8c009ced"
+outcome = "rejected"
+stage = "indexing"
+exception = "IllegalArgumentException"
+message = "maxTokens must be greater than 2 and at most 256"
+description = "A budget used up by the special tokens."
+
+[[config]]
+id = "overlap-below-budget"
+input = "config/overlap-below-budget.toml"
+sha256 = "c1344608139e506f8a3fb0dd5b51dff45fc92f75f22461a8784a56859b7e6759"
+outcome = "accepted"
+status = "COMPLETE"
+description = "Overlap one below the 32-token content budget."
+
+[[config]]
+id = "overlap-at-budget"
+input = "config/overlap-at-budget.toml"
+sha256 = "551c1a60e076f7590a0102b425da95c480e3d09fce2aa7ae311fa48b03532abd"
+outcome = "rejected"
+stage = "indexing"
+exception = "IllegalArgumentException"
+message = "overlapTokens must be non-negative and less than 32"
+description = "Overlap equal to the content budget."
+
+[[config]]
+id = "overlap-at-max-tokens"
+input = "config/overlap-at-max-tokens.toml"
+sha256 = "b7eba3e6423bd5507522d073430d5b4f70bb11927b3fcbafa0b78e99890daa93"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "chunk.overlap_tokens must be between 0 and max_tokens"
+description = "Overlap equal to max_tokens."
+
+[[config]]
+id = "max-file-bytes-1"
+input = "config/max-file-bytes-1.toml"
+sha256 = "cc6950c607ae8318ab6f10955336e1ab1572dd66cb0386554e055b3396f6bd2b"
+outcome = "accepted"
+status = "PARTIAL"
+description = "The smallest file limit; the project file is rejected as too large."
+
+[[config]]
+id = "max-file-bytes-0"
+input = "config/max-file-bytes-0.toml"
+sha256 = "3cc68236d56b70e58aca1f84e9e6e360b00d2eb8bfdb9cf1cba89975047f011e"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "index.max_file_bytes must be positive"
+description = "A zero file limit."
+
+[[config]]
+id = "concurrency-1"
+input = "config/concurrency-1.toml"
+sha256 = "190b691ba3976c143ac36abede2555e67fdc93f73fba2a59fb965af403c1c96a"
+outcome = "accepted"
+status = "COMPLETE"
+description = "The smallest embedding concurrency."
+
+[[config]]
+id = "concurrency-0"
+input = "config/concurrency-0.toml"
+sha256 = "476717f050a4e80b360b859405fe87d7893a987c011571f8e674c3e3c9a3a2ca"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "embed.concurrency must be at least 1"
+description = "Zero embedding concurrency."
+
+[[config]]
+id = "blank-store-path"
+input = "config/blank-store-path.toml"
+sha256 = "5ead210c50b786cb8137c30898551495acd117a6de2593647e34e5e6d6324ad6"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "store.path must not be blank"
+description = "A storage path of spaces."
+
+[[config]]
+id = "nul-in-store-path"
+input = "config/nul-in-store-path.toml"
+sha256 = "0546aa8d76e279c694a4fa66a155ed555d767015ec561f80d3fd133810be0b0c"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "store.path must not contain NUL"
+description = "A storage path containing NUL."
+
+[[config]]
+id = "store-path-is-directory"
+input = "config/store-path-is-directory.toml"
+sha256 = "3ea33f9d00aac0fcf933ddc3a4cad8eab04bd039513237d34bd42453ff6c1351"
+outcome = "rejected"
+stage = "indexing"
+exception = "IOException"
+message = "Database path must identify a file"
+description = "A storage path naming the project directory."
+
+# Hostile queries. Each case searches a project whose only file contains the text in HostileInputCorpusTest.
+# The query is given literally, or generated as `repeat` written `times` times joined by `separator`. limit defaults
+# to 10. An accepted case expects the exact hit count and an unchanged index; a rejected case expects an
+# IllegalArgumentException containing the message, raised before the index is opened.
+
+[[query]]
+id = "operator-and"
+query = "payment AND validation"
+outcome = "accepted"
+hits = 0
+description = "FTS AND is the literal word 'and', which the project text lacks."
+
+[[query]]
+id = "operator-or"
+query = "payment OR missing"
+outcome = "accepted"
+hits = 0
+description = "FTS OR is literal; every word must match, and 'missing' does not."
+
+[[query]]
+id = "operator-not"
+query = "payment NOT validation"
+outcome = "accepted"
+hits = 1
+description = "FTS NOT is the literal word 'not', which the project text contains."
+
+[[query]]
+id = "near-function"
+query = "NEAR(payment validation)"
+outcome = "accepted"
+hits = 0
+description = "NEAR() is literal text; 'near payment' is not a phrase in the project text."
+
+[[query]]
+id = "quoted-phrase"
+query = "\"quoted text\""
+outcome = "accepted"
+hits = 1
+description = "Quotes are punctuation around literal words."
+
+[[query]]
+id = "unbalanced-quote"
+query = "\"payment"
+outcome = "accepted"
+hits = 1
+description = "An unbalanced quote is punctuation."
+
+[[query]]
+id = "prefix-star"
+query = "pay*"
+outcome = "accepted"
+hits = 0
+description = "A trailing star does not request a prefix match."
+
+[[query]]
+id = "column-filter"
+query = "content:payment"
+outcome = "accepted"
+hits = 0
+description = "A column filter is literal text."
+
+[[query]]
+id = "column-filter-source-path"
+query = "source_path:payment"
+outcome = "accepted"
+hits = 0
+description = "A filter on another column is literal text."
+
+[[query]]
+id = "column-set-filter"
+query = "{content source_path}: payment"
+outcome = "accepted"
+hits = 0
+description = "A column-set filter is literal text."
+
+[[query]]
+id = "initial-token-caret"
+query = "^payment"
+outcome = "accepted"
+hits = 1
+description = "A caret is punctuation, not an initial-token query."
+
+[[query]]
+id = "open-parenthesis"
+query = "("
+outcome = "accepted"
+hits = 0
+description = "A lone parenthesis leaves nothing to search."
+
+[[query]]
+id = "unbalanced-parenthesis"
+query = "(payment validation"
+outcome = "accepted"
+hits = 1
+description = "An unbalanced parenthesis is punctuation."
+
+[[query]]
+id = "sql-injection"
+query = "payment'; DROP TABLE files; --"
+outcome = "accepted"
+hits = 0
+description = "SQL text is bound as a parameter and matched literally."
+
+[[query]]
+id = "mixed-case"
+query = "PAYMENT Validation"
+outcome = "accepted"
+hits = 1
+description = "Matching ignores case."
+
+[[query]]
+id = "no-break-space"
+query = "payment\u00A0validation"
+outcome = "accepted"
+hits = 1
+description = "A no-break space separates words."
+
+[[query]]
+id = "hyphenated"
+query = "payment-validation"
+outcome = "accepted"
+hits = 1
+description = "A hyphen separates words, not a NOT operator."
+
+[[query]]
+id = "punctuation-only"
+query = "!!! ??? ---"
+outcome = "accepted"
+hits = 0
+description = "No searchable words remain."
+
+[[query]]
+id = "empty"
+query = ""
+outcome = "rejected"
+message = "query must not be blank"
+description = "An empty query."
+
+[[query]]
+id = "whitespace-only"
+query = " \t\n"
+outcome = "rejected"
+message = "query must not be blank"
+description = "Whitespace only."
+
+[[query]]
+id = "nul"
+query = "pay\u0000ment"
+outcome = "rejected"
+message = "query must not contain NUL"
+description = "A NUL character."
+
+[[query]]
+id = "max-code-points"
+repeat = "x"
+times = 4096
+outcome = "accepted"
+hits = 0
+description = "4096 code points, the maximum."
+
+[[query]]
+id = "over-code-points"
+repeat = "x"
+times = 4097
+outcome = "rejected"
+message = "query must contain at most 4096 code points"
+description = "One code point over the maximum."
+
+[[query]]
+id = "max-supplementary-code-points"
+repeat = "\U0001F600"
+times = 4096
+outcome = "accepted"
+hits = 0
+description = "4096 emoji: the limit counts code points, not UTF-16 units."
+
+[[query]]
+id = "over-supplementary-code-points"
+repeat = "\U0001F600"
+times = 4097
+outcome = "rejected"
+message = "query must contain at most 4096 code points"
+description = "4097 emoji."
+
+[[query]]
+id = "max-parts"
+repeat = "w"
+times = 64
+separator = " "
+outcome = "accepted"
+hits = 0
+description = "64 query parts, the maximum."
+
+[[query]]
+id = "over-parts"
+repeat = "w"
+times = 65
+separator = " "
+outcome = "rejected"
+message = "query must contain at most 64 raw parts"
+description = "One part over the maximum."
+
+[[query]]
+id = "over-punctuation-parts"
+repeat = "-"
+times = 65
+separator = " "
+outcome = "rejected"
+message = "query must contain at most 64 raw parts"
+description = "Punctuation-only parts still count toward the limit."
+
+[[query]]
+id = "limit-1"
+query = "payment validation"
+limit = 1
+outcome = "accepted"
+hits = 1
+description = "The smallest limit."
+
+[[query]]
+id = "limit-100"
+query = "payment validation"
+limit = 100
+outcome = "accepted"
+hits = 1
+description = "The largest limit."
+
+[[query]]
+id = "limit-0"
+query = "payment"
+limit = 0
+outcome = "rejected"
+message = "limit must be between 1 and 100"
+description = "A zero limit."
+
+[[query]]
+id = "limit-101"
+query = "payment"
+limit = 101
+outcome = "rejected"
+message = "limit must be between 1 and 100"
+description = "One above the largest limit."
+
+[[query]]
+id = "limit-negative"
+query = "payment"
+limit = -1
+outcome = "rejected"
+message = "limit must be between 1 and 100"
+description = "A negative limit."
+
+# Hostile index storage. Each case places a database at the default index path of a project, queries it, then
+# indexes it. A "fixture" source derives the copy from the current-version legacy fixture with the named damage;
+# other sources are generated by HostileInputCorpusTest. query is the QueryException reason. indexing is COMPLETE
+# when indexing initializes the file, IOException when the index path is rejected before storage opens, and
+# otherwise the IndexAccessException reason of the FAILED run. A rejected database must keep its exact bytes.
+
+[[storage]]
+id = "truncated"
+source = "fixture"
+damage = "TRUNCATED"
+query = "CORRUPT_INDEX"
+indexing = "CORRUPT_INDEX"
+description = "The current-version fixture cut in the middle of its third page."
+
+[[storage]]
+id = "foreign-project"
+source = "fixture"
+damage = "FOREIGN_PROJECT"
+query = "WRONG_PROJECT"
+indexing = "WRONG_PROJECT"
+description = "The fixture's stored project root names a sibling project."
+
+[[storage]]
+id = "future-schema"
+source = "fixture"
+damage = "FUTURE_SCHEMA"
+query = "INCOMPATIBLE_INDEX"
+indexing = "INCOMPATIBLE"
+description = "The fixture's schema version is one above the supported version."
+
+[[storage]]
+id = "format-mismatch"
+source = "fixture"
+damage = "FORMAT_MISMATCH"
+query = "INCOMPATIBLE_INDEX"
+indexing = "INCOMPATIBLE"
+description = "The fixture's index format version disagrees with its schema version."
+
+[[storage]]
+id = "text-file"
+source = "text-file"
+query = "CORRUPT_INDEX"
+indexing = "CORRUPT_INDEX"
+description = "A plain text file at the index path."
+
+[[storage]]
+id = "header-only"
+source = "header-only"
+query = "CORRUPT_INDEX"
+indexing = "CORRUPT_INDEX"
+description = "A SQLite header padded to 100 bytes with no pages."
+
+[[storage]]
+id = "empty-file"
+source = "empty-file"
+query = "INDEX_NOT_FOUND"
+indexing = "COMPLETE"
+description = "A zero-byte file, as an interrupted first run can leave."
+
+[[storage]]
+id = "empty-database"
+source = "empty-database"
+query = "INDEX_NOT_FOUND"
+indexing = "COMPLETE"
+description = "A SQLite database with a header and no schema objects."
+
+[[storage]]
+id = "foreign-database"
+source = "foreign-database"
+query = "INCOMPATIBLE_INDEX"
+indexing = "INCOMPATIBLE"
+description = "Another application's unversioned SQLite database."
+
+[[storage]]
+id = "directory"
+source = "directory"
+query = "READ_FAILED"
+indexing = "IOException"
+description = "A directory at the index path."

@@ -12,8 +12,12 @@ import org.tomlj.TomlParseResult;
 /** Parses project TOML and validates supported settings against their defaults. */
 public final class PeciaConfigParser {
 
+    private static final String BYTE_ORDER_MARK = "\uFEFF";
+    private static final List<String> SECTIONS = List.of("index", "chunk", "embed", "store");
+
     /**
-     * Parses .pecia.toml content into a typed config, filling missing keys with defaults.
+     * Parses .pecia.toml content into a typed config, filling missing keys with defaults. A leading byte order
+     * mark is ignored.
      *
      * @param toml raw TOML text
      * @return the parsed configuration
@@ -22,11 +26,15 @@ public final class PeciaConfigParser {
      *     invalid range
      */
     public PeciaConfig parse(String toml) {
-        TomlParseResult result = Toml.parse(toml);
+        // Some Windows editors start UTF-8 files with a byte order mark, which TOML parsing rejects.
+        String text = toml.startsWith(BYTE_ORDER_MARK) ? toml.substring(1) : toml;
+        TomlParseResult result = Toml.parse(text);
 
         if (result.hasErrors()) {
             throw new IllegalArgumentException(describeErrors(result));
         }
+
+        requireTables(result);
 
         PeciaConfig defaults = PeciaConfig.defaults();
 
@@ -48,6 +56,15 @@ public final class PeciaConfigParser {
         }
 
         return message.toString();
+    }
+
+    private static void requireTables(TomlParseResult toml) {
+        // A section written as a plain value would otherwise hide its keys and silently apply defaults.
+        for (String section : SECTIONS) {
+            if (toml.contains(section) && !toml.isTable(section)) {
+                throw new IllegalArgumentException(section + " must be a table");
+            }
+        }
     }
 
     private static List<String> stringList(TomlParseResult toml, String key, List<String> fallback) {
@@ -73,7 +90,16 @@ public final class PeciaConfigParser {
     private static int intValue(TomlParseResult toml, String key, int fallback) {
         Long value = tomlValue(key, "an integer", toml::getLong);
 
-        return value == null ? fallback : Math.toIntExact(value);
+        if (value == null) {
+            return fallback;
+        }
+
+        // TOML integers are 64-bit; report values outside int range like any other invalid value.
+        if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(key + " must be a 32-bit integer, got " + value);
+        }
+
+        return value.intValue();
     }
 
     private static String stringValue(TomlParseResult toml, String key, String fallback) {

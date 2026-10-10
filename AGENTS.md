@@ -39,6 +39,7 @@ Keep record Javadocs concise: usually one or two summary sentences, plus only th
 
 - Preserve Maven test discovery: use `*Test` for unit tests and `*IT` for packaged acceptance tests. The `*IT` suffix is a project exception to Google's test-class naming convention.
 - Add or update meaningful tests when behavior changes. Use relevant existing tests for behavior-preserving refactors; documentation and formatting edits do not require new tests.
+- Before changing the SQLite schema, add a fixture written by the outgoing version, as `pecia-core/src/test/resources/storage/legacy/README.md` describes, so the new migration is tested against real data. Never edit committed fixtures; add new ones.
 - Run verification from the repository root with JDK 21 and the Maven wrapper, never a system Maven. Maven Enforcer requires JDK 21 and the wrapper's Maven version because the packaged offline tests install a `SecurityManager`, which JDK 24+ cannot install. The shipped JAR still runs on Java 21+:
 
 ```sh

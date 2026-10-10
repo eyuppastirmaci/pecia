@@ -24,8 +24,8 @@ public final class MiniLmTokenizer implements TokenCounter {
     private static final String CLASSIFICATION_TOKEN = "[CLS]";
     private static final String SEPARATOR_TOKEN = "[SEP]";
     private static final Set<String> SPECIAL_TOKENS = Set.of("[UNK]", "[SEP]", "[PAD]", "[CLS]", "[MASK]");
-    private static final String VOCABULARY_RESOURCE =
-            "/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/vocab.txt";
+    // Resolved relative to this class's package, keeping bundled assets beside the code that verifies them.
+    private static final String VOCABULARY_RESOURCE = "all-MiniLM-L6-v2/vocab.txt";
     private static final int EXPECTED_UNKNOWN_TOKEN_ID = 100;
     private static final int EXPECTED_CLASSIFICATION_TOKEN_ID = 101;
     private static final int EXPECTED_SEPARATOR_TOKEN_ID = 102;

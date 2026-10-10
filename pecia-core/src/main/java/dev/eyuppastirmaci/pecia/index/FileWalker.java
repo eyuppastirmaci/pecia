@@ -1,5 +1,6 @@
 package dev.eyuppastirmaci.pecia.index;
 
+import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -15,10 +16,15 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.StreamSupport;
 
-/** Discovers filtered files with inherited gitignore rules without following symbolic links. */
+/**
+ * Discovers filtered files with inherited gitignore rules without following symbolic links. The {@code .git} and
+ * {@code .pecia} directories and every {@code .pecia.toml} configuration file are always skipped.
+ */
 public final class FileWalker {
 
     private static final Set<String> ALWAYS_SKIPPED_DIRS = Set.of(".git", ".pecia");
+    // Pecia's own configuration is tool state, like its index directory, so include rules cannot admit it.
+    private static final String CONFIG_FILE_NAME = PeciaConfigFile.FILE_NAME.toLowerCase(Locale.ROOT);
 
     private final GlobFilter filter;
 
@@ -118,7 +124,7 @@ public final class FileWalker {
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                if (!attrs.isRegularFile() || excluded.contains(file)) {
+                if (!attrs.isRegularFile() || excluded.contains(file) || isConfigFile(file)) {
                     return FileVisitResult.CONTINUE;
                 }
 
@@ -167,6 +173,12 @@ public final class FileWalker {
     static boolean isReserved(Path path) {
         return path.getFileName() != null
                 && ALWAYS_SKIPPED_DIRS.contains(path.getFileName().toString().toLowerCase(Locale.ROOT));
+    }
+
+    /** Reports whether a path names a Pecia configuration file, which discovery never admits. */
+    static boolean isConfigFile(Path path) {
+        return path.getFileName() != null
+                && CONFIG_FILE_NAME.equals(path.getFileName().toString().toLowerCase(Locale.ROOT));
     }
 
     /**

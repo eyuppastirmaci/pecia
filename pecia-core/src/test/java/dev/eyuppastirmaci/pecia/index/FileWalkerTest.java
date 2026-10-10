@@ -109,6 +109,18 @@ class FileWalkerTest {
         assertEquals(paths("kept.md"), result);
     }
 
+    @Test
+    void alwaysSkipsPeciaConfigurationFilesEvenWhenIncludeRulesNameThem() throws IOException {
+        write(".pecia.toml");
+        write("nested/.pecia.toml");
+        write("settings.toml");
+
+        List<Path> result =
+                new FileWalker(new GlobFilter(List.of("**/*.toml", "**/.pecia.toml"), List.of())).walk(root);
+
+        assertEquals(paths("settings.toml"), result);
+    }
+
     private void write(String relative) throws IOException {
         write(relative, "content of " + relative);
     }

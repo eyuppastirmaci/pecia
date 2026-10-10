@@ -107,7 +107,8 @@ final class ConsumerChecks {
                     type.getName() + " must load from a packaged runtime dependency: " + origin);
         }
 
-        String tokenizerResources = "/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/";
+        // Relative names resolve against MiniLmTokenizer's package, as the tokenizer resolves its vocabulary.
+        String tokenizerResources = "all-MiniLM-L6-v2/";
 
         for (String name : List.of(
                 tokenizerResources + "vocab.txt",

@@ -1,5 +1,8 @@
 package dev.eyuppastirmaci.pecia.packaging;
 
+import dev.eyuppastirmaci.pecia.packaging.consumer.PackagedCoreConsumer;
+import dev.eyuppastirmaci.pecia.testing.IndexDump;
+import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import java.io.File;
 import java.io.IOException;
@@ -10,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.jar.Attributes;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
@@ -17,8 +21,11 @@ import java.util.stream.Collectors;
 /** Runs the standalone consumer with an explicit artifact classpath in a separate JVM. */
 final class PackagedCoreRunner {
 
-    static final String CONSUMER = "dev.eyuppastirmaci.pecia.packaging.consumer.PackagedCoreConsumer";
-    private static final Path PACKAGE = Path.of("dev/eyuppastirmaci/pecia/packaging/consumer");
+    static final String CONSUMER = PackagedCoreConsumer.class.getName();
+    private static final Path PACKAGE =
+            Path.of(PackagedCoreConsumer.class.getPackageName().replace('.', '/'));
+    // Standalone test support shared with core tests; each depends only on the JDK, SQLite, and public core APIs.
+    static final List<Class<?>> SUPPORT_TYPES = List.of(IndexDump.class, LexicalTestCorpus.class);
     private final Path coreJar;
     private final Path runtimeDirectory;
     private final Path sandbox;
@@ -54,43 +61,65 @@ final class PackagedCoreRunner {
             throw new IOException("No packaged runtime JARs in " + runtime);
         }
 
-        artifacts.add(copyConsumerClasses(consumerClasses, output.resolve("consumer-classes")));
+        artifacts.add(copyConsumerClasses(testClasses, consumerClasses, output.resolve("consumer-classes")));
         return new PackagedCoreRunner(jar, runtime, output, artifacts);
     }
 
     /**
-     * Lists the standalone consumer classes. Every class in the consumer package belongs to the consumer; test
-     * classes are excluded so build-only code cannot reach the isolated classpath.
+     * Lists the standalone consumer classes: every class in the consumer package, plus the allowlisted support types
+     * with their nested types. Test classes are excluded so build-only code cannot reach the isolated classpath.
      */
     static List<Path> consumerClasses(Path testClasses) throws IOException {
         Path consumerPackage = requireDirectory(testClasses.resolve(PACKAGE));
-        List<Path> classes;
-        try (var paths = Files.list(consumerPackage)) {
-            classes = paths.filter(path -> path.getFileName().toString().endsWith(".class"))
-                    .filter(path -> !path.getFileName().toString().matches(".*(?:Test|IT)(?:\\$[^/]+)?\\.class"))
-                    .sorted()
-                    .toList();
-        }
+        List<Path> classes = new ArrayList<>(classFiles(consumerPackage, name -> true));
         if (!classes.contains(consumerPackage.resolve("PackagedCoreConsumer.class"))) {
             throw new IOException("Missing standalone consumer in " + consumerPackage);
+        }
+        for (Class<?> support : SUPPORT_TYPES) {
+            Path supportPackage = requireDirectory(testClasses.resolve(packagePath(support)));
+            String simpleName = support.getSimpleName();
+            List<Path> types = classFiles(
+                    supportPackage, name -> name.equals(simpleName + ".class") || name.startsWith(simpleName + "$"));
+            if (!types.contains(supportPackage.resolve(simpleName + ".class"))) {
+                throw new IOException("Missing consumer support type " + support.getName() + " in " + supportPackage);
+            }
+            classes.addAll(types);
         }
         for (Path type : classes) {
             if (!Files.isRegularFile(type)) {
                 throw new IOException("Consumer class is not a regular file: " + type);
             }
         }
-        return classes;
+        return List.copyOf(classes);
     }
 
-    /** Copies consumer classes into a new directory and returns that classpath root. */
-    static Path copyConsumerClasses(List<Path> classes, Path directory) throws IOException {
+    /** Copies consumer classes, keeping their package paths, into a new directory and returns that classpath root. */
+    static Path copyConsumerClasses(Path testClasses, List<Path> classes, Path directory) throws IOException {
         // A fresh directory cannot retain helpers or resources from an earlier run.
         Path isolated = Files.createDirectory(directory);
-        Path destination = Files.createDirectories(isolated.resolve(PACKAGE));
         for (Path type : classes) {
-            Files.copy(type, destination.resolve(type.getFileName()));
+            Path destination = isolated.resolve(testClasses.relativize(type));
+            Files.createDirectories(destination.getParent());
+            Files.copy(type, destination);
         }
         return isolated;
+    }
+
+    private static List<Path> classFiles(Path directory, Predicate<String> names) throws IOException {
+        try (var paths = Files.list(directory)) {
+            return paths.filter(path -> {
+                        String name = path.getFileName().toString();
+                        return name.endsWith(".class")
+                                && names.test(name)
+                                && !name.matches(".*(?:Test|IT)(?:\\$[^/]+)?\\.class");
+                    })
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    private static Path packagePath(Class<?> type) {
+        return Path.of(type.getPackageName().replace('.', '/'));
     }
 
     List<String> command(String scenario, Path project) throws IOException {
