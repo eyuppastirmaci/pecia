@@ -38,7 +38,9 @@ class PeciaConfigFileTest {
 
         assertTrue(toml.contains("[index]"));
         assertTrue(toml.contains("[chunk]"));
+        assertTrue(toml.contains("[semantic]"));
         assertTrue(toml.contains("[embed]"));
+        assertTrue(toml.contains("[search]"));
         assertTrue(toml.contains("[store]"));
     }
 

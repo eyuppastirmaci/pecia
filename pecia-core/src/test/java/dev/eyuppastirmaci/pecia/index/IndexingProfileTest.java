@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfig;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -53,10 +54,18 @@ class IndexingProfileTest {
     }
 
     @Test
-    void discoveryAdmissionAndStorageSettingsDoNotChangeChunkCompatibility() {
+    void settingsOtherThanChunkingDoNotChangeChunkCompatibility() {
         PeciaConfig first = config(128, 16);
-        PeciaConfig second =
-                new PeciaConfig(List.of("**/*.java"), List.of("generated/**"), 1024, 128, 16, 8, "cache/other.db");
+        PeciaConfig second = new PeciaConfig(
+                List.of("**/*.java"),
+                List.of("generated/**"),
+                1024,
+                128,
+                16,
+                8,
+                "cache/other.db",
+                true,
+                SearchMode.HYBRID);
 
         assertEquals(IndexingProfile.from(first, TOKENIZER), IndexingProfile.from(second, TOKENIZER));
     }
@@ -102,6 +111,7 @@ class IndexingProfileTest {
     }
 
     private static PeciaConfig config(int maxTokens, int overlapTokens) {
-        return new PeciaConfig(List.of(), List.of(), 4096, maxTokens, overlapTokens, 1, ".pecia/index.db");
+        return new PeciaConfig(
+                List.of(), List.of(), 4096, maxTokens, overlapTokens, 1, ".pecia/index.db", false, SearchMode.AUTO);
     }
 }

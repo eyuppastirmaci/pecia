@@ -49,7 +49,9 @@ class PackagedCliDiscoveryIT {
         assertTrue(defaults.contains("\nexclude = ["));
         assertTrue(defaults.contains("max_file_bytes = 5242880\n"));
         assertTrue(defaults.contains("[chunk]\nmax_tokens = 256\noverlap_tokens = 32\n"));
+        assertTrue(defaults.contains("[semantic]\nenabled = false"));
         assertTrue(defaults.contains("[embed]\nconcurrency = 2\n"));
+        assertTrue(defaults.contains("[search]\nmode = \"auto\""));
         assertTrue(defaults.contains("[store]\npath = \".pecia/index.db\"\n"));
         byte[] customized = "# Preserve my settings and line endings.\r\n[index]\r\ninclude = [\"**/*.md\"]\r\n"
                 .getBytes(StandardCharsets.UTF_8);

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
@@ -150,6 +151,26 @@ class LexicalConfigurationTest {
         assertEquals(original, snapshot());
         assertEquals(originalHits, search("needle"));
         assertDocument(original.get(DOCUMENT), 14, 4, OVERLAPPING_RANGES);
+        assertUnchanged(1);
+    }
+
+    @Test
+    void changingOnlySemanticSettingsPreservesProfilesChunksAndSearchResults() throws Exception {
+        Files.writeString(root.resolve(DOCUMENT), DOCUMENT_TEXT);
+        writeConfig(chunkConfig(14, 4));
+        assertCounts(indexService.index(root), 1, 1, 0, 0, OVERLAPPING_RANGES.size());
+        Map<Path, IndexedFile> original = snapshot();
+        List<SearchHit> originalHits = search("needle");
+
+        writeConfig(chunkConfig(14, 4) + "\n[semantic]\nenabled = true\n\n[search]\nmode = \"lexical\"\n");
+        IndexResult result = indexService.index(root);
+
+        assertCounts(result, 1, 0, 1, 0, 0);
+        assertTrue(result.context().loadedConfig().config().semanticEnabled());
+        assertEquals(
+                SearchMode.LEXICAL, result.context().loadedConfig().config().searchMode());
+        assertEquals(original, snapshot());
+        assertEquals(originalHits, search("needle"));
         assertUnchanged(1);
     }
 

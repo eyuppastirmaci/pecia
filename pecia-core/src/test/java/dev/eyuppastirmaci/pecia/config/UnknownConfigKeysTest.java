@@ -11,6 +11,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class UnknownConfigKeysTest {
 
@@ -50,6 +51,10 @@ class UnknownConfigKeysTest {
                 "embed.concurency, embed.concurrency",
                 "store.pth, store.path",
                 "store.paths, store.path",
+                "semantic.enable, semantic.enabled",
+                "semantic.enabeld, semantic.enabled",
+                "search.modes, search.mode",
+                "search.mod, search.mode",
                 // Misspelled tables and misplaced keys.
                 "chunks.max_tokens, chunk.max_tokens",
                 "chunks.overlap_tokens, chunk.overlap_tokens",
@@ -60,6 +65,13 @@ class UnknownConfigKeysTest {
                 "include, index.include",
                 "index.max_tokens, chunk.max_tokens",
                 "chunk.path, store.path",
+                "semantics.enabled, semantic.enabled",
+                "serach.mode, search.mode",
+                "semantic.mode, search.mode",
+                "query.mode, search.mode",
+                "mode, search.mode",
+                "embed.enabled, semantic.enabled",
+                "enabled, semantic.enabled",
                 // Unrelated names get no guess.
                 "index.max_size, none",
                 "embed.threads, none",
@@ -68,13 +80,25 @@ class UnknownConfigKeysTest {
                 "unknown.key, none",
                 "foo, none",
                 "pa, none",
-                "chunk.extra.foo, none"
+                "chunk.extra.foo, none",
+                "search.type, none",
+                "semantic.provider, none"
             })
     void suggestsTheClosestKnownKeyOrNothing(String path, String suggestion) {
         List<Warning> warnings = parser.parse(tomlSetting(path), SOURCE).warnings();
         String expected = "unknown key " + path + (suggestion == null ? "" : " (did you mean " + suggestion + "?)");
 
         assertEquals(List.of(expected), messages(warnings));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"semantic.model", "embed.model", "search.model", "model"})
+    void modelKeysNameTheOnlySupportedModelInsteadOfSuggestingSearchMode(String path) {
+        List<Warning> warnings = parser.parse(tomlSetting(path), SOURCE).warnings();
+
+        assertEquals(
+                List.of("unknown key " + path + " (all-MiniLM-L6-v2 is the only supported embedding model)"),
+                messages(warnings));
     }
 
     @Test

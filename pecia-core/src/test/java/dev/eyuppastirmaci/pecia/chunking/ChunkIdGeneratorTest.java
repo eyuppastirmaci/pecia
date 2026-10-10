@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfig;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.ChunkMetadata;
@@ -29,7 +30,7 @@ class ChunkIdGeneratorTest {
     private static final TokenizerIdentity TOKENIZER =
             new TokenizerIdentity("test-model", "revision-1", "wordpiece", VOCABULARY_HASH, 100, 256, 2);
     private static final PeciaConfig CONFIG =
-            new PeciaConfig(List.of(), List.of(), 4096, 128, 16, 1, ".pecia/index.db");
+            new PeciaConfig(List.of(), List.of(), 4096, 128, 16, 1, ".pecia/index.db", false, SearchMode.AUTO);
     private static final ChunkingIdentity IDENTITY = ChunkingIdentity.from(CONFIG, TOKENIZER);
     private static final Path SOURCE_PATH = Path.of("docs", "guide.md");
 
