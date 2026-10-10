@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class PeciaConfigParserTest {
 
@@ -83,6 +85,17 @@ class PeciaConfigParserTest {
                 assertThrows(IllegalArgumentException.class, () -> parser.parse("[chunk]\nmax_tokens = \"lots\""));
 
         assertTrue(e.getMessage().contains("chunk.max_tokens must be an integer"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "chunk.max_tokens, chunk.max_tokens = 3000000000",
+        "index.max_file_bytes, index.max_file_bytes = -3000000000"
+    })
+    void integerOutsideIntRangeIsRejectedAsInvalid(String key, String toml) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> parser.parse(toml));
+
+        assertTrue(e.getMessage().contains(key + " must be a 32-bit integer"), e.getMessage());
     }
 
     @Test

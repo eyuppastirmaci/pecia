@@ -73,7 +73,16 @@ public final class PeciaConfigParser {
     private static int intValue(TomlParseResult toml, String key, int fallback) {
         Long value = tomlValue(key, "an integer", toml::getLong);
 
-        return value == null ? fallback : Math.toIntExact(value);
+        if (value == null) {
+            return fallback;
+        }
+
+        // TOML integers are 64-bit; report values outside int range like any other invalid value.
+        if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(key + " must be a 32-bit integer, got " + value);
+        }
+
+        return value.intValue();
     }
 
     private static String stringValue(TomlParseResult toml, String key, String fallback) {
