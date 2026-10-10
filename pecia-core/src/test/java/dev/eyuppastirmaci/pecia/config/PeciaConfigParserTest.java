@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PeciaConfigParserTest {
 
@@ -104,6 +105,20 @@ class PeciaConfigParserTest {
                 assertThrows(IllegalArgumentException.class, () -> parser.parse("[index]\ninclude = [1, 2]"));
 
         assertTrue(e.getMessage().contains("index.include must contain only strings"));
+    }
+
+    @Test
+    void leadingByteOrderMarkIsIgnored() {
+        assertEquals(128, parser.parse("\uFEFF[chunk]\nmax_tokens = 128\n").maxTokens());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"index", "chunk", "embed", "store"})
+    void sectionWrittenAsAPlainValueIsRejected(String section) {
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> parser.parse(section + " = 5\n"));
+
+        assertTrue(e.getMessage().contains(section + " must be a table"), e.getMessage());
     }
 
     @Test

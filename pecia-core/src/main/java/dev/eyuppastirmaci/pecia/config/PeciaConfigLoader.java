@@ -1,6 +1,9 @@
 package dev.eyuppastirmaci.pecia.config;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -23,7 +26,7 @@ public final class PeciaConfigLoader {
      *     or start directory
      * @throws NullPointerException if startDir is null
      * @throws IOException if a found config file cannot be read
-     * @throws IllegalArgumentException if a found config file is malformed
+     * @throws IllegalArgumentException if a found config file is malformed or not valid UTF-8
      */
     public LoadedConfig load(Path startDir) throws IOException {
         Path start = startDir.toAbsolutePath().normalize();
@@ -38,13 +41,27 @@ public final class PeciaConfigLoader {
             Path file = dir.resolve(PeciaConfigFile.FILE_NAME);
 
             if (Files.isRegularFile(file)) {
-                PeciaConfig config = parser.parse(Files.readString(file));
+                PeciaConfig config = parser.parse(readUtf8(file));
 
                 return new LoadedConfig(config, dir, true);
             }
         }
 
         return new LoadedConfig(PeciaConfig.defaults(), gitRoot == null ? start : gitRoot, false);
+    }
+
+    private static String readUtf8(Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+
+        // A strict decoder reports malformed bytes; they are a malformed file, not a read failure.
+        try {
+            return StandardCharsets.UTF_8
+                    .newDecoder()
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        } catch (CharacterCodingException e) {
+            throw new IllegalArgumentException("Invalid .pecia.toml: the file is not valid UTF-8", e);
+        }
     }
 
     /** Configuration with its project root and whether it came from a file rather than defaults. */

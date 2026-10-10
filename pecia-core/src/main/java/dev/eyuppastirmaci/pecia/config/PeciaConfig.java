@@ -18,7 +18,7 @@ public record PeciaConfig(
         int embedConcurrency,
         String storePath) {
 
-    /** Copies filter lists and rejects invalid limits or a blank storage path. */
+    /** Copies filter lists and rejects invalid limits or a blank storage path or one containing NUL. */
     public PeciaConfig {
         include = List.copyOf(include);
         exclude = List.copyOf(exclude);
@@ -42,6 +42,10 @@ public record PeciaConfig(
 
         if (storePath == null || storePath.isBlank()) {
             throw new IllegalArgumentException("store.path must not be blank");
+        }
+
+        if (storePath.indexOf('\0') >= 0) {
+            throw new IllegalArgumentException("store.path must not contain NUL");
         }
     }
 

@@ -48,6 +48,14 @@ class PeciaConfigTest {
         assertTrue(e.getMessage().contains("store.path"));
     }
 
+    @Test
+    void rejectsStorePathContainingNul() {
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> config(256, 32, 2, "index\0.db"));
+
+        assertTrue(e.getMessage().contains("store.path must not contain NUL"));
+    }
+
     private static PeciaConfig config(int maxTokens, int overlapTokens, int concurrency, String storePath) {
         return new PeciaConfig(List.of(), List.of(), 1024, maxTokens, overlapTokens, concurrency, storePath);
     }

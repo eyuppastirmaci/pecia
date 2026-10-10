@@ -89,6 +89,15 @@ class PeciaConfigLoaderTest {
     }
 
     @Test
+    void configFileWithInvalidUtf8IsRejectedAsMalformed() throws IOException {
+        Files.write(root.resolve(".pecia.toml"), new byte[] {'#', ' ', (byte) 0xc3, 0x28, '\n'});
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> loader.load(root));
+
+        assertTrue(e.getMessage().contains("not valid UTF-8"), e.getMessage());
+    }
+
+    @Test
     void fallsBackToDefaultsWhenNothingIsFound() throws IOException {
         PeciaConfigLoader.LoadedConfig loaded = loader.load(root);
 
