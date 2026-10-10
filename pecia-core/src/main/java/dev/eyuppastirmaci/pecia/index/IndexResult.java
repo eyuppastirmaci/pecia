@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.index;
 
 import dev.eyuppastirmaci.pecia.content.ContentPath;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
+import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import java.nio.file.Path;
 import java.util.List;
@@ -48,6 +49,11 @@ public record IndexResult(
             long writtenChunks,
             List<FileIssue> issues) {
         this(context, status, candidateCount, indexedFiles, 0, 0, writtenChunks, issues);
+    }
+
+    /** Returns the configuration warnings found while resolving the project, in source order. */
+    public List<Warning> warnings() {
+        return context.loadedConfig().warnings();
     }
 
     /** Returns the number of candidates rejected for content or format restrictions. */

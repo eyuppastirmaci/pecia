@@ -131,9 +131,9 @@ chunks = 9
 description = "A single 10,000-byte line that exceeds the token budget many times."
 
 # Hostile configuration files. Each case uses one file from config/ as .pecia.toml in a project with one text file.
-# An accepted case expects the recorded indexing status. A rejected case expects the exception and a message
-# fragment at the recorded stage: "load" (configuration loading) or "indexing" (later validation); either way
-# indexing must fail before creating storage.
+# An accepted case expects the recorded indexing status and exactly the listed warnings, or none when `warnings` is
+# absent. A rejected case expects the exception and a message fragment at the recorded stage: "load" (configuration
+# loading) or "indexing" (later validation); either way indexing must fail before creating storage.
 
 [[config]]
 id = "malformed-toml"
@@ -240,7 +240,9 @@ sha256 = "1b2722a3ebf3f1ce5d95945e4dfeb55ef37dcd2dca8f4caf58105accb3193b9a"
 outcome = "accepted"
 status = "COMPLETE"
 description = "A misspelled key, ignored so its default applies."
-note = "Pecia does not report unknown keys yet; this case changes when it does."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 2, column = 1, message = "unknown key chunk.max_token (did you mean chunk.max_tokens?)" },
+]
 
 [[config]]
 id = "unknown-section"
@@ -249,7 +251,101 @@ sha256 = "242ed459397b735fa67befafd60f0b12089ef7773694262a8b43229c14f462a2"
 outcome = "accepted"
 status = "COMPLETE"
 description = "A table Pecia does not define."
-note = "Pecia does not report unknown keys yet; this case changes when it does."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 2, column = 1, message = "unknown key unknown.key" },
+]
+
+[[config]]
+id = "root-level-key"
+input = "config/root-level-key.toml"
+sha256 = "b967c2d048bbfb506b238b0224695c80f193b702fe4d66a560f94fa2c67c8047"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A known key written at the root instead of in its table."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 1, column = 1, message = "unknown key max_tokens (did you mean chunk.max_tokens?)" },
+]
+
+[[config]]
+id = "misspelled-table"
+input = "config/misspelled-table.toml"
+sha256 = "e2cea6c24454437956c152854d6fb481601b93e4379692e1582661e5bd1e9dbb"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A misspelled table; each of its keys gets its own suggestion."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 2, column = 1, message = "unknown key chunks.max_tokens (did you mean chunk.max_tokens?)" },
+    { code = "UNKNOWN_CONFIG_KEY", line = 3, column = 1, message = "unknown key chunks.overlap_tokens (did you mean chunk.overlap_tokens?)" },
+]
+
+[[config]]
+id = "empty-unknown-table"
+input = "config/empty-unknown-table.toml"
+sha256 = "2389b8da4e6bb68ff91ce6795acfa0d257d188b9d85b0adda94aeed47ce1cfb9"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A misspelled table with no keys, reported as a table."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 1, column = 1, message = "unknown table chunks (did you mean chunk?)" },
+]
+
+[[config]]
+id = "nested-unknown-table"
+input = "config/nested-unknown-table.toml"
+sha256 = "c0b66836cea4ef4123c041ed0199dcca25816ebe41b89ad3647cd71ef6af09c6"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A table nested in a known table, reported by its full key path."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 5, column = 1, message = "unknown key chunk.extra.foo" },
+]
+
+[[config]]
+id = "dotted-key-typo"
+input = "config/dotted-key-typo.toml"
+sha256 = "6e5ecd111a440c50eb7ce5b96b9c0669e426528fc419558c3b153a7e09a7b810"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A dot typed instead of an underscore, which TOML reads as a nested table."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 2, column = 1, message = "unknown key chunk.max.tokens (did you mean chunk.max_tokens?)" },
+]
+
+[[config]]
+id = "inline-table-unknown-key"
+input = "config/inline-table-unknown-key.toml"
+sha256 = "c9a333b5b366228e6d32ca9eef71c39388a588b6563e4a6b6e207ac5f76bad46"
+outcome = "accepted"
+status = "COMPLETE"
+description = "An unknown key inside an inline table, reported at its own column."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 1, column = 29, message = "unknown key chunk.foo" },
+]
+
+[[config]]
+id = "unrelated-key"
+input = "config/unrelated-key.toml"
+sha256 = "456cc3701f94b9e39693a56016dd2f215dd298da8fb7d972d0adebe1dd5af8e8"
+outcome = "accepted"
+status = "COMPLETE"
+description = "An unknown key that is not close to any known key gets no suggestion."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 2, column = 1, message = "unknown key embed.threads" },
+]
+
+[[config]]
+id = "several-warnings"
+input = "config/several-warnings.toml"
+sha256 = "bc1d71e523670e3492562ccd9fb748491b9527668d2e4ebd286603d2fd5df66c"
+outcome = "accepted"
+status = "COMPLETE"
+description = "Several unknown keys, reported in source order rather than table order."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 1, column = 1, message = "unknown key zeta" },
+    { code = "UNKNOWN_CONFIG_KEY", line = 4, column = 1, message = "unknown key chunk.max_token (did you mean chunk.max_tokens?)" },
+    { code = "UNKNOWN_CONFIG_KEY", line = 7, column = 1, message = "unknown key store.paths (did you mean store.path?)" },
+    { code = "UNKNOWN_CONFIG_KEY", line = 10, column = 1, message = "unknown key chunk.extra.foo" },
+]
 
 [[config]]
 id = "negative-max-tokens"
@@ -306,7 +402,7 @@ sha256 = "4967e639ee4eebf5c948f30a46282cf1a9511c55d055ce7baeaf9e8e86e7e30b"
 outcome = "rejected"
 stage = "indexing"
 exception = "IllegalArgumentException"
-message = "maxTokens must be greater than 2 and at most 256"
+message = "chunk.max_tokens must be between 3 and 256, got 257"
 description = "One token above the largest budget."
 
 [[config]]
@@ -324,7 +420,7 @@ sha256 = "9326548d09bb4a8c5cf8c0a6a9a8e5fa738d75e05c7fa41a05144d0f8c009ced"
 outcome = "rejected"
 stage = "indexing"
 exception = "IllegalArgumentException"
-message = "maxTokens must be greater than 2 and at most 256"
+message = "chunk.max_tokens must be between 3 and 256, got 2"
 description = "A budget used up by the special tokens."
 
 [[config]]
@@ -342,7 +438,7 @@ sha256 = "551c1a60e076f7590a0102b425da95c480e3d09fce2aa7ae311fa48b03532abd"
 outcome = "rejected"
 stage = "indexing"
 exception = "IllegalArgumentException"
-message = "overlapTokens must be non-negative and less than 32"
+message = "chunk.overlap_tokens must be less than 32, got 32"
 description = "Overlap equal to the content budget."
 
 [[config]]

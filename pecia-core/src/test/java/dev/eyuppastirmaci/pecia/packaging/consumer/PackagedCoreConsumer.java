@@ -114,6 +114,11 @@ public final class PackagedCoreConsumer {
         RetrievalScenario.verifyReadOnlyQuery(root, coreJar, runtimeDirectory);
     }
 
+    /** Runs {@link ConfigurationScenario#verifyConfigurationWarnings}. */
+    public static void verifyConfigurationWarnings(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        ConfigurationScenario.verifyConfigurationWarnings(root, coreJar, runtimeDirectory);
+    }
+
     /** Runs {@link RetrievalScenario#verifyLexicalSearch}. */
     public static void verifyLexicalSearch(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
         RetrievalScenario.verifyLexicalSearch(root, coreJar, runtimeDirectory);

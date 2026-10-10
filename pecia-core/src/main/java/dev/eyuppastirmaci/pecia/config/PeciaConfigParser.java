@@ -1,7 +1,10 @@
 package dev.eyuppastirmaci.pecia.config;
 
+import dev.eyuppastirmaci.pecia.diagnostic.Warning;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 import org.tomlj.Toml;
 import org.tomlj.TomlArray;
@@ -13,7 +16,6 @@ import org.tomlj.TomlParseResult;
 public final class PeciaConfigParser {
 
     private static final String BYTE_ORDER_MARK = "\uFEFF";
-    private static final List<String> SECTIONS = List.of("index", "chunk", "embed", "store");
 
     /**
      * Parses .pecia.toml content into a typed config, filling missing keys with defaults. A leading byte order
@@ -26,6 +28,25 @@ public final class PeciaConfigParser {
      *     invalid range
      */
     public PeciaConfig parse(String toml) {
+        return read(parseToml(toml));
+    }
+
+    /**
+     * Parses configuration read from a file and reports the keys Pecia does not recognize. Warnings are collected
+     * only after the configuration is valid, and they never change which settings apply.
+     *
+     * @param toml raw TOML text
+     * @param source the absolute, normalized file the text came from
+     * @throws IllegalArgumentException if the TOML is malformed or a value is invalid
+     */
+    Parsed parse(String toml, Path source) {
+        TomlParseResult result = parseToml(toml);
+        PeciaConfig config = read(result);
+
+        return new Parsed(config, UnknownConfigKeys.find(result, source));
+    }
+
+    private static TomlParseResult parseToml(String toml) {
         // Some Windows editors start UTF-8 files with a byte order mark, which TOML parsing rejects.
         String text = toml.startsWith(BYTE_ORDER_MARK) ? toml.substring(1) : toml;
         TomlParseResult result = Toml.parse(text);
@@ -34,18 +55,22 @@ public final class PeciaConfigParser {
             throw new IllegalArgumentException(describeErrors(result));
         }
 
+        return result;
+    }
+
+    private static PeciaConfig read(TomlParseResult result) {
         requireTables(result);
 
         PeciaConfig defaults = PeciaConfig.defaults();
 
         return new PeciaConfig(
-                stringList(result, "index.include", defaults.include()),
-                stringList(result, "index.exclude", defaults.exclude()),
-                intValue(result, "index.max_file_bytes", defaults.maxFileBytes()),
-                intValue(result, "chunk.max_tokens", defaults.maxTokens()),
-                intValue(result, "chunk.overlap_tokens", defaults.overlapTokens()),
-                intValue(result, "embed.concurrency", defaults.embedConcurrency()),
-                stringValue(result, "store.path", defaults.storePath()));
+                stringList(result, ConfigKey.INDEX_INCLUDE, defaults.include()),
+                stringList(result, ConfigKey.INDEX_EXCLUDE, defaults.exclude()),
+                intValue(result, ConfigKey.INDEX_MAX_FILE_BYTES, defaults.maxFileBytes()),
+                intValue(result, ConfigKey.CHUNK_MAX_TOKENS, defaults.maxTokens()),
+                intValue(result, ConfigKey.CHUNK_OVERLAP_TOKENS, defaults.overlapTokens()),
+                intValue(result, ConfigKey.EMBED_CONCURRENCY, defaults.embedConcurrency()),
+                stringValue(result, ConfigKey.STORE_PATH, defaults.storePath()));
     }
 
     private static String describeErrors(TomlParseResult result) {
@@ -60,14 +85,14 @@ public final class PeciaConfigParser {
 
     private static void requireTables(TomlParseResult toml) {
         // A section written as a plain value would otherwise hide its keys and silently apply defaults.
-        for (String section : SECTIONS) {
-            if (toml.contains(section) && !toml.isTable(section)) {
-                throw new IllegalArgumentException(section + " must be a table");
+        for (String table : ConfigKey.tables()) {
+            if (toml.contains(table) && !toml.isTable(table)) {
+                throw new IllegalArgumentException(table + " must be a table");
             }
         }
     }
 
-    private static List<String> stringList(TomlParseResult toml, String key, List<String> fallback) {
+    private static List<String> stringList(TomlParseResult toml, ConfigKey key, List<String> fallback) {
         TomlArray array = tomlValue(key, "an array of strings", toml::getArray);
 
         if (array == null) {
@@ -78,7 +103,7 @@ public final class PeciaConfigParser {
 
         for (Object item : array.toList()) {
             if (!(item instanceof String value)) {
-                throw new IllegalArgumentException(key + " must contain only strings");
+                throw new IllegalArgumentException(key.path() + " must contain only strings");
             }
 
             values.add(value);
@@ -87,7 +112,7 @@ public final class PeciaConfigParser {
         return values;
     }
 
-    private static int intValue(TomlParseResult toml, String key, int fallback) {
+    private static int intValue(TomlParseResult toml, ConfigKey key, int fallback) {
         Long value = tomlValue(key, "an integer", toml::getLong);
 
         if (value == null) {
@@ -96,24 +121,32 @@ public final class PeciaConfigParser {
 
         // TOML integers are 64-bit; report values outside int range like any other invalid value.
         if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException(key + " must be a 32-bit integer, got " + value);
+            throw new IllegalArgumentException(key.path() + " must be a 32-bit integer, got " + value);
         }
 
         return value.intValue();
     }
 
-    private static String stringValue(TomlParseResult toml, String key, String fallback) {
+    private static String stringValue(TomlParseResult toml, ConfigKey key, String fallback) {
         String value = tomlValue(key, "a string", toml::getString);
 
         return value == null ? fallback : value;
     }
 
-    private static <T> T tomlValue(String key, String expected, Function<String, T> getter) {
+    /** A parsed configuration and the warnings found in its file, in source order. */
+    record Parsed(PeciaConfig config, List<Warning> warnings) {
+        Parsed {
+            Objects.requireNonNull(config, "config");
+            warnings = List.copyOf(warnings);
+        }
+    }
+
+    private static <T> T tomlValue(ConfigKey key, String expected, Function<String, T> getter) {
         // tomlj throws when a key exists with the wrong type; turn that into our own clear error.
         try {
-            return getter.apply(key);
+            return getter.apply(key.path());
         } catch (TomlInvalidTypeException e) {
-            throw new IllegalArgumentException(key + " must be " + expected, e);
+            throw new IllegalArgumentException(key.path() + " must be " + expected, e);
         }
     }
 }

@@ -35,7 +35,7 @@ The size limit is exercised with generated files instead of committed ones, so t
 
 ## Configuration
 
-Each configuration case uses one file from `config/` as `.pecia.toml` in a project with one text file. An `accepted` case expects the recorded indexing status. A `rejected` case expects the recorded exception and message fragment at its stage: `load` cases fail while the configuration loads, and `indexing` cases load but fail when indexing validates settings against the tokenizer or resolves the storage path. Either way indexing must fail before creating storage.
+Each configuration case uses one file from `config/` as `.pecia.toml` in a project with one text file. An `accepted` case expects the recorded indexing status and exactly the listed warnings, with their code, line, column, and message, so a valid file must produce none. A `rejected` case expects the recorded exception and message fragment at its stage: `load` cases fail while the configuration loads, and `indexing` cases load but fail when indexing validates settings against the tokenizer or resolves the storage path. Either way indexing must fail before creating storage.
 
 | Case | Input | Outcome |
 | --- | --- | --- |
@@ -44,7 +44,14 @@ Each configuration case uses one file from `config/` as `.pecia.toml` in a proje
 | `byte-order-mark` | a UTF-8 byte order mark before the first table | accepted |
 | `section-as-value` | `chunk = 5` instead of a table | rejected on load |
 | `string-for-integer`, `float-for-integer`, `string-for-list`, `non-string-list-item`, `integer-for-string` | values of the wrong type | rejected on load |
-| `misspelled-key`, `unknown-section` | keys and tables Pecia does not define | accepted; ignored for now |
+| `misspelled-key`, `unknown-section` | a misspelled key and a table Pecia does not define | accepted with a warning; the misspelled key gets a suggestion |
+| `root-level-key` | `max_tokens` at the root | accepted with a warning suggesting `chunk.max_tokens` |
+| `misspelled-table` | `[chunks]` with two keys | accepted with one warning per key, each suggesting its `chunk` key |
+| `empty-unknown-table` | `[chunks]` without keys | accepted with a warning about the table, suggesting `chunk` |
+| `nested-unknown-table`, `inline-table-unknown-key` | unknown keys in a nested table and in an inline table | accepted with warnings naming the full key path and its own column |
+| `dotted-key-typo` | `max.tokens`, which TOML reads as a nested table | accepted with a warning suggesting `chunk.max_tokens` |
+| `unrelated-key` | `embed.threads` | accepted with a warning and no suggestion |
+| `several-warnings` | four unknown keys across tables | accepted with four warnings in source order |
 | `negative-max-tokens`, `negative-overlap` | negative values | rejected on load |
 | `integer-overflow`, `integer-underflow` | integers outside the 32-bit range | rejected on load |
 | `max-tokens-256` / `max-tokens-257` | the largest token budget and one above it | accepted / rejected on indexing |
@@ -56,9 +63,9 @@ Each configuration case uses one file from `config/` as `.pecia.toml` in a proje
 | `blank-store-path`, `nul-in-store-path` | a blank storage path and one containing NUL | rejected on load |
 | `store-path-is-directory` | `store.path = "."` | rejected on indexing with an `IOException` |
 
-Unknown keys and tables are ignored today, so a typo silently falls back to the default. Their cases carry a `note` in the manifest and change when Pecia reports unknown keys. Token-budget limits depend on the tokenizer, so they are checked when indexing starts rather than when the configuration loads.
+Unknown keys never change which settings apply: their values are ignored and reported as `UNKNOWN_CONFIG_KEY` warnings, with a suggestion when a known key is close. Token-budget limits depend on the tokenizer, so they are checked when indexing starts rather than when the configuration loads.
 
-`PeciaConfigParserTest`, `PeciaConfigLoaderTest`, and `PeciaConfigTest` cover the same rules at the unit level.
+`PeciaConfigParserTest`, `PeciaConfigLoaderTest`, `PeciaConfigTest`, and `UnknownConfigKeysTest` cover the same rules at the unit level.
 
 ## Queries
 

@@ -3,6 +3,7 @@ package dev.eyuppastirmaci.pecia.cli;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.search.QueryResult;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
@@ -48,12 +49,14 @@ public class QueryCommand implements Callable<Integer> {
 
     /**
      * Searches the stored index; returns 0 for successful queries and 1 for core validation/access
-     * failures.
+     * failures. Configuration warnings are printed to stderr before any other output and do not change the exit code.
      */
     @Override
     public Integer call() {
         try {
-            List<SearchHit> hits = queryService.search(root, new SearchRequest(text, limit));
+            QueryResult result = queryService.query(root, new SearchRequest(text, limit));
+            WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
+            List<SearchHit> hits = result.hits();
             PrintWriter out = spec.commandLine().getOut();
 
             if (hits.isEmpty()) {
@@ -67,6 +70,7 @@ public class QueryCommand implements Callable<Integer> {
             return 0;
         } catch (QueryException failure) {
             PrintWriter err = spec.commandLine().getErr();
+            WarningPrinter.print(err, failure.warnings());
             String detail = failure.reason() == QueryException.Reason.READ_FAILED && failure.getCause() != null
                     ? ": " + failure.getCause().getMessage()
                     : "";

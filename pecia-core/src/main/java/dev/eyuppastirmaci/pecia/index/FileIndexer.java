@@ -16,6 +16,7 @@ import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
+import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.List;
@@ -34,9 +35,12 @@ final class FileIndexer {
 
     FileIndexer(ProjectContext context) {
         PeciaConfig config = context.loadedConfig().config();
+        MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
+        TokenizerIdentity limits = tokenizer.identity();
+        // Report an invalid budget with its configuration keys before the chunkers reject it with internal names.
+        config.requireChunkBudget(limits.maxInputTokens(), limits.specialTokenCount());
         FileContentLoader contentLoader = new FileContentLoader(config.maxFileBytes());
         TextDocumentExtractor extractor = new TextDocumentExtractor();
-        MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
 
         this.context = context;
         this.extraction = new DocumentExtractionService(contentLoader, extractor);

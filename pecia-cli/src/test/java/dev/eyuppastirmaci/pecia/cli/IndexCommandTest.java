@@ -15,6 +15,9 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -109,6 +112,10 @@ class IndexCommandTest {
         assertFalse(Files.exists(root.resolve(".pecia")));
         assertFalse(Files.exists(root.resolve(".pecia.toml")));
     }
+
+    // The misspelled key is ignored, so both configurations apply the same settings.
+    private static final String TYPO_CONFIG = "[index]\ninclude = ['*.txt']\n[chunk]\nmax_token = 64\n";
+    private static final String VALID_CONFIG = "[index]\ninclude = ['*.txt']\n[chunk]\n";
 
     @TempDir
     Path root;
@@ -355,6 +362,53 @@ class IndexCommandTest {
     }
 
     @Test
+    void indexPrintsConfigurationWarningsFirstWithoutChangingStdoutOrExitCode() throws IOException {
+        Path config = Files.writeString(root.resolve(".pecia.toml"), TYPO_CONFIG);
+        Files.writeString(root.resolve("a.txt"), "needle");
+
+        assertEquals(0, run(root.toString()));
+        String withWarning = out.toString();
+        assertEquals(typoWarning(config) + System.lineSeparator(), err.toString());
+
+        // The same project without the typo, indexed from scratch, prints the same summary and nothing on stderr.
+        deleteIndex();
+        Files.writeString(config, VALID_CONFIG);
+        assertSuccessfulIndex(1, 1, 0, 0, 1);
+        assertEquals(withWarning, out.toString());
+    }
+
+    @Test
+    void dryRunPrintsConfigurationWarningsFirstWithoutChangingStdout() throws IOException {
+        Path config = Files.writeString(root.resolve(".pecia.toml"), TYPO_CONFIG);
+        Files.writeString(root.resolve("a.txt"), "needle");
+
+        assertEquals(0, run(root.toString(), "--dry-run"));
+        String withWarning = out.toString();
+        assertEquals(typoWarning(config) + System.lineSeparator(), err.toString());
+
+        Files.writeString(config, VALID_CONFIG);
+        out.getBuffer().setLength(0);
+        err.getBuffer().setLength(0);
+
+        assertEquals(0, run(root.toString(), "--dry-run"));
+        assertEquals(withWarning, out.toString());
+        assertEquals("", err.toString());
+    }
+
+    @Test
+    void failedIndexingPrintsConfigurationWarningsBeforeTheError() throws IOException {
+        Path config = Files.writeString(root.resolve(".pecia.toml"), TYPO_CONFIG);
+        Files.writeString(root.resolve("a.txt"), "needle");
+        Files.writeString(Files.createDirectory(root.resolve(".pecia")).resolve("index.db"), "not a database");
+
+        assertEquals(1, run(root.toString()));
+
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(typoWarning(config), lines.get(0));
+        assertTrue(lines.get(1).startsWith("pecia index: Index storage or cleanup operation failed:"), lines.get(1));
+    }
+
+    @Test
     void helpAndUsageErrorsDoNotOpenStorage() {
         assertEquals(0, run(root.toString(), "--help"));
         assertTrue(out.toString().contains("local lexical index"));
@@ -375,6 +429,18 @@ class IndexCommandTest {
         new CommandLine(command).parseArgs();
 
         assertEquals(Path.of("."), command.path);
+    }
+
+    private static String typoWarning(Path config) {
+        return "warning: " + config + ":4:1: unknown key chunk.max_token (did you mean chunk.max_tokens?)";
+    }
+
+    private void deleteIndex() throws IOException {
+        try (Stream<Path> paths = Files.walk(root.resolve(".pecia"))) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        }
     }
 
     private void writeChunkConfig(int maxTokens, int concurrency) throws IOException {

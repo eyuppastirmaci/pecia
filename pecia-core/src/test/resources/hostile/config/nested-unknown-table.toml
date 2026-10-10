@@ -1,0 +1,5 @@
+[chunk]
+max_tokens = 128
+
+[chunk.extra]
+foo = 1

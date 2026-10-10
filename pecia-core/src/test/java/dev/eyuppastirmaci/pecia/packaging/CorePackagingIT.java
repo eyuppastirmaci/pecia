@@ -66,6 +66,11 @@ class CorePackagingIT {
     }
 
     @Test
+    void reportsConfigurationWarningsUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifyConfigurationWarnings");
+    }
+
+    @Test
     void persistsIndexingProfilesAtomicallyUsingOnlyThePackagedCore() throws Exception {
         runConsumer("verifyIndexingProfiles");
     }
