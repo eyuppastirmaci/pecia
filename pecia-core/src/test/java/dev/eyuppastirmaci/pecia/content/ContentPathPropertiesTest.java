@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.content;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,6 +44,7 @@ class ContentPathPropertiesTest {
 
     @Property(seed = PropertySeeds.FIXED, tries = 1000)
     void acceptsExactlyNonEmptyRelativePathsWithoutDotSegments(@ForAll("rawPaths") RawPath raw) {
+        assertFalse(raw.text().startsWith("//"), "Generated paths must avoid the Windows UNC prefix: " + raw.text());
         Path path = Path.of(raw.text());
         boolean expected = raw.expectedAccepted();
         Statistics.label("accepted").collect(expected);
@@ -206,7 +208,9 @@ class ContentPathPropertiesTest {
                 text.append(segments.get(index));
             }
 
-            return text.append(trailingSlash && !segments.isEmpty() ? "/" : "").toString();
+            text.append(trailingSlash && !segments.isEmpty() ? "/" : "");
+            // Windows parses a leading "//" as a UNC prefix that needs a host name; one slash keeps the path rooted.
+            return text.toString().replaceFirst("^/{2,}", "/");
         }
 
         /* A leading empty segment also roots the path, because the text then starts with a separator. */
