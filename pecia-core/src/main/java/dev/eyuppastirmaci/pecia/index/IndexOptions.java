@@ -25,7 +25,9 @@ public record IndexOptions(Boolean semanticEnabled) {
         return new IndexOptions(enabled);
     }
 
-    /** Returns whether the run builds embeddings: the explicit choice if there is one, otherwise the configuration's. */
+    /**
+     * Returns whether the run builds embeddings: the explicit choice if there is one, otherwise the configuration's.
+     */
     boolean resolveSemanticEnabled(PeciaConfig config) {
         return semanticEnabled != null ? semanticEnabled : config.semanticEnabled();
     }
