@@ -7,6 +7,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
+import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.QueryResult;
@@ -16,7 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Verifies configuration warnings through the packaged services. */
+/** Verifies configuration handling through the packaged services. */
 final class ConfigurationScenario {
 
     private ConfigurationScenario() {}
@@ -54,5 +55,21 @@ final class ConfigurationScenario {
         check(
                 query.hits().size() == 1 && query.warnings().equals(expected),
                 "Packaged queries must return hits and configuration warnings");
+    }
+
+    /** Verifies that a caller's choice for one run overrides semantic.enabled from the file. */
+    static void verifySemanticIndexingOptions(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Files.writeString(root.resolve(".pecia.toml"), "[semantic]\nenabled = true\n");
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nsemanticneedle\n");
+        IndexService indexService = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
+
+        check(indexService.preview(root).semanticEnabled(), "Packaged previews must apply semantic.enabled");
+        check(
+                !indexService.preview(root, IndexOptions.semantic(false)).semanticEnabled(),
+                "A packaged caller's choice must override semantic.enabled");
+        check(
+                indexService.index(root, IndexOptions.semantic(true)).status() == IndexResult.Status.COMPLETE,
+                "Packaged indexing must complete when the caller chooses semantic indexing");
     }
 }

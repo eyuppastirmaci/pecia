@@ -13,6 +13,7 @@ import dev.eyuppastirmaci.pecia.content.DocumentExtractionService;
 import dev.eyuppastirmaci.pecia.content.FileContentLoader;
 import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
+import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
@@ -65,6 +66,7 @@ final class ConsumerChecks {
     static void verifyArchiveOrigins(Path coreJar, Path runtimeDirectory) throws Exception {
         for (Class<?> type : List.of(
                 IndexService.class,
+                IndexOptions.class,
                 IndexPreview.class,
                 PeciaConfigLoader.class,
                 PeciaConfigParser.class,
