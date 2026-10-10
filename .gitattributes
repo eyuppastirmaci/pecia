@@ -15,3 +15,8 @@ pecia-core/src/test/resources/hostile/content/** whitespace=-blank-at-eol,-blank
 
 # Legacy index fixtures are the exact binary output of earlier code and must never be converted or merged.
 pecia-core/src/test/resources/storage/legacy/*.db binary
+
+# Gradle wrapper scripts keep the line endings their shells require, and the wrapper JAR is never converted.
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+gradle/wrapper/gradle-wrapper.jar binary

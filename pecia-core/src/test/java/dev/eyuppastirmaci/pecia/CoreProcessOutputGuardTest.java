@@ -178,8 +178,15 @@ class CoreProcessOutputGuardTest {
                 .getCodeSource()
                 .getLocation()
                 .toURI());
-        Path sources = classes.getParent().getParent().resolve("src/main/java");
-        assertTrue(Files.isDirectory(sources), "Core production sources not found next to " + classes);
-        return sources;
+
+        // The classes may be a directory or a JAR at any depth inside the module, depending on the build tool.
+        for (Path directory = classes.getParent(); directory != null; directory = directory.getParent()) {
+            Path sources = directory.resolve("src/main/java");
+            if (Files.isDirectory(sources)) {
+                return sources;
+            }
+        }
+
+        throw new AssertionError("Core production sources not found above " + classes);
     }
 }
