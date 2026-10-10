@@ -31,7 +31,8 @@ dependencies {
     implementation(libs.jgit)
     implementation(libs.tomlj)
 
-    testImplementation(platform(libs.junit.bom))
+    // Enforced like Maven's dependencyManagement, so jqwik's older JUnit Platform requests are not conflicts.
+    testImplementation(enforcedPlatform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.jqwik)
     testRuntimeOnly(libs.junit.platform.launcher)

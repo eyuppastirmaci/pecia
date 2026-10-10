@@ -1,3 +1,4 @@
+import dev.eyuppastirmaci.pecia.build.CheckDuplicateClasses
 import java.nio.file.Path
 
 plugins {
@@ -17,11 +18,33 @@ java {
     }
 }
 
+// Like Maven's dependencyConvergence rule: every dependency resolves to a single requested version, instead of
+// Gradle silently picking the highest. Plugin and annotation-processor classpaths are not checked, as in Maven.
+configurations.matching { it.name.endsWith("Classpath") }.configureEach {
+    resolutionStrategy.failOnVersionConflict()
+}
+
 tasks.withType<JavaCompile>().configureEach {
     options.release = 21
     options.encoding = "UTF-8"
     // Pecia never uses Java serialization; exceptions stay inside the running process.
     options.compilerArgs.addAll(listOf("-Xlint:all,-serial", "-Werror"))
+}
+
+// Like Maven's banDuplicateClasses rule, checked before the CLI's classes are merged into one JAR.
+val checkDuplicateClasses = tasks.register<CheckDuplicateClasses>("checkDuplicateClasses") {
+    description = "Fails when a class comes from two classpath entries with different content."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    classpath.from(sourceSets.main.map { it.output }, configurations.runtimeClasspath)
+    report = layout.buildDirectory.file("reports/duplicate-classes.txt")
+}
+
+tasks.check {
+    dependsOn(checkDuplicateClasses)
+}
+
+tasks.matching { it.name == "shadowJar" }.configureEach {
+    dependsOn(checkDuplicateClasses)
 }
 
 tasks.withType<AbstractArchiveTask>().configureEach {
