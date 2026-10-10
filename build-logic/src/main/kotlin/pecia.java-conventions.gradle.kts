@@ -41,11 +41,43 @@ spotless {
     }
 }
 
-tasks.named<Test>("test") {
+tasks.withType<Test>().configureEach {
     useJUnitPlatform()
-    // Unit tests follow the *Test convention; packaged acceptance tests (*IT) run in their own task.
-    include("**/*Test.class")
+    failOnNoDiscoveredTests = true
     // Path-validation tests compare real paths, so give test JVMs a temporary directory without symbolic links
     // (macOS resolves /var through one) or short names (Windows).
     systemProperty("java.io.tmpdir", Path.of(System.getProperty("java.io.tmpdir")).toRealPath().toString())
+}
+
+tasks.named<Test>("test") {
+    // Unit tests follow the *Test convention; packaged acceptance tests (*IT) run in integrationTest.
+    include("**/*Test.class")
+}
+
+// Gradle skips a test task whose filter matches no class files, so check explicitly that acceptance tests exist.
+val requireIntegrationTests = tasks.register("requireIntegrationTests") {
+    description = "Fails when the test source set contains no packaged acceptance tests (*IT)."
+    val acceptanceTests = sourceSets.test.get().output.classesDirs.asFileTree.matching { include("**/*IT.class") }
+    inputs.files(acceptanceTests).withPropertyName("acceptanceTests")
+    dependsOn(tasks.testClasses)
+    doLast {
+        if (acceptanceTests.isEmpty) {
+            throw GradleException("No packaged acceptance tests (*IT) found in the test source set")
+        }
+    }
+}
+
+// Packaged acceptance tests share the test source set and run against the built JARs, which each module passes in.
+val integrationTest = tasks.register<Test>("integrationTest") {
+    description = "Runs the packaged acceptance tests (*IT)."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/*IT.class")
+    shouldRunAfter(tasks.test)
+    dependsOn(requireIntegrationTests)
+}
+
+tasks.check {
+    dependsOn(integrationTest)
 }

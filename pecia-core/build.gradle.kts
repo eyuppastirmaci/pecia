@@ -36,3 +36,24 @@ dependencies {
     testImplementation(libs.jqwik)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
+
+// The packaged-core consumer runs on the core JAR plus exactly these runtime dependencies.
+val itRuntime = tasks.register<Sync>("itRuntime") {
+    from(configurations.runtimeClasspath)
+    into(layout.buildDirectory.dir("it-runtime"))
+}
+
+tasks.named<Test>("integrationTest") {
+    val coreJar = tasks.jar.flatMap { it.archiveFile }
+    val testClasses = sourceSets.test.flatMap { it.java.classesDirectory }
+    inputs.file(coreJar).withPropertyName("coreJar")
+    // Declaring the sync task as an input also makes this task depend on it.
+    inputs.files(itRuntime).withPropertyName("runtimeDirectory")
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf(
+            "-Dpecia.it.jar=${coreJar.get().asFile.absolutePath}",
+            "-Dpecia.it.runtimeDirectory=${itRuntime.get().destinationDir.absolutePath}",
+            "-Dpecia.it.testClasses=${testClasses.get().asFile.absolutePath}",
+        )
+    })
+}
