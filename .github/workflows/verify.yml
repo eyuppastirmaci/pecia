@@ -43,6 +43,11 @@ jobs:
 
       - name: Verify (Windows)
         if: runner.os == 'Windows'
+        # The default temporary directory is on C:, which is slower than the workspace drive (D:) for the tests' many
+        # small SQLite writes; the build passes this directory on to every test JVM.
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
         run: .\gradlew.bat check --profile
 
       # Test results and Gradle's profile report from every run, so timings can be compared between runs. Artifact names
