@@ -2,9 +2,12 @@ name: Verify
 
 on:
   push:
-    branches: [main]
+    # experiment/ branches measure candidate changes without a pull request.
+    branches: [main, 'experiment/**']
   pull_request:
     branches: [main]
+  # Lets an experiment branch run the same checks without opening a pull request.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,17 +39,34 @@ jobs:
 
       - name: Verify (Linux and macOS)
         if: runner.os != 'Windows'
-        run: ./gradlew check
+        run: ./gradlew check --profile
 
       - name: Verify (Windows)
         if: runner.os == 'Windows'
-        run: .\gradlew.bat check
+        # The default temporary directory is on C:, which is slower than the workspace drive (D:) for the tests' many
+        # small SQLite writes; the build passes this directory on to every test JVM.
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+        run: .\gradlew.bat check --profile
+
+      # Test results and Gradle's profile report from every run, so timings can be compared between runs. Artifact names
+      # include the attempt, because a re-run cannot upload an artifact name that its run already has.
+      - name: Upload test timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-timings-${{ matrix.os }}-attempt-${{ github.run_attempt }}
+          path: |
+            **/build/test-results/**/*.xml
+            build/reports/profile/
+          retention-days: 7
 
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports-${{ matrix.os }}
+          name: test-reports-${{ matrix.os }}-attempt-${{ github.run_attempt }}
           path: |
             **/build/reports/
             **/build/test-results/
@@ -68,4 +88,14 @@ jobs:
 
       # Proves the core library builds and passes its packaged tests without running any CLI task.
       - name: Verify core independently
-        run: ./gradlew :pecia-core:check
+        run: ./gradlew :pecia-core:check --profile
+
+      - name: Upload test timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-timings-core-verify-attempt-${{ github.run_attempt }}
+          path: |
+            **/build/test-results/**/*.xml
+            build/reports/profile/
+          retention-days: 7
