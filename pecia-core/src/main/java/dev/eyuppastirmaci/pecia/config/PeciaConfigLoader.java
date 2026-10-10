@@ -1,11 +1,13 @@
 package dev.eyuppastirmaci.pecia.config;
 
+import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 
 /** Loads the nearest project configuration, falling back to defaults when no file exists. */
@@ -22,8 +24,8 @@ public final class PeciaConfigLoader {
      * Finds and parses the nearest .pecia.toml, searching from the start directory upward.
      *
      * @param startDir directory the search starts in
-     * @return the config and its directory; without config, defaults rooted at the nearest Git root
-     *     or start directory
+     * @return the config, its directory, and warnings about keys the file uses that Pecia does not recognize;
+     *     without a file, defaults rooted at the nearest Git root or start directory
      * @throws NullPointerException if startDir is null
      * @throws IOException if a found config file cannot be read
      * @throws IllegalArgumentException if a found config file is malformed or not valid UTF-8
@@ -41,9 +43,9 @@ public final class PeciaConfigLoader {
             Path file = dir.resolve(PeciaConfigFile.FILE_NAME);
 
             if (Files.isRegularFile(file)) {
-                PeciaConfig config = parser.parse(readUtf8(file));
+                PeciaConfigParser.Parsed parsed = parser.parse(readUtf8(file), file);
 
-                return new LoadedConfig(config, dir, true);
+                return new LoadedConfig(parsed.config(), dir, true, parsed.warnings());
             }
         }
 
@@ -64,11 +66,21 @@ public final class PeciaConfigLoader {
         }
     }
 
-    /** Configuration with its project root and whether it came from a file rather than defaults. */
-    public record LoadedConfig(PeciaConfig config, Path root, boolean fromFile) {
+    /**
+     * Configuration with its project root, whether it came from a file rather than defaults, and the file's warnings.
+     *
+     * @param warnings warnings about the configuration file in source order; empty when defaults apply
+     */
+    public record LoadedConfig(PeciaConfig config, Path root, boolean fromFile, List<Warning> warnings) {
         public LoadedConfig {
             Objects.requireNonNull(config, "config");
             Objects.requireNonNull(root, "root");
+            warnings = List.copyOf(warnings);
+        }
+
+        /** Creates a loaded configuration without warnings. */
+        public LoadedConfig(PeciaConfig config, Path root, boolean fromFile) {
+            this(config, root, fromFile, List.of());
         }
     }
 }

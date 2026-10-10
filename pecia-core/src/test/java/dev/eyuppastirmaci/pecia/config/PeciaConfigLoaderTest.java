@@ -5,9 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -104,5 +107,49 @@ class PeciaConfigLoaderTest {
         assertFalse(loaded.fromFile());
         assertEquals(root, loaded.root());
         assertEquals(PeciaConfig.defaults(), loaded.config());
+        assertEquals(List.of(), loaded.warnings());
+    }
+
+    @Test
+    void reportsUnknownKeysOfTheFoundFileWithItsPath() throws IOException {
+        Path nested = Files.createDirectories(root.resolve("src"));
+        Path file = Files.writeString(root.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 128\nmax_token = 64\n");
+
+        PeciaConfigLoader.LoadedConfig loaded = loader.load(nested);
+
+        assertEquals(128, loaded.config().maxTokens());
+        assertEquals(
+                List.of(new Warning(
+                        Warning.Code.UNKNOWN_CONFIG_KEY,
+                        file.toAbsolutePath().normalize(),
+                        new Warning.Position(3, 1),
+                        "unknown key chunk.max_token (did you mean chunk.max_tokens?)")),
+                loaded.warnings());
+    }
+
+    @Test
+    void validConfigFileHasNoWarnings() throws IOException {
+        Files.writeString(root.resolve(".pecia.toml"), new PeciaConfigFile().defaultToml());
+
+        assertEquals(List.of(), loader.load(root).warnings());
+    }
+
+    @Test
+    void loadedConfigCopiesWarningsAndDefaultsToNone() {
+        Warning warning =
+                new Warning(Warning.Code.UNKNOWN_CONFIG_KEY, root.resolve(".pecia.toml"), null, "unknown key x");
+        List<Warning> warnings = new ArrayList<>(List.of(warning));
+
+        PeciaConfigLoader.LoadedConfig loaded =
+                new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), root, true, warnings);
+        warnings.clear();
+
+        assertEquals(List.of(warning), loaded.warnings());
+        assertThrows(
+                UnsupportedOperationException.class, () -> loaded.warnings().clear());
+        assertEquals(List.of(), new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), root, false).warnings());
+        assertThrows(
+                NullPointerException.class,
+                () -> new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), root, true, null));
     }
 }
