@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets an experiment branch run the same checks without opening a pull request.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,11 +38,22 @@ jobs:
 
       - name: Verify (Linux and macOS)
         if: runner.os != 'Windows'
-        run: ./gradlew check
+        run: ./gradlew check --profile
 
       - name: Verify (Windows)
         if: runner.os == 'Windows'
-        run: .\gradlew.bat check
+        run: .\gradlew.bat check --profile
+
+      # Test results and Gradle's profile report from every run, so timings can be compared between runs.
+      - name: Upload test timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-timings-${{ matrix.os }}
+          path: |
+            **/build/test-results/**/*.xml
+            build/reports/profile/
+          retention-days: 7
 
       - name: Upload test reports
         if: failure()
@@ -68,4 +81,14 @@ jobs:
 
       # Proves the core library builds and passes its packaged tests without running any CLI task.
       - name: Verify core independently
-        run: ./gradlew :pecia-core:check
+        run: ./gradlew :pecia-core:check --profile
+
+      - name: Upload test timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-timings-core-verify
+          path: |
+            **/build/test-results/**/*.xml
+            build/reports/profile/
+          retention-days: 7

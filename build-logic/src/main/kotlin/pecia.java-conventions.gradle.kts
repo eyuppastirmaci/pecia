@@ -1,5 +1,6 @@
 import dev.eyuppastirmaci.pecia.build.CheckDuplicateClasses
 import java.nio.file.Path
+import java.util.Locale
 
 plugins {
     java
@@ -10,6 +11,9 @@ group = "dev.eyuppastirmaci"
 version = "0.1.0-SNAPSHOT"
 
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
+
+// Test classes that take at least this long are reported while their task runs.
+val SLOW_TEST_CLASS_SECONDS = 5.0
 
 java {
     toolchain {
@@ -70,15 +74,23 @@ tasks.withType<Test>().configureEach {
     // Path-validation tests compare real paths, so give test JVMs a temporary directory without symbolic links
     // (macOS resolves /var through one) or short names (Windows).
     systemProperty("java.io.tmpdir", Path.of(System.getProperty("java.io.tmpdir")).toRealPath().toString())
-    // One line per test task, so build logs show the counts.
+    // Gradle prints nothing while a test task runs, so a slow run looks like a hang: report each slow test class as it
+    // finishes, and the counts once per task.
     addTestListener(object : TestListener {
         override fun beforeSuite(suite: TestDescriptor) {}
 
         override fun afterSuite(suite: TestDescriptor, result: TestResult) {
+            val className = suite.className
+            val seconds = (result.endTime - result.startTime) / 1000.0
+
             if (suite.parent == null) {
                 logger.lifecycle(
                     "$path: ${result.testCount} tests, ${result.failedTestCount} failed, " +
                         "${result.skippedTestCount} skipped"
+                )
+            } else if (className != null && suite.name == className && seconds >= SLOW_TEST_CLASS_SECONDS) {
+                logger.lifecycle(
+                    "$path: ${className.substringAfterLast('.')} took ${String.format(Locale.ROOT, "%.1f", seconds)} s"
                 )
             }
         }
