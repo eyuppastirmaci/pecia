@@ -3,21 +3,27 @@ package dev.eyuppastirmaci.pecia;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
+import dev.eyuppastirmaci.pecia.index.IndexException;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.search.QueryException;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.storage.sqlite.IndexAccessException;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
+import dev.eyuppastirmaci.pecia.testing.LegacyIndexFixture;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
@@ -25,19 +31,30 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.sqlite.JDBC;
 import org.tomlj.Toml;
 import org.tomlj.TomlArray;
 import org.tomlj.TomlParseResult;
@@ -53,6 +70,7 @@ class HostileInputCorpusTest {
     private static final String CONTENT = "content";
     private static final String CONFIG = "config";
     private static final String QUERY = "query";
+    private static final String STORAGE = "storage";
     private static final List<String> INPUT_KINDS = List.of(CONTENT, CONFIG);
     private static final String PREVIOUS_VERSION = "payment validation before the hostile change\n";
     private static final String PROJECT_FILE = "payment.txt";
@@ -76,6 +94,10 @@ class HostileInputCorpusTest {
 
     static Stream<QueryCase> queryCases() throws IOException {
         return cases(QUERY, QueryCase::from);
+    }
+
+    static Stream<StorageCase> storageCases() throws IOException {
+        return cases(STORAGE, StorageCase::from);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -193,12 +215,83 @@ class HostileInputCorpusTest {
         assertEquals(before, IndexDump.read(indexed.context().databasePath(), root, List.of()));
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("storageCases")
+    void hostileIndexStorageIsClassifiedAndLeftUnchanged(StorageCase storageCase) throws Exception {
+        Path root = Files.createDirectory(sandbox.resolve("project")).toRealPath();
+        Path database = storageCase.install(root);
+        StorageSnapshot before = StorageSnapshot.of(database);
+
+        QueryException query =
+                assertThrows(QueryException.class, () -> queryService.search(root, new SearchRequest("payment")));
+        assertEquals(storageCase.query(), query.reason(), query.getMessage());
+        assertEquals(before, StorageSnapshot.of(database), "A query must never change the index");
+
+        switch (storageCase.indexing()) {
+            case "COMPLETE" ->
+                assertEquals(
+                        IndexResult.Status.COMPLETE, indexService.index(root).status());
+            case "IOException" -> assertThrows(IOException.class, () -> indexService.index(root));
+            default -> {
+                IndexException indexing = assertThrows(IndexException.class, () -> indexService.index(root));
+                assertEquals(IndexResult.Status.FAILED, indexing.result().status());
+                IndexAccessException cause = assertInstanceOf(IndexAccessException.class, indexing.getCause());
+                assertEquals(IndexAccessException.Reason.valueOf(storageCase.indexing()), cause.reason());
+            }
+        }
+
+        if (!storageCase.indexing().equals("COMPLETE")) {
+            assertEquals(before, StorageSnapshot.of(database), "A rejected index must keep its exact state");
+        }
+    }
+
+    /**
+     * Another connection holds an exclusive lock while indexing and querying run in parallel; both must fail with a
+     * classified busy error after the SQLite busy timeout and leave the index unchanged.
+     */
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS)
+    void lockedIndexFailsIndexingAndQueryingAfterTheBusyTimeout() throws Exception {
+        Path root = project();
+        Files.writeString(root.resolve(PROJECT_FILE), PREVIOUS_VERSION);
+        IndexResult indexed = indexService.index(root);
+        Path database = indexed.context().databasePath();
+        IndexDump before = IndexDump.read(database, root, List.of());
+        // A change gives the locked run something to write.
+        Files.writeString(root.resolve(PROJECT_FILE), "payment validation changed while locked\n");
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try (Connection holder =
+                        JDBC.createConnection("jdbc:sqlite:" + database.toUri().toASCIIString(), new Properties());
+                Statement statement = holder.createStatement()) {
+            statement.execute("BEGIN EXCLUSIVE");
+            Future<IndexException> indexing =
+                    executor.submit(() -> assertThrows(IndexException.class, () -> indexService.index(root)));
+            Future<QueryException> query = executor.submit(() ->
+                    assertThrows(QueryException.class, () -> queryService.search(root, new SearchRequest("payment"))));
+
+            IndexException indexFailure = indexing.get(30, TimeUnit.SECONDS);
+            QueryException queryFailure = query.get(30, TimeUnit.SECONDS);
+            statement.execute("ROLLBACK");
+
+            assertEquals(IndexResult.Status.FAILED, indexFailure.result().status());
+            assertBusy(indexFailure.getCause());
+            assertEquals(QueryException.Reason.READ_FAILED, queryFailure.reason());
+            assertBusy(queryFailure.getCause());
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertEquals(before, IndexDump.read(database, root, List.of()), "A locked run must not write");
+        assertEquals(IndexResult.Status.COMPLETE, indexService.index(root).status());
+    }
+
     @Test
     void manifestEntriesAreUniqueAndMatchInputFiles() throws Exception {
         Set<String> listed = new TreeSet<>();
         Set<String> committed = new TreeSet<>();
 
-        for (String kind : List.of(CONTENT, CONFIG, QUERY)) {
+        for (String kind : List.of(CONTENT, CONFIG, QUERY, STORAGE)) {
             Set<String> ids = new HashSet<>();
             for (TomlTable row : rows(kind)) {
                 assertTrue(ids.add(required(row, "id")), () -> "Duplicate " + kind + " case: " + row.toJson());
@@ -239,6 +332,17 @@ class HostileInputCorpusTest {
     private static void assertRejection(ConfigCase configCase, Exception failure) {
         assertEquals(configCase.exception(), failure.getClass().getSimpleName(), () -> String.valueOf(failure));
         assertTrue(failure.getMessage().contains(configCase.message()), failure.getMessage());
+    }
+
+    private static void assertBusy(Throwable failure) {
+        // SQLITE_BUSY is primary result code 5; extended codes keep it in the low byte.
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql && (sql.getErrorCode() & 0xff) == 5) {
+                return;
+            }
+        }
+
+        throw new AssertionError("Expected a SQLITE_BUSY cause", failure);
     }
 
     private static IndexDump dump(IndexResult result, Path root) throws Exception {
@@ -434,5 +538,81 @@ class HostileInputCorpusTest {
     private interface ManifestReader<T> {
 
         T read(TomlTable row) throws IOException;
+    }
+
+    /**
+     * One storage case from the manifest.
+     *
+     * @param damage the damage applied to the current-version fixture, or null for a generated source
+     * @param indexing {@code COMPLETE}, {@code IOException}, or the expected {@link IndexAccessException.Reason}
+     */
+    record StorageCase(
+            String id, String source, LegacyIndexFixture.Damage damage, QueryException.Reason query, String indexing) {
+
+        static StorageCase from(TomlTable row) {
+            String id = required(row, "id");
+            String source = required(row, "source");
+            LegacyIndexFixture.Damage damage =
+                    source.equals("fixture") ? LegacyIndexFixture.Damage.valueOf(required(row, "damage")) : null;
+
+            return new StorageCase(
+                    id,
+                    source,
+                    damage,
+                    QueryException.Reason.valueOf(required(row, "query")),
+                    required(row, "indexing"));
+        }
+
+        Path install(Path root) throws IOException, SQLException {
+            if (damage != null) {
+                return LegacyIndexFixture.installDamaged(damage, root);
+            }
+
+            Files.createDirectory(root.resolve(".git"));
+            Files.writeString(root.resolve(PROJECT_FILE), PREVIOUS_VERSION);
+            Path database = root.resolve(PeciaConfig.defaults().storePath());
+            Files.createDirectories(database.getParent());
+
+            switch (source) {
+                case "text-file" -> Files.writeString(database, "this is not a database\n");
+                case "header-only" ->
+                    Files.write(database, Arrays.copyOf("SQLite format 3\0".getBytes(StandardCharsets.US_ASCII), 100));
+                case "empty-file" -> Files.write(database, new byte[0]);
+                // VACUUM writes a database header without creating any schema object.
+                case "empty-database" -> execute(database, "VACUUM");
+                case "foreign-database" -> execute(database, "CREATE TABLE notes(text TEXT)");
+                case "directory" -> Files.createDirectory(database);
+                default -> throw new AssertionError(id + ": unknown source " + source);
+            }
+
+            return database;
+        }
+
+        private static void execute(Path database, String sql) throws SQLException {
+            try (Connection connection = JDBC.createConnection(
+                            "jdbc:sqlite:" + database.toUri().toASCIIString(), new Properties());
+                    Statement statement = connection.createStatement()) {
+                statement.execute(sql);
+            }
+        }
+
+        @Override
+        public String toString() {
+            return id;
+        }
+    }
+
+    /** The checksum of an index file, or a directory's entries, together with the entries beside it. */
+    private record StorageSnapshot(String checksum, Set<String> directoryEntries, Set<String> siblings) {
+
+        static StorageSnapshot of(Path database) throws IOException, NoSuchAlgorithmException {
+            Set<String> siblings = entries(database.getParent());
+
+            if (Files.isDirectory(database)) {
+                return new StorageSnapshot(null, entries(database), siblings);
+            }
+
+            return new StorageSnapshot(HostileInputCorpusTest.sha256(Files.readAllBytes(database)), null, siblings);
+        }
     }
 }
