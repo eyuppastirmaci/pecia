@@ -18,7 +18,7 @@ Each content case indexes one file from `content/` in an otherwise empty project
 | `encoded-surrogate` | a UTF-16 surrogate encoded in UTF-8 | `INVALID_UTF8` |
 | `utf16le-bom`, `utf16be-bom` | UTF-16 text with a byte order mark | `INVALID_UTF8` |
 | `utf16le-no-bom`, `utf16be-no-bom` | UTF-16 text without a byte order mark | `BINARY_CONTENT` |
-| `nul` | text containing a NUL byte | `BINARY_CONTENT` |
+| `nul-byte` | text containing a NUL byte | `BINARY_CONTENT` |
 | `control-characters` | text containing a run of C0 control characters | `BINARY_CONTENT` |
 | `mixed-line-endings` | CRLF, LF and CR in one file, no final newline | indexed, 1 chunk |
 | `long-line` | one 10,000-byte line, far above the token budget | indexed, 9 chunks |
@@ -124,4 +124,4 @@ A separate case holds an exclusive lock from another connection while indexing a
 
 ## Maintenance
 
-The repository's `.gitattributes` marks this directory `-text`, and core test resources disable Maven filtering, so inputs keep their exact bytes on every checkout; the checksums detect accidental conversion. Whitespace attributes allow the deliberate whitespace and CR terminators in content inputs. Expected outcomes record reviewed behavior: change one only together with the behavior it describes, never just to make a failing test pass. Add a case by committing its input and a `cases.toml` entry with the input's checksum.
+The repository's `.gitattributes` marks this directory `-text`, and core test resources disable Maven filtering, so inputs keep their exact bytes on every checkout; the checksums detect accidental conversion. Whitespace attributes allow the deliberate whitespace and CR terminators in content inputs. Expected outcomes record reviewed behavior: change one only together with the behavior it describes, never just to make a failing test pass. Add a case by committing its input and a `cases.toml` entry with the input's checksum. Committed input names must be valid on Windows: no reserved device names such as `NUL` or `CON`, even with an extension, and no `<>:"|?*` characters; generate such names at test time instead.

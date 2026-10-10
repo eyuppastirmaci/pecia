@@ -47,6 +47,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -76,6 +77,9 @@ class HostileInputCorpusTest {
     private static final String PROJECT_FILE = "payment.txt";
     private static final String QUERY_PROJECT_TEXT = "Payment validation runs near the quoted text, or not.\n";
     private static final int SIZE_LIMIT = 64;
+    // Windows reserves device names with any extension, and these characters; Git refuses to check such paths out.
+    private static final Pattern WINDOWS_INVALID_NAME =
+            Pattern.compile("(?i)(con|prn|aux|nul|com[0-9]|lpt[0-9])(\\..*)?|.*[<>:\"|?*\\\\].*|.*[ .]");
 
     @TempDir
     Path sandbox;
@@ -304,6 +308,7 @@ class HostileInputCorpusTest {
             }
 
             for (String name : entries(resourceDirectory().resolve(kind))) {
+                assertFalse(WINDOWS_INVALID_NAME.matcher(name).matches(), "Not a valid Windows file name: " + name);
                 committed.add(kind + "/" + name);
             }
         }

@@ -99,8 +99,8 @@ reason = "BINARY_CONTENT"
 description = "UTF-16BE text without a byte order mark."
 
 [[content]]
-id = "nul"
-input = "content/nul.txt"
+id = "nul-byte"
+input = "content/nul-byte.txt"
 sha256 = "27e0d416e1e28a473f30409448cdd03b04d66e199b48f5d703e5d4b508eb60a4"
 outcome = "rejected"
 reason = "BINARY_CONTENT"
