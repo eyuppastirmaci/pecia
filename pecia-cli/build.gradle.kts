@@ -11,7 +11,7 @@ dependencies {
     runtimeOnly(libs.slf4j.nop)
 
     testImplementation(testFixtures(project(":pecia-core")))
-    // Enforced like Maven's dependencyManagement, so jqwik's older JUnit Platform requests are not conflicts.
+    // Enforced, so the BOM's JUnit Platform version wins over jqwik's older requests instead of counting as a conflict.
     testImplementation(enforcedPlatform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
@@ -34,7 +34,7 @@ tasks.shadowJar {
     }
     // Drop dependency signature files; they no longer match once everything is merged into one JAR.
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.EC")
-    // Keep the JAR single-release like the Maven-built one, so the JVM ignores dependencies' META-INF/versions entries.
+    // Keep the JAR single-release, as it has always been, so the JVM ignores dependencies' META-INF/versions entries.
     addMultiReleaseAttribute = false
 }
 

@@ -12,8 +12,8 @@ import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
 
 /**
- * Fails when a class appears in more than one classpath entry with different content, as Maven's banDuplicateClasses
- * rule did. Identical copies and module descriptors are ignored.
+ * Fails when a class appears in more than one classpath entry with different content. Identical copies and module
+ * descriptors are ignored.
  */
 abstract class CheckDuplicateClasses : DefaultTask() {
 

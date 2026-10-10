@@ -4,26 +4,6 @@ plugins {
     `java-test-fixtures`
 }
 
-// Offline packaged-test support shared with the CLI's tests. These classes stay in src/test/java while the Maven
-// build still compiles them there.
-val offlineSupport =
-    listOf("OfflineEnvironment", "OfflineSandbox", "NetworkGuard", "NetworkProbe").map {
-        "dev/eyuppastirmaci/pecia/testing/$it.java"
-    }
-
-sourceSets {
-    testFixtures {
-        java {
-            setSrcDirs(listOf("src/test/java"))
-            setIncludes(offlineSupport)
-        }
-        resources.setSrcDirs(emptyList<File>())
-    }
-    test {
-        java.exclude(offlineSupport)
-    }
-}
-
 dependencies {
     implementation(libs.sqlite.jdbc)
     implementation(libs.commonmark)
@@ -31,7 +11,7 @@ dependencies {
     implementation(libs.jgit)
     implementation(libs.tomlj)
 
-    // Enforced like Maven's dependencyManagement, so jqwik's older JUnit Platform requests are not conflicts.
+    // Enforced, so the BOM's JUnit Platform version wins over jqwik's older requests instead of counting as a conflict.
     testImplementation(enforcedPlatform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.jqwik)

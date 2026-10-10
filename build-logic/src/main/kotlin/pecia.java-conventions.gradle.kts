@@ -18,8 +18,8 @@ java {
     }
 }
 
-// Like Maven's dependencyConvergence rule: every dependency resolves to a single requested version, instead of
-// Gradle silently picking the highest. Plugin and annotation-processor classpaths are not checked, as in Maven.
+// Every dependency must resolve to a single requested version instead of Gradle silently picking the highest.
+// Plugin and annotation-processor classpaths are not checked.
 configurations.matching { it.name.endsWith("Classpath") }.configureEach {
     resolutionStrategy.failOnVersionConflict()
 }
@@ -31,7 +31,7 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xlint:all,-serial", "-Werror"))
 }
 
-// Like Maven's banDuplicateClasses rule, checked before the CLI's classes are merged into one JAR.
+// No class may come from two classpath entries with different content; checked before the CLI JAR merges them.
 val checkDuplicateClasses = tasks.register<CheckDuplicateClasses>("checkDuplicateClasses") {
     description = "Fails when a class comes from two classpath entries with different content."
     group = LifecycleBasePlugin.VERIFICATION_GROUP
@@ -70,6 +70,23 @@ tasks.withType<Test>().configureEach {
     // Path-validation tests compare real paths, so give test JVMs a temporary directory without symbolic links
     // (macOS resolves /var through one) or short names (Windows).
     systemProperty("java.io.tmpdir", Path.of(System.getProperty("java.io.tmpdir")).toRealPath().toString())
+    // One line per test task, so build logs show the counts.
+    addTestListener(object : TestListener {
+        override fun beforeSuite(suite: TestDescriptor) {}
+
+        override fun afterSuite(suite: TestDescriptor, result: TestResult) {
+            if (suite.parent == null) {
+                logger.lifecycle(
+                    "$path: ${result.testCount} tests, ${result.failedTestCount} failed, " +
+                        "${result.skippedTestCount} skipped"
+                )
+            }
+        }
+
+        override fun beforeTest(testDescriptor: TestDescriptor) {}
+
+        override fun afterTest(testDescriptor: TestDescriptor, result: TestResult) {}
+    })
 }
 
 tasks.named<Test>("test") {
