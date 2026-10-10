@@ -1,0 +1,131 @@
+# Hostile content inputs. Each case indexes one file from content/ in an otherwise empty project.
+# outcome is "indexed" with an exact chunk count, or "rejected" with the ExtractionException reason.
+# sha256 detects accidental conversion of the raw bytes after checkout or resource copying.
+
+[[content]]
+id = "empty"
+input = "content/empty.txt"
+sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+outcome = "indexed"
+chunks = 0
+description = "Zero bytes."
+
+[[content]]
+id = "whitespace-only"
+input = "content/whitespace-only.txt"
+sha256 = "b393638a1dd0b83304119f163bc3ee77464669be2c1df58506033e9e4012face"
+outcome = "indexed"
+chunks = 0
+description = "Spaces, a tab, CRLF, LF and a no-break space."
+
+[[content]]
+id = "bom-only"
+input = "content/bom-only.txt"
+sha256 = "f1945cd6c19e56b3c1c78943ef5ec18116907a4ca1efc40a57d48ab1db7adfc5"
+outcome = "indexed"
+chunks = 0
+description = "A UTF-8 byte order mark and nothing else."
+
+[[content]]
+id = "bom-then-text"
+input = "content/bom-then-text.txt"
+sha256 = "aa8b0fe59d720218da2acd675855c6d05111c88cf525777bfe544bc9831fc649"
+outcome = "indexed"
+chunks = 1
+description = "A UTF-8 byte order mark before ordinary text."
+
+[[content]]
+id = "malformed-utf8"
+input = "content/malformed-utf8.txt"
+sha256 = "2cc6c9d1d964987e9f951d8d102319ac3c364720efa728ace2a33923239ee796"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "A lead byte followed by a non-continuation byte."
+
+[[content]]
+id = "truncated-utf8"
+input = "content/truncated-utf8.txt"
+sha256 = "8b29668724b0f65af2675c2d8e8788414d375a2ce8f945ce7c094ba0cc59da83"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "A multibyte sequence cut off at end of file."
+
+[[content]]
+id = "overlong-utf8"
+input = "content/overlong-utf8.txt"
+sha256 = "cf7a46ca04951d9f56b40ff3652a9d516207bc59398a623026dbed7589b3fb70"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "An overlong two-byte encoding of '/'."
+
+[[content]]
+id = "encoded-surrogate"
+input = "content/encoded-surrogate.txt"
+sha256 = "6594295591a9d2314c3b04a8b9fe4717e98b466875ac3f37d80a5b25a4a72918"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "A UTF-16 surrogate encoded as three UTF-8 bytes."
+
+[[content]]
+id = "utf16le-bom"
+input = "content/utf16le-bom.txt"
+sha256 = "993cb0dce776303a4f89146399a8463606dd03c20f16bd0d8e19e49088965050"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "UTF-16LE text with its byte order mark."
+
+[[content]]
+id = "utf16be-bom"
+input = "content/utf16be-bom.txt"
+sha256 = "3b4c3c0f7bede19e4712b4fc40bc1ecbb8758ab2dfb38f2d2a62029e9197ffc0"
+outcome = "rejected"
+reason = "INVALID_UTF8"
+description = "UTF-16BE text with its byte order mark."
+
+[[content]]
+id = "utf16le-no-bom"
+input = "content/utf16le-no-bom.txt"
+sha256 = "e4c63ef3db0cd7ccfb3361aa715ffb7d0b7e6a1a137488647c0229cf471cae30"
+outcome = "rejected"
+reason = "BINARY_CONTENT"
+description = "UTF-16LE text without a byte order mark."
+
+[[content]]
+id = "utf16be-no-bom"
+input = "content/utf16be-no-bom.txt"
+sha256 = "20719cf38412250ce161eb81ae5f2d5e4fdf52a1d650ed36f4c6bf3a68fb49b4"
+outcome = "rejected"
+reason = "BINARY_CONTENT"
+description = "UTF-16BE text without a byte order mark."
+
+[[content]]
+id = "nul"
+input = "content/nul.txt"
+sha256 = "27e0d416e1e28a473f30409448cdd03b04d66e199b48f5d703e5d4b508eb60a4"
+outcome = "rejected"
+reason = "BINARY_CONTENT"
+description = "Text containing a NUL byte."
+
+[[content]]
+id = "control-characters"
+input = "content/control-characters.txt"
+sha256 = "5b63bea1632fbee68db8b6172e284eee24ff222671ce07fc7e7461b4183579a8"
+outcome = "rejected"
+reason = "BINARY_CONTENT"
+description = "Text containing a run of C0 control characters."
+
+[[content]]
+id = "mixed-line-endings"
+input = "content/mixed-line-endings.txt"
+sha256 = "e79ea07e9497d521b4c68b556e99de08ca4278b405fb5c59d5a52b8a4f78ceca"
+outcome = "indexed"
+chunks = 1
+description = "CRLF, LF and CR terminators in one file, with no final newline."
+
+[[content]]
+id = "long-line"
+input = "content/long-line.txt"
+sha256 = "98c8dbe3c8631ff9bb378231dbe86f412f2ad1c4cfd1370375cd9dc3c838ad22"
+outcome = "indexed"
+chunks = 9
+description = "A single 10,000-byte line that exceeds the token budget many times."
