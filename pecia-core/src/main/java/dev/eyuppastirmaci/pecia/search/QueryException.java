@@ -1,20 +1,38 @@
 package dev.eyuppastirmaci.pecia.search;
 
+import dev.eyuppastirmaci.pecia.diagnostic.Warning;
+import java.util.List;
 import java.util.Objects;
 
 /** A project query failure with an actionable category and its original cause. */
 public final class QueryException extends Exception {
 
     private final Reason reason;
+    private final List<Warning> warnings;
 
     /** Creates a query failure with a required category and an optional underlying cause. */
     public QueryException(Reason reason, String message, Throwable cause) {
+        this(reason, message, cause, List.of());
+    }
+
+    /**
+     * Creates a query failure that also carries the configuration warnings found before it failed.
+     *
+     * @throws NullPointerException if reason, warnings, or any warning is null
+     */
+    public QueryException(Reason reason, String message, Throwable cause, List<Warning> warnings) {
         super(message, cause);
         this.reason = Objects.requireNonNull(reason, "reason");
+        this.warnings = List.copyOf(warnings);
     }
 
     public Reason reason() {
         return reason;
+    }
+
+    /** Returns the configuration warnings found before the failure; empty if configuration did not load. */
+    public List<Warning> warnings() {
+        return warnings;
     }
 
     /** Failure categories used to distinguish index state from general read failures. */

@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.search;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
+import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
 import dev.eyuppastirmaci.pecia.storage.sqlite.IndexAccessException;
@@ -42,14 +43,31 @@ public final class QueryService {
      * @throws NullPointerException if a required argument is null
      */
     public List<SearchHit> search(Path startDirectory, SearchRequest request) throws QueryException {
+        return query(startDirectory, request).hits();
+    }
+
+    /**
+     * Searches like {@link #search} and also returns the configuration warnings found while resolving the project.
+     * A {@link QueryException} raised after the configuration loaded carries the same warnings.
+     *
+     * @param startDirectory project context starting directory, usually the caller's working directory
+     * @param request the same validated plain-text request accepted by LexicalSearch
+     * @return immutable ranked hits and configuration warnings
+     * @throws QueryException if context/index access or retrieval fails, preserving the cause
+     * @throws IllegalArgumentException if query/configuration/path validation fails
+     * @throws NullPointerException if a required argument is null
+     */
+    public QueryResult query(Path startDirectory, SearchRequest request) throws QueryException {
         // Apply the existing compiler's limits before any filesystem or database access.
         new LexicalQueryCompiler().compile(request);
+        List<Warning> warnings = List.of();
 
         try {
             ProjectContext context = contextResolver.resolve(startDirectory);
+            warnings = context.loadedConfig().warnings();
 
             try (SqliteStorage storage = storageOpener.open(context)) {
-                return storage.lexicalSearch().search(request);
+                return new QueryResult(storage.lexicalSearch().search(request), warnings);
             }
         } catch (IndexAccessException failure) {
             QueryException.Reason reason =
@@ -61,9 +79,10 @@ public final class QueryService {
                         case CORRUPT_INDEX -> QueryException.Reason.CORRUPT_INDEX;
                     };
 
-            throw new QueryException(reason, failure.getMessage(), failure);
+            throw new QueryException(reason, failure.getMessage(), failure, warnings);
         } catch (IOException | SQLException | SearchException failure) {
-            throw new QueryException(QueryException.Reason.READ_FAILED, "Could not query project index", failure);
+            throw new QueryException(
+                    QueryException.Reason.READ_FAILED, "Could not query project index", failure, warnings);
         }
     }
 
