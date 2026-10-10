@@ -233,6 +233,37 @@ class QueryCommandTest {
     }
 
     @Test
+    void queryPrintsConfigurationWarningsFirstWithoutChangingStdoutOrExitCode() throws Exception {
+        Path config = Files.writeString(root.resolve(".pecia.toml"), "[chunk]\nmax_token = 64\n");
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nneedle\n");
+        new IndexService(loader).index(root);
+
+        assertEquals(0, run("needle", "--root", root.toString()));
+        String withWarning = out.toString();
+        assertEquals(typoWarning(config) + System.lineSeparator(), err.toString());
+
+        Files.writeString(config, "[chunk]\n");
+        out.getBuffer().setLength(0);
+        err.getBuffer().setLength(0);
+
+        assertEquals(0, run("needle", "--root", root.toString()));
+        assertEquals(withWarning, out.toString());
+        assertEquals("", err.toString());
+    }
+
+    @Test
+    void failedQueryPrintsConfigurationWarningsBeforeTheError() throws Exception {
+        Path config = Files.writeString(root.resolve(".pecia.toml"), "[chunk]\nmax_token = 64\n");
+
+        assertEquals(1, run("needle", "--root", root.toString()));
+
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(typoWarning(config), lines.get(0));
+        assertTrue(lines.get(1).startsWith("pecia query: INDEX_NOT_FOUND:"), lines.get(1));
+        assertEquals("", out.toString());
+    }
+
+    @Test
     void helpDoesNotRequireQueryOrOpenResources() throws Exception {
         assertEquals(0, run("--root", root.toString(), "--help"));
         assertTrue(out.toString().contains("--limit"));
@@ -255,6 +286,10 @@ class QueryCommandTest {
         assertTrue(err.toString().contains(file.toString()));
         assertFalse(err.toString().contains("\tat "));
         assertEquals("", out.toString());
+    }
+
+    private static String typoWarning(Path config) {
+        return "warning: " + config + ":2:1: unknown key chunk.max_token (did you mean chunk.max_tokens?)";
     }
 
     private int run(String... args) {

@@ -43,7 +43,8 @@ public class IndexCommand implements Callable<Integer> {
     }
 
     /**
-     * Indexes a folder or previews discovery without processing content.
+     * Indexes a folder or previews discovery without processing content. Configuration warnings are printed to stderr
+     * before any other output and do not change the exit code.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan or
      *     storage failure
@@ -53,12 +54,14 @@ public class IndexCommand implements Callable<Integer> {
         try {
             if (!dryRun) {
                 IndexResult result = indexService.index(path);
+                WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
                 reportIndex(result);
 
                 return result.status() == IndexResult.Status.COMPLETE ? 0 : 1;
             }
 
             IndexPreview preview = indexService.preview(path);
+            WarningPrinter.print(spec.commandLine().getErr(), preview.warnings());
             WalkResult result = preview.walkResult();
             report(preview.loadedConfig(), result.files());
 
@@ -76,6 +79,7 @@ public class IndexCommand implements Callable<Integer> {
 
             return 0;
         } catch (IndexException failure) {
+            WarningPrinter.print(spec.commandLine().getErr(), failure.result().warnings());
             reportIndex(failure.result());
 
             for (WalkResult.Issue issue : failure.scanIssues()) {
