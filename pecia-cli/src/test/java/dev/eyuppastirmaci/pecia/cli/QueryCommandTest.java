@@ -31,6 +31,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
 
@@ -164,6 +165,72 @@ class QueryCommandTest {
         assertFalse(Files.exists(root.resolve(".pecia")));
     }
 
+    @ParameterizedTest(name = "file {0}, flag {1} -> exit {2}")
+    @CsvSource(
+            nullValues = "none",
+            value = {
+                "none, none, 0",
+                "none, lexical, 0",
+                "none, auto, 0",
+                "none, semantic, 1",
+                "none, hybrid, 1",
+                "semantic, none, 1",
+                "semantic, lexical, 0",
+                "semantic, auto, 0",
+                "lexical, semantic, 1",
+                "hybrid, auto, 0"
+            })
+    void modeFlagOverridesTheConfiguredMode(String file, String flag, int exitCode) throws Exception {
+        if (file != null) {
+            Files.writeString(root.resolve(".pecia.toml"), "[search]\nmode = \"" + file + "\"\n");
+        }
+
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nmodeneedle\n");
+        new IndexService(loader).index(root);
+
+        int actual = flag == null
+                ? run("modeneedle", "--root", root.toString())
+                : run("modeneedle", "--root", root.toString(), "--mode", flag);
+
+        assertEquals(exitCode, actual);
+
+        if (exitCode == 0) {
+            assertTrue(out.toString().startsWith("guide.md:"), out.toString());
+            assertEquals("", err.toString());
+        } else {
+            assertEquals("", out.toString());
+            assertTrue(err.toString().startsWith("pecia query: SEMANTIC_UNAVAILABLE: "), err.toString());
+        }
+    }
+
+    @Test
+    void unavailableModePrintsWarningsThenTheErrorWithoutAnIndexHint() throws Exception {
+        Path config = Files.writeString(root.resolve(".pecia.toml"), "[chunk]\nmax_token = 64\n");
+
+        assertEquals(1, run("needle", "--root", root.toString(), "--mode", "hybrid"));
+
+        assertEquals(
+                List.of(
+                        typoWarning(config),
+                        "pecia query: SEMANTIC_UNAVAILABLE: hybrid search is not available yet;"
+                                + " use the lexical or auto mode"),
+                err.toString().lines().toList());
+        assertEquals("", out.toString());
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void unknownModeIsAUsageErrorNamingTheValidModes() {
+        assertEquals(2, run("needle", "--root", root.toString(), "--mode", "Hybrid"));
+        assertTrue(
+                err.toString()
+                        .contains("Invalid value for option '--mode': expected one of lexical, semantic, hybrid, auto"
+                                + " but was 'Hybrid'"),
+                err.toString());
+        assertEquals("", out.toString());
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
     @Test
     void missingIndexProvidesAnIndexCommandWithoutCreatingAnything() throws Exception {
         assertEquals(1, run("needle", "--root", root.toString()));
@@ -271,6 +338,11 @@ class QueryCommandTest {
         assertTrue(out.toString().contains("--root"));
         assertTrue(out.toString().contains("BM25 lexical ranking"));
         assertTrue(out.toString().contains("default: " + SearchRequest.DEFAULT_LIMIT));
+        assertTrue(out.toString().contains("--mode=<mode>"));
+        // The usage message wraps long descriptions; collapsing whitespace still catches a break inside a name.
+        assertTrue(out.toString()
+                .replaceAll("\\s+", " ")
+                .contains("(lexical, semantic, hybrid, auto), overriding search.mode in .pecia.toml (default: auto)."));
         assertEquals("", err.toString());
 
         try (Stream<Path> files = Files.list(root)) {

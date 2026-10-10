@@ -4,6 +4,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.index.IndexException;
+import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
@@ -32,6 +33,14 @@ public class IndexCommand implements Callable<Integer> {
     @Option(names = "--dry-run", description = "List candidate files without processing contents or writing an index.")
     boolean dryRun;
 
+    // Null when neither form is given, so semantic.enabled in .pecia.toml applies.
+    @Option(
+            names = "--semantic",
+            negatable = true,
+            description =
+                    "Enable or disable semantic indexing for this run, overriding semantic.enabled in .pecia.toml.")
+    Boolean semantic;
+
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
@@ -44,7 +53,8 @@ public class IndexCommand implements Callable<Integer> {
 
     /**
      * Indexes a folder or previews discovery without processing content. Configuration warnings are printed to stderr
-     * before any other output and do not change the exit code.
+     * before any other output and do not change the exit code. The semantic flags override {@code semantic.enabled} for
+     * this run, and the preview reports the resolved choice.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan or
      *     storage failure
@@ -52,18 +62,20 @@ public class IndexCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         try {
+            IndexOptions options = semantic == null ? IndexOptions.configured() : IndexOptions.semantic(semantic);
+
             if (!dryRun) {
-                IndexResult result = indexService.index(path);
+                IndexResult result = indexService.index(path, options);
                 WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
                 reportIndex(result);
 
                 return result.status() == IndexResult.Status.COMPLETE ? 0 : 1;
             }
 
-            IndexPreview preview = indexService.preview(path);
+            IndexPreview preview = indexService.preview(path, options);
             WarningPrinter.print(spec.commandLine().getErr(), preview.warnings());
             WalkResult result = preview.walkResult();
-            report(preview.loadedConfig(), result.files());
+            report(preview);
 
             for (WalkResult.Issue issue : result.issues()) {
                 spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.reason());
@@ -122,8 +134,10 @@ public class IndexCommand implements Callable<Integer> {
         }
     }
 
-    private void report(LoadedConfig loaded, List<Path> files) {
+    private void report(IndexPreview preview) {
         PrintWriter out = spec.commandLine().getOut();
+        LoadedConfig loaded = preview.loadedConfig();
+        List<Path> files = preview.walkResult().files();
 
         if (loaded.fromFile()) {
             out.println("config: " + loaded.root().resolve(PeciaConfigFile.FILE_NAME));
@@ -131,6 +145,7 @@ public class IndexCommand implements Callable<Integer> {
             out.println("config: defaults (no " + PeciaConfigFile.FILE_NAME + " found)");
         }
 
+        out.println("semantic: " + (preview.semanticEnabled() ? "enabled" : "disabled"));
         out.println(files.size() + " file(s) would be indexed:");
 
         for (Path file : files) {

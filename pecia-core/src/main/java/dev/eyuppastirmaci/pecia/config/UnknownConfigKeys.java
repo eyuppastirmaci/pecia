@@ -14,11 +14,14 @@ import org.tomlj.TomlTable;
 /**
  * Finds keys in parsed configuration that Pecia does not read. Every unknown leaf is reported with its full dotted
  * path, including leaves inside unknown tables, so each one can get its own suggestion; an empty unknown table is
- * reported as a table. Arrays, including arrays of tables, are leaves.
+ * reported as a table. Arrays, including arrays of tables, are leaves. A key named {@code model} names the only
+ * supported embedding model instead of suggesting a key.
  */
 final class UnknownConfigKeys {
 
     private static final Pattern BARE_KEY = Pattern.compile("[A-Za-z0-9_-]+");
+    private static final String MODEL_KEY = "model";
+    private static final String ONLY_SUPPORTED_MODEL = "all-MiniLM-L6-v2 is the only supported embedding model";
     private static final Comparator<Warning> SOURCE_ORDER = Comparator.comparing(
                     Warning::position,
                     Comparator.nullsLast(
@@ -52,18 +55,31 @@ final class UnknownConfigKeys {
                 if (isKnownTable(path) || !child.isEmpty()) {
                     collect(toml, child, path, source, warnings);
                 } else {
-                    warnings.add(warning(toml, path, source, "unknown table ", KeySuggestion.forTable(path)));
+                    warnings.add(
+                            warning(toml, path, source, "unknown table ", suggestion(KeySuggestion.forTable(path))));
                 }
             } else if (!isKnownKey(path)) {
-                warnings.add(warning(toml, path, source, "unknown key ", KeySuggestion.forKey(path)));
+                warnings.add(warning(toml, path, source, "unknown key ", keyNote(path)));
             }
         }
     }
 
-    private static Warning warning(
-            TomlParseResult toml, List<String> path, Path source, String kind, String suggestion) {
+    private static String keyNote(List<String> path) {
+        // A model choice would otherwise be pointed at search.mode, which is one edit away from "model".
+        if (path.getLast().equals(MODEL_KEY)) {
+            return ONLY_SUPPORTED_MODEL;
+        }
+
+        return suggestion(KeySuggestion.forKey(path));
+    }
+
+    private static String suggestion(String knownName) {
+        return knownName == null ? null : "did you mean " + knownName + "?";
+    }
+
+    private static Warning warning(TomlParseResult toml, List<String> path, Path source, String kind, String note) {
         TomlPosition position = toml.inputPositionOf(path);
-        String message = kind + display(path) + (suggestion == null ? "" : " (did you mean " + suggestion + "?)");
+        String message = kind + display(path) + (note == null ? "" : " (" + note + ")");
 
         return new Warning(
                 Warning.Code.UNKNOWN_CONFIG_KEY,

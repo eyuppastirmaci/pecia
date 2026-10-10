@@ -50,7 +50,7 @@ class ConfigKeyTest {
 
     @Test
     void tablesAreTheKnownKeysTablesInOrder() {
-        assertEquals(List.of("index", "chunk", "embed", "store"), ConfigKey.tables());
+        assertEquals(List.of("index", "chunk", "semantic", "embed", "search", "store"), ConfigKey.tables());
     }
 
     private static Set<String> knownPaths() {
@@ -81,7 +81,9 @@ class ConfigKeyTest {
         values.put(ConfigKey.INDEX_MAX_FILE_BYTES, "4096");
         values.put(ConfigKey.CHUNK_MAX_TOKENS, "128");
         values.put(ConfigKey.CHUNK_OVERLAP_TOKENS, "16");
+        values.put(ConfigKey.SEMANTIC_ENABLED, "true");
         values.put(ConfigKey.EMBED_CONCURRENCY, "4");
+        values.put(ConfigKey.SEARCH_MODE, "\"hybrid\"");
         values.put(ConfigKey.STORE_PATH, "\"custom/index.db\"");
 
         return values;

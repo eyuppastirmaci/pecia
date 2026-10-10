@@ -6,9 +6,13 @@ import static dev.eyuppastirmaci.pecia.packaging.consumer.ConsumerChecks.verifyA
 import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
+import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryResult;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
@@ -16,7 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Verifies configuration warnings through the packaged services. */
+/** Verifies configuration handling through the packaged services. */
 final class ConfigurationScenario {
 
     private ConfigurationScenario() {}
@@ -54,5 +58,49 @@ final class ConfigurationScenario {
         check(
                 query.hits().size() == 1 && query.warnings().equals(expected),
                 "Packaged queries must return hits and configuration warnings");
+    }
+
+    /** Verifies that a caller's choice for one run overrides semantic.enabled from the file. */
+    static void verifySemanticIndexingOptions(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Files.writeString(root.resolve(".pecia.toml"), "[semantic]\nenabled = true\n");
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nsemanticneedle\n");
+        IndexService indexService = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
+
+        check(indexService.preview(root).semanticEnabled(), "Packaged previews must apply semantic.enabled");
+        check(
+                !indexService.preview(root, IndexOptions.semantic(false)).semanticEnabled(),
+                "A packaged caller's choice must override semantic.enabled");
+        check(
+                indexService.index(root, IndexOptions.semantic(true)).status() == IndexResult.Status.COMPLETE,
+                "Packaged indexing must complete when the caller chooses semantic indexing");
+    }
+
+    /** Verifies that search.mode applies to queries and that a caller's mode overrides it. */
+    static void verifySearchModes(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        verifyArchiveOrigins(coreJar, runtimeDirectory);
+        Files.writeString(root.resolve(".pecia.toml"), "[search]\nmode = \"semantic\"\n");
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nmodeneedle\n");
+        PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
+        new IndexService(loader).index(root);
+        QueryService queryService = new QueryService(loader);
+        SearchRequest request = new SearchRequest("modeneedle");
+
+        try {
+            queryService.query(root, request);
+            throw new AssertionError("A configured semantic mode must fail in the packaged core");
+        } catch (QueryException failure) {
+            check(
+                    failure.reason() == QueryException.Reason.SEMANTIC_UNAVAILABLE,
+                    "An unavailable packaged search mode must be classified");
+        }
+
+        check(
+                queryService
+                                .query(root, request, QueryOptions.mode(SearchMode.LEXICAL))
+                                .hits()
+                                .size()
+                        == 1,
+                "A packaged caller's mode must override search.mode");
     }
 }

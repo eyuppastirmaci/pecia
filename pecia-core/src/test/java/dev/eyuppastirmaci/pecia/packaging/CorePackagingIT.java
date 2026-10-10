@@ -71,6 +71,16 @@ class CorePackagingIT {
     }
 
     @Test
+    void choosesSemanticIndexingPerRunUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifySemanticIndexingOptions");
+    }
+
+    @Test
+    void appliesSearchModesUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifySearchModes");
+    }
+
+    @Test
     void persistsIndexingProfilesAtomicallyUsingOnlyThePackagedCore() throws Exception {
         runConsumer("verifyIndexingProfiles");
     }

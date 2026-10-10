@@ -48,6 +48,8 @@ public final class QueryException extends Exception {
         /** Stored index structure or data failed validation. */
         CORRUPT_INDEX,
         /** Project resolution, index access, or result retrieval failed. */
-        READ_FAILED
+        READ_FAILED,
+        /** The query's search mode needs semantic search, which is not available. */
+        SEMANTIC_UNAVAILABLE
     }
 }

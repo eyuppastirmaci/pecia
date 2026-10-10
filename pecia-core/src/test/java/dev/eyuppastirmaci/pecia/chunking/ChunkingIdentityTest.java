@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfig;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerCompatibility;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
 import java.util.List;
@@ -93,10 +94,18 @@ class ChunkingIdentityTest {
     }
 
     @Test
-    void discoveryAdmissionConcurrencyAndStorageSettingsDoNotChangeIdentity() {
+    void settingsOtherThanChunkingDoNotChangeIdentity() {
         ChunkingIdentity original = ChunkingIdentity.from(config(128, 16), TOKENIZER);
-        PeciaConfig otherSettings =
-                new PeciaConfig(List.of("**/*.java"), List.of("generated/**"), 1024, 128, 16, 8, "cache/other.db");
+        PeciaConfig otherSettings = new PeciaConfig(
+                List.of("**/*.java"),
+                List.of("generated/**"),
+                1024,
+                128,
+                16,
+                8,
+                "cache/other.db",
+                true,
+                SearchMode.HYBRID);
         ChunkingIdentity alternative = ChunkingIdentity.from(otherSettings, TOKENIZER);
 
         assertEquals(original, alternative);
@@ -185,6 +194,7 @@ class ChunkingIdentityTest {
     }
 
     private static PeciaConfig config(int maxTokens, int overlapTokens) {
-        return new PeciaConfig(List.of(), List.of(), 4096, maxTokens, overlapTokens, 1, ".pecia/index.db");
+        return new PeciaConfig(
+                List.of(), List.of(), 4096, maxTokens, overlapTokens, 1, ".pecia/index.db", false, SearchMode.AUTO);
     }
 }

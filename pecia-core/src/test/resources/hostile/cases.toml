@@ -517,6 +517,104 @@ exception = "IOException"
 message = "Database path must identify a file"
 description = "A storage path naming the project directory."
 
+[[config]]
+id = "semantic-enabled-string"
+input = "config/semantic-enabled-string.toml"
+sha256 = "27cf1319b3fce6a25497eab88e417e402a787c42d65f64ba2d598c44114441bd"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "semantic.enabled must be a boolean"
+description = "A quoted string where semantic.enabled expects a boolean."
+
+[[config]]
+id = "semantic-as-value"
+input = "config/semantic-as-value.toml"
+sha256 = "c34c47eebb3383b407eb8bc0e8fe54646d55df0948abc561a84b57ded7f9302f"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "semantic must be a table"
+description = "The semantic section written as a plain value."
+
+[[config]]
+id = "search-as-value"
+input = "config/search-as-value.toml"
+sha256 = "593268bf1eb5707e6e2d3e6b8145466e47f5475e55ed56a9364c85a3e32dcbed"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "search must be a table"
+description = "The search section written as a plain value."
+
+[[config]]
+id = "search-mode-unknown"
+input = "config/search-mode-unknown.toml"
+sha256 = "81c91393cd6b5aa4d4808bd743c11243e645cbe13bde3155f6dc4a23555c9e65"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = 'search.mode must be one of lexical, semantic, hybrid, auto, got "fuzzy"'
+description = "A search mode Pecia does not define."
+
+[[config]]
+id = "search-mode-uppercase"
+input = "config/search-mode-uppercase.toml"
+sha256 = "e1953b99c1e5e8a4a3c4f061b2015a9d4040543086b07a1ef9997d72ec35409b"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = 'search.mode must be one of lexical, semantic, hybrid, auto, got "Hybrid"'
+description = "A capitalized search mode; mode names are lowercase and case-sensitive."
+
+[[config]]
+id = "search-mode-integer"
+input = "config/search-mode-integer.toml"
+sha256 = "019947b41468ebbeb33a213773b4555d7f06eeeea1c563694bc8e918bebf5390"
+outcome = "rejected"
+stage = "load"
+exception = "IllegalArgumentException"
+message = "search.mode must be a string"
+description = "An integer where search.mode expects a string."
+
+[[config]]
+id = "semantic-enabled"
+input = "config/semantic-enabled.toml"
+sha256 = "4f85e1a36a7f3e4142ba582a1e66721daa3c2dd01c0d7d2b99527835e23ed5aa"
+outcome = "accepted"
+status = "COMPLETE"
+description = "Semantic indexing enabled; indexing completes."
+
+[[config]]
+id = "search-mode-semantic"
+input = "config/search-mode-semantic.toml"
+sha256 = "225317a1da48fa2c74e943b34cbda9cb4521e2ab89afa1156b77cdf9c742fcb6"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A search mode that is not available yet; it affects only queries, so indexing completes."
+
+[[config]]
+id = "semantic-key-typo"
+input = "config/semantic-key-typo.toml"
+sha256 = "b5d98f1f1b1371f2aabb71de727de92ae262268a762aa59d472d53fc94ff579d"
+outcome = "accepted"
+status = "COMPLETE"
+description = "A misspelled semantic key, ignored so semantic indexing stays off."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 2, column = 1, message = "unknown key semantic.enable (did you mean semantic.enabled?)" },
+]
+
+[[config]]
+id = "semantic-model"
+input = "config/semantic-model.toml"
+sha256 = "1aa4d8ea931a2fc8acd544d765a144a006cb2c7cdec85652f33b64bae5abe430"
+outcome = "accepted"
+status = "COMPLETE"
+description = "An attempt to choose another embedding model, which Pecia does not support."
+warnings = [
+    { code = "UNKNOWN_CONFIG_KEY", line = 2, column = 1, message = "unknown key semantic.model (all-MiniLM-L6-v2 is the only supported embedding model)" },
+]
+
 # Hostile queries. Each case searches a project whose only file contains the text in HostileInputCorpusTest.
 # The query is given literally, or generated as `repeat` written `times` times joined by `separator`. limit defaults
 # to 10. An accepted case expects the exact hit count and an unchanged index; a rejected case expects an

@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.config;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -11,6 +12,21 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 class PeciaConfigTest {
+
+    @Test
+    void defaultsLeaveSemanticIndexingOffAndSearchInAutoMode() {
+        PeciaConfig defaults = PeciaConfig.defaults();
+
+        assertFalse(defaults.semanticEnabled());
+        assertEquals(SearchMode.AUTO, defaults.searchMode());
+    }
+
+    @Test
+    void rejectsAMissingSearchMode() {
+        assertThrows(
+                NullPointerException.class,
+                () -> new PeciaConfig(List.of(), List.of(), 1024, 256, 32, 2, ".pecia/index.db", false, null));
+    }
 
     @Test
     void rejectsNonPositiveMaxTokens() {
@@ -24,7 +40,7 @@ class PeciaConfigTest {
     void rejectsNonPositiveMaxFileBytes() {
         IllegalArgumentException e = assertThrows(
                 IllegalArgumentException.class,
-                () -> new PeciaConfig(List.of(), List.of(), 0, 256, 32, 2, ".pecia/index.db"));
+                () -> new PeciaConfig(List.of(), List.of(), 0, 256, 32, 2, ".pecia/index.db", false, SearchMode.AUTO));
 
         assertTrue(e.getMessage().contains("max_file_bytes"));
     }
@@ -92,6 +108,7 @@ class PeciaConfigTest {
     }
 
     private static PeciaConfig config(int maxTokens, int overlapTokens, int concurrency, String storePath) {
-        return new PeciaConfig(List.of(), List.of(), 1024, maxTokens, overlapTokens, concurrency, storePath);
+        return new PeciaConfig(
+                List.of(), List.of(), 1024, maxTokens, overlapTokens, concurrency, storePath, false, SearchMode.AUTO);
     }
 }

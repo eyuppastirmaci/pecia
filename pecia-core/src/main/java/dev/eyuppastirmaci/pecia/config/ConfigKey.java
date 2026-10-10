@@ -13,7 +13,9 @@ enum ConfigKey {
     INDEX_MAX_FILE_BYTES("index", "max_file_bytes"),
     CHUNK_MAX_TOKENS("chunk", "max_tokens"),
     CHUNK_OVERLAP_TOKENS("chunk", "overlap_tokens"),
+    SEMANTIC_ENABLED("semantic", "enabled"),
     EMBED_CONCURRENCY("embed", "concurrency"),
+    SEARCH_MODE("search", "mode"),
     STORE_PATH("store", "path");
 
     private final String table;

@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.search;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
@@ -38,7 +39,8 @@ public final class QueryService {
      *     directory
      * @param request the same validated plain-text request accepted by LexicalSearch
      * @return immutable ranked hits; no matches is a successful empty result
-     * @throws QueryException if context/index access or retrieval fails, preserving the cause
+     * @throws QueryException if the configured search mode is unavailable or context/index access or retrieval
+     *     fails, preserving the cause
      * @throws IllegalArgumentException if query/configuration/path validation fails
      * @throws NullPointerException if a required argument is null
      */
@@ -48,23 +50,46 @@ public final class QueryService {
 
     /**
      * Searches like {@link #search} and also returns the configuration warnings found while resolving the project.
-     * A {@link QueryException} raised after the configuration loaded carries the same warnings.
+     * A {@link QueryException} raised after the configuration loaded carries the same warnings. The search mode comes
+     * from {@code search.mode}, as described for {@link #query(Path, SearchRequest, QueryOptions)}.
      *
      * @param startDirectory project context starting directory, usually the caller's working directory
      * @param request the same validated plain-text request accepted by LexicalSearch
      * @return immutable ranked hits and configuration warnings
-     * @throws QueryException if context/index access or retrieval fails, preserving the cause
+     * @throws QueryException if the configured search mode is unavailable or context/index access or retrieval
+     *     fails, preserving the cause
      * @throws IllegalArgumentException if query/configuration/path validation fails
      * @throws NullPointerException if a required argument is null
      */
     public QueryResult query(Path startDirectory, SearchRequest request) throws QueryException {
+        return query(startDirectory, request, QueryOptions.configured());
+    }
+
+    /**
+     * Searches like {@link #query(Path, SearchRequest)} in the mode the caller chooses, which overrides {@code
+     * search.mode}. Only lexical search exists so far: {@link SearchMode#LEXICAL} and {@link SearchMode#AUTO} search
+     * lexically, while {@link SearchMode#SEMANTIC} and {@link SearchMode#HYBRID} fail with {@link
+     * QueryException.Reason#SEMANTIC_UNAVAILABLE} after the configuration loads and before the index is opened.
+     *
+     * @param startDirectory project context starting directory, usually the caller's working directory
+     * @param request the same validated plain-text request accepted by LexicalSearch
+     * @param options the caller's choices for this query
+     * @return immutable ranked hits and configuration warnings
+     * @throws QueryException if the search mode is unavailable or context/index access or retrieval fails,
+     *     preserving the cause
+     * @throws IllegalArgumentException if query/configuration/path validation fails
+     * @throws NullPointerException if a required argument is null, before any filesystem access
+     */
+    public QueryResult query(Path startDirectory, SearchRequest request, QueryOptions options) throws QueryException {
         // Apply the existing compiler's limits before any filesystem or database access.
         new LexicalQueryCompiler().compile(request);
+        Objects.requireNonNull(options, "options");
         List<Warning> warnings = List.of();
 
         try {
             ProjectContext context = contextResolver.resolve(startDirectory);
             warnings = context.loadedConfig().warnings();
+            requireAvailable(options.resolveMode(context.loadedConfig().config()), warnings);
 
             try (SqliteStorage storage = storageOpener.open(context)) {
                 return new QueryResult(storage.lexicalSearch().search(request), warnings);
@@ -83,6 +108,23 @@ public final class QueryService {
         } catch (IOException | SQLException | SearchException failure) {
             throw new QueryException(
                     QueryException.Reason.READ_FAILED, "Could not query project index", failure, warnings);
+        }
+    }
+
+    private static void requireAvailable(SearchMode mode, List<Warning> warnings) throws QueryException {
+        // Auto searches lexically because nothing semantic can be ready before semantic search exists.
+        boolean available =
+                switch (mode) {
+                    case LEXICAL, AUTO -> true;
+                    case SEMANTIC, HYBRID -> false;
+                };
+
+        if (!available) {
+            throw new QueryException(
+                    QueryException.Reason.SEMANTIC_UNAVAILABLE,
+                    mode.configValue() + " search is not available yet; use the lexical or auto mode",
+                    null,
+                    warnings);
         }
     }
 

@@ -1,13 +1,16 @@
 package dev.eyuppastirmaci.pecia.config;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
- * Validated settings for candidate discovery, chunking, embedding, and storage.
+ * Validated settings for candidate discovery, chunking, semantic indexing, embedding, searching, and storage.
  *
  * @param include project-relative globs; an empty list accepts every candidate
  * @param exclude project-relative globs that take precedence over includes
  * @param storePath database path, resolved against the project root when relative
+ * @param semanticEnabled whether indexing also builds embeddings for semantic search
+ * @param searchMode the mode queries use when the caller does not choose one
  */
 public record PeciaConfig(
         List<String> include,
@@ -16,12 +19,18 @@ public record PeciaConfig(
         int maxTokens,
         int overlapTokens,
         int embedConcurrency,
-        String storePath) {
+        String storePath,
+        boolean semanticEnabled,
+        SearchMode searchMode) {
 
-    /** Copies filter lists and rejects invalid limits or a blank storage path or one containing NUL. */
+    /**
+     * Copies filter lists and rejects invalid limits, a blank storage path or one containing NUL, and a missing search
+     * mode.
+     */
     public PeciaConfig {
         include = List.copyOf(include);
         exclude = List.copyOf(exclude);
+        Objects.requireNonNull(searchMode, "searchMode");
 
         if (maxFileBytes <= 0) {
             throw new IllegalArgumentException("index.max_file_bytes must be positive, got " + maxFileBytes);
@@ -103,6 +112,8 @@ public record PeciaConfig(
                 256,
                 32,
                 2,
-                ".pecia/index.db");
+                ".pecia/index.db",
+                false,
+                SearchMode.AUTO);
     }
 }

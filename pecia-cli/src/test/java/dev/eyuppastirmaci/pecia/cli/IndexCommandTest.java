@@ -21,6 +21,9 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
 
 class IndexCommandTest {
@@ -151,6 +154,57 @@ class IndexCommandTest {
 
         assertEquals(0, exitCode);
         assertTrue(out.toString().contains("defaults (no .pecia.toml found)"));
+    }
+
+    @ParameterizedTest(name = "file {0}, flag {1} -> {2}")
+    @CsvSource(
+            nullValues = "none",
+            value = {
+                "none, none, disabled",
+                "none, --semantic, enabled",
+                "none, --no-semantic, disabled",
+                "true, none, enabled",
+                "true, --semantic, enabled",
+                "true, --no-semantic, disabled",
+                "false, none, disabled",
+                "false, --semantic, enabled",
+                "false, --no-semantic, disabled"
+            })
+    void dryRunReportsTheSemanticChoiceWithTheFlagOverridingTheFile(Boolean file, String flag, String expected)
+            throws IOException {
+        Files.writeString(root.resolve("notes.md"), "notes");
+
+        if (file != null) {
+            Files.writeString(root.resolve(".pecia.toml"), "[semantic]\nenabled = " + file + "\n");
+        }
+
+        int exitCode = flag == null ? run(root.toString(), "--dry-run") : run(root.toString(), "--dry-run", flag);
+
+        assertEquals(0, exitCode);
+        assertEquals("semantic: " + expected, out.toString().lines().toList().get(1));
+        assertEquals("", err.toString());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"--semantic", "--no-semantic"})
+    void semanticFlagsLeaveTheRealIndexSummaryUnchanged(String flag) throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+
+        assertEquals(0, run(root.toString(), flag));
+        String withFlag = out.toString();
+        assertEquals("", err.toString());
+
+        // Indexing from scratch without the flag prints the same summary, because embeddings do not exist yet.
+        deleteIndex();
+        assertSuccessfulIndex(1, 1, 0, 0, 1);
+        assertEquals(withFlag, out.toString());
+    }
+
+    @Test
+    void contradictorySemanticFlagsAreAUsageError() {
+        assertEquals(2, run(root.toString(), "--dry-run", "--semantic", "--no-semantic"));
+        assertTrue(err.toString().contains("option '--semantic' should be specified only once"), err.toString());
+        assertFalse(Files.exists(root.resolve(".pecia")));
     }
 
     @Test
@@ -412,6 +466,7 @@ class IndexCommandTest {
     void helpAndUsageErrorsDoNotOpenStorage() {
         assertEquals(0, run(root.toString(), "--help"));
         assertTrue(out.toString().contains("local lexical index"));
+        assertTrue(out.toString().contains("--[no-]semantic"));
         assertFalse(out.toString().contains("embeds"));
         assertFalse(Files.exists(root.resolve(".pecia")));
 

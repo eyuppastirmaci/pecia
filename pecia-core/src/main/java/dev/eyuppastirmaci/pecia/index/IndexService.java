@@ -42,10 +42,28 @@ public final class IndexService {
      * @throws IllegalArgumentException if configuration or glob patterns are invalid
      */
     public IndexPreview preview(Path target) throws IOException {
+        return preview(target, IndexOptions.configured());
+    }
+
+    /**
+     * Previews like {@link #preview(Path)} and also reports whether the run would build embeddings for semantic
+     * search, with the caller's choices overriding the project configuration.
+     *
+     * @param target directory whose descendants are scanned
+     * @param options the caller's choices for the previewed run
+     * @return the preview, including the resolved semantic indexing choice
+     * @throws NullPointerException if target or options is null, before any filesystem access
+     * @throws IOException if configuration cannot be read, the target is invalid, or traversal cannot start
+     * @throws IllegalArgumentException if configuration or glob patterns are invalid
+     */
+    public IndexPreview preview(Path target, IndexOptions options) throws IOException {
+        Objects.requireNonNull(options, "options");
         ProjectContext context = contextResolver.resolve(target);
         WalkResult result = scan(context);
+        boolean semanticEnabled =
+                options.resolveSemanticEnabled(context.loadedConfig().config());
 
-        return new IndexPreview(context.target(), context.loadedConfig(), result);
+        return new IndexPreview(context.target(), context.loadedConfig(), result, semanticEnabled);
     }
 
     /**
@@ -65,6 +83,23 @@ public final class IndexService {
      *     the cause
      */
     public IndexResult index(Path target) throws IOException, IndexException {
+        return index(target, IndexOptions.configured());
+    }
+
+    /**
+     * Indexes like {@link #index(Path)} with the caller's choices for this run, which override the project
+     * configuration. Pecia does not build embeddings yet, so a run indexes lexically whatever semantic indexing
+     * resolves to; {@link #preview(Path, IndexOptions)} reports the resolved choice.
+     *
+     * @param target directory whose descendants are indexed
+     * @param options the caller's choices for this run
+     * @throws NullPointerException if target or options is null, before any filesystem access
+     * @throws IOException if target/configuration resolution or initial discovery fails, before storage is opened
+     * @throws IllegalArgumentException if configuration, paths, globs or tokenizer budgets are invalid
+     * @throws IndexException if discovery is incomplete or storage fails; includes completed work and the cause
+     */
+    public IndexResult index(Path target, IndexOptions options) throws IOException, IndexException {
+        Objects.requireNonNull(options, "options");
         ProjectContext context = contextResolver.resolve(target);
         WalkResult scanResult = scan(context);
 
