@@ -306,7 +306,7 @@ sha256 = "4967e639ee4eebf5c948f30a46282cf1a9511c55d055ce7baeaf9e8e86e7e30b"
 outcome = "rejected"
 stage = "indexing"
 exception = "IllegalArgumentException"
-message = "maxTokens must be greater than 2 and at most 256"
+message = "chunk.max_tokens must be between 3 and 256, got 257"
 description = "One token above the largest budget."
 
 [[config]]
@@ -324,7 +324,7 @@ sha256 = "9326548d09bb4a8c5cf8c0a6a9a8e5fa738d75e05c7fa41a05144d0f8c009ced"
 outcome = "rejected"
 stage = "indexing"
 exception = "IllegalArgumentException"
-message = "maxTokens must be greater than 2 and at most 256"
+message = "chunk.max_tokens must be between 3 and 256, got 2"
 description = "A budget used up by the special tokens."
 
 [[config]]
@@ -342,7 +342,7 @@ sha256 = "551c1a60e076f7590a0102b425da95c480e3d09fce2aa7ae311fa48b03532abd"
 outcome = "rejected"
 stage = "indexing"
 exception = "IllegalArgumentException"
-message = "overlapTokens must be non-negative and less than 32"
+message = "chunk.overlap_tokens must be less than 32, got 32"
 description = "Overlap equal to the content budget."
 
 [[config]]

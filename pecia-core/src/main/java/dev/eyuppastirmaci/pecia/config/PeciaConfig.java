@@ -50,6 +50,47 @@ public record PeciaConfig(
     }
 
     /**
+     * Checks the chunk settings against a tokenizer's input limit and names the configuration keys in errors. The
+     * constructor cannot do this because the limit depends on the tokenizer that indexing uses.
+     *
+     * @param maxInputTokens the tokenizer's input limit, including special tokens
+     * @param specialTokenCount the tokens the tokenizer adds to every input
+     * @throws IllegalArgumentException if {@code chunk.max_tokens} leaves no content tokens or exceeds the input
+     *     limit, or {@code chunk.overlap_tokens} is not below the content budget
+     */
+    public void requireChunkBudget(int maxInputTokens, int specialTokenCount) {
+        if (maxTokens <= specialTokenCount || maxTokens > maxInputTokens) {
+            throw new IllegalArgumentException("chunk.max_tokens must be between "
+                    + (specialTokenCount + 1)
+                    + " and "
+                    + maxInputTokens
+                    + ", got "
+                    + maxTokens
+                    + " (the tokenizer accepts "
+                    + maxInputTokens
+                    + " tokens including "
+                    + specialTokenCount
+                    + " special tokens)");
+        }
+
+        int contentBudget = maxTokens - specialTokenCount;
+
+        if (overlapTokens >= contentBudget) {
+            throw new IllegalArgumentException("chunk.overlap_tokens must be less than "
+                    + contentBudget
+                    + ", got "
+                    + overlapTokens
+                    + " (chunk.max_tokens = "
+                    + maxTokens
+                    + " leaves "
+                    + contentBudget
+                    + " content tokens after "
+                    + specialTokenCount
+                    + " special tokens)");
+        }
+    }
+
+    /**
      * Returns the config used when no .pecia.toml overrides anything.
      *
      * @return the default configuration
