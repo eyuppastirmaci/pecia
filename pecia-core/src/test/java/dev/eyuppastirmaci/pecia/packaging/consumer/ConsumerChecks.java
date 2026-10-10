@@ -6,6 +6,7 @@ import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
 import dev.eyuppastirmaci.pecia.chunking.markdown.MarkdownChunker;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.Document;
@@ -19,6 +20,7 @@ import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchException;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
@@ -70,6 +72,7 @@ final class ConsumerChecks {
                 IndexPreview.class,
                 PeciaConfigLoader.class,
                 PeciaConfigParser.class,
+                SearchMode.class,
                 DocumentExtractionService.class,
                 Document.class,
                 FileContentLoader.class,
@@ -91,6 +94,7 @@ final class ConsumerChecks {
                 SearchScore.class,
                 SearchException.class,
                 QueryService.class,
+                QueryOptions.class,
                 QueryException.class,
                 IndexingProfile.class,
                 IndexAccessException.class)) {

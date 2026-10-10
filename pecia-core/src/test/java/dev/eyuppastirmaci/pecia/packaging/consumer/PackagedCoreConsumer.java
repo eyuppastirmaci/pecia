@@ -124,6 +124,11 @@ public final class PackagedCoreConsumer {
         ConfigurationScenario.verifySemanticIndexingOptions(root, coreJar, runtimeDirectory);
     }
 
+    /** Runs {@link ConfigurationScenario#verifySearchModes}. */
+    public static void verifySearchModes(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        ConfigurationScenario.verifySearchModes(root, coreJar, runtimeDirectory);
+    }
+
     /** Runs {@link RetrievalScenario#verifyLexicalSearch}. */
     public static void verifyLexicalSearch(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
         RetrievalScenario.verifyLexicalSearch(root, coreJar, runtimeDirectory);

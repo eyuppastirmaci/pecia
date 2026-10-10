@@ -76,6 +76,11 @@ class CorePackagingIT {
     }
 
     @Test
+    void appliesSearchModesUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifySearchModes");
+    }
+
+    @Test
     void persistsIndexingProfilesAtomicallyUsingOnlyThePackagedCore() throws Exception {
         runConsumer("verifyIndexingProfiles");
     }
