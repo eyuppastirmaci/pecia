@@ -62,10 +62,16 @@ Each configuration case uses one file from `config/` as `.pecia.toml` in a proje
 | `concurrency-1` / `concurrency-0` | the smallest embedding concurrency and zero | accepted / rejected on load |
 | `blank-store-path`, `nul-in-store-path` | a blank storage path and one containing NUL | rejected on load |
 | `store-path-is-directory` | `store.path = "."` | rejected on indexing with an `IOException` |
+| `semantic-enabled-string`, `search-mode-integer` | a quoted `"true"` for `semantic.enabled` and an integer for `search.mode` | rejected on load |
+| `semantic-as-value`, `search-as-value` | `semantic = true` and `search = "hybrid"` instead of tables | rejected on load |
+| `search-mode-unknown`, `search-mode-uppercase` | `fuzzy` and `Hybrid` | rejected on load with a message listing the lowercase modes |
+| `semantic-enabled`, `search-mode-semantic` | semantic indexing enabled, and a search mode that is not available yet | accepted; the mode affects only queries |
+| `semantic-key-typo` | `semantic.enable` | accepted with a warning suggesting `semantic.enabled` |
+| `semantic-model` | `semantic.model`, an attempt to choose another embedding model | accepted with a warning that all-MiniLM-L6-v2 is the only supported model |
 
-Unknown keys never change which settings apply: their values are ignored and reported as `UNKNOWN_CONFIG_KEY` warnings, with a suggestion when a known key is close. Token-budget limits depend on the tokenizer, so they are checked when indexing starts rather than when the configuration loads.
+Unknown keys never change which settings apply: their values are ignored and reported as `UNKNOWN_CONFIG_KEY` warnings, with a suggestion when a known key is close. A key named `model` names the only supported embedding model instead, because the closest known key, `search.mode`, would mislead. Token-budget limits depend on the tokenizer, so they are checked when indexing starts rather than when the configuration loads.
 
-`PeciaConfigParserTest`, `PeciaConfigLoaderTest`, `PeciaConfigTest`, and `UnknownConfigKeysTest` cover the same rules at the unit level.
+`PeciaConfigParserTest`, `PeciaConfigLoaderTest`, `PeciaConfigTest`, `SearchModeTest`, and `UnknownConfigKeysTest` cover the same rules at the unit level.
 
 ## Queries
 
