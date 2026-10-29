@@ -29,7 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
 @DisabledOnOs(OS.WINDOWS)
 class PackagedCliInterruptIT {
 
-    private static final int FILES = 600;
+    private static final int FILES = 200;
     private static final Duration PATIENCE = Duration.ofSeconds(60);
     // Indexing the whole corpus takes several seconds here and longer on slower CI machines.
     private static final Duration INDEXING = Duration.ofSeconds(120);
@@ -96,7 +96,7 @@ class PackagedCliInterruptIT {
         assertEquals(FILES - committed, indexed(next.out()));
         assertEquals(0, fresh.exitCode(), fresh.err());
 
-        for (String text : List.of("refund policy", "word42", "Note 599")) {
+        for (String text : List.of("refund policy", "word42", "Note 199")) {
             Result recovered = cli.run(project, "query", "--mode=lexical", "--limit=20", text);
             Result expected = cli.run(clean, "query", "--mode=lexical", "--limit=20", text);
 

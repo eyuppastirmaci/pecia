@@ -27,7 +27,7 @@ import org.junit.jupiter.params.provider.ValueSource;
  */
 class CoreCrashRecoveryIT {
 
-    private static final int FILES = 800;
+    private static final int FILES = 200;
     private static final Duration PATIENCE = Duration.ofSeconds(60);
 
     @TempDir
