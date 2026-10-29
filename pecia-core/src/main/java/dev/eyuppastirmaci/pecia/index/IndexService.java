@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.index;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
+import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
@@ -10,15 +11,23 @@ import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.semantic.ModelCache;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
+import dev.eyuppastirmaci.pecia.semantic.ModelLookup;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.semantic.ModelProvider;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
+import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
+import dev.eyuppastirmaci.pecia.storage.sqlite.IndexAccessException;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -30,6 +39,7 @@ public final class IndexService {
     private final ModelProvider models;
     private final TextEmbedder.Opener embedders;
     private final Supplier<EmbeddingProfile> profiles;
+    private final ModelLookup modelLookup;
 
     /**
      * Creates an indexing service that opens SQLite storage for each resolved project and keeps the semantic model in
@@ -77,6 +87,18 @@ public final class IndexService {
             ModelProvider models,
             TextEmbedder.Opener embedders,
             Supplier<EmbeddingProfile> profiles) {
+        // A lambda, so the cache's class is reached only when a semantic preview looks for the model.
+        this(configLoader, storageOpener, models, embedders, profiles, () -> new ModelCache().find());
+    }
+
+    IndexService(
+            PeciaConfigLoader configLoader,
+            StorageOpener storageOpener,
+            ModelProvider models,
+            TextEmbedder.Opener embedders,
+            Supplier<EmbeddingProfile> profiles,
+            ModelLookup modelLookup) {
+        this.modelLookup = Objects.requireNonNull(modelLookup, "modelLookup");
         this.contextResolver = new ProjectContextResolver(configLoader);
         this.storageOpener = Objects.requireNonNull(storageOpener, "storageOpener");
         this.models = Objects.requireNonNull(models, "models");
@@ -90,16 +112,17 @@ public final class IndexService {
     }
 
     /**
-     * Discovers candidate files using project configuration without processing their contents or
-     * writing index data.
+     * Finds what an indexing run would do without writing anything: discovers the candidates, then reads, hashes,
+     * and validates each one and compares it with the index, which is opened read-only (an index of an older format
+     * is upgraded in a temporary copy). Candidates are never chunked or embedded, and nothing is downloaded.
      *
      * @param target directory whose descendants are scanned
-     * @return the normalized absolute target, loaded configuration, and target-relative files with
-     *     recoverable scan issues
+     * @return the normalized absolute target, loaded configuration, target-relative files with recoverable scan
+     *     issues, and what the run would do with the index and each candidate
      * @throws NullPointerException if target is null
      * @throws IOException if configuration cannot be read, the target is invalid, or traversal cannot
      *     start
-     * @throws IllegalArgumentException if configuration or glob patterns are invalid
+     * @throws IllegalArgumentException if configuration, glob patterns, or the chunk budget are invalid
      */
     public IndexPreview preview(Path target) throws IOException {
         return preview(target, IndexOptions.configured());
@@ -114,7 +137,7 @@ public final class IndexService {
      * @return the preview, including the resolved semantic indexing choice
      * @throws NullPointerException if target or options is null, before any filesystem access
      * @throws IOException if configuration cannot be read, the target is invalid, or traversal cannot start
-     * @throws IllegalArgumentException if configuration or glob patterns are invalid
+     * @throws IllegalArgumentException if configuration, glob patterns, or the chunk budget are invalid
      */
     public IndexPreview preview(Path target, IndexOptions options) throws IOException {
         Objects.requireNonNull(options, "options");
@@ -122,8 +145,241 @@ public final class IndexService {
         WalkResult result = scan(context);
         boolean semanticEnabled =
                 options.resolveSemanticEnabled(context.loadedConfig().config());
+        // Constructing the inspector validates the chunk budget, as a run does before it opens storage.
+        Preview preview =
+                new Preview(context, result, new FileInspector(context), semanticEnabled ? profiles.get() : null);
+        IndexPreview.Changes changes = preview.changes();
 
-        return new IndexPreview(context.target(), context.loadedConfig(), result, semanticEnabled);
+        if (semanticEnabled && changes.index() != IndexPreview.IndexState.UNREADABLE) {
+            changes = withModel(changes);
+        }
+
+        return new IndexPreview(
+                context.target(), context.databasePath(), context.loadedConfig(), result, semanticEnabled, changes);
+    }
+
+    /** Adds whether the model is cached, which the preview finds out without downloading or loading anything. */
+    private IndexPreview.Changes withModel(IndexPreview.Changes changes) {
+        IndexPreview.SemanticChanges semantic = changes.semantic();
+        IndexPreview.ModelState state;
+
+        try {
+            state = modelLookup.find().isPresent() ? IndexPreview.ModelState.CACHED : IndexPreview.ModelState.DOWNLOAD;
+        } catch (ModelException unreadable) {
+            state = IndexPreview.ModelState.UNAVAILABLE;
+        }
+
+        SemanticModel model = SemanticModel.MINILM;
+        IndexPreview.SemanticChanges withModel = new IndexPreview.SemanticChanges(
+                model.name(),
+                state,
+                state == IndexPreview.ModelState.DOWNLOAD ? model.size() : 0,
+                semantic.chunksToEmbed(),
+                semantic.embeddingsToDiscard());
+
+        return new IndexPreview.Changes(
+                changes.index(),
+                changes.newFiles(),
+                changes.changedFiles(),
+                changes.rechunkedFiles(),
+                changes.unchangedFiles(),
+                changes.rejectedFiles(),
+                changes.removedFiles(),
+                withModel,
+                null,
+                null);
+    }
+
+    /**
+     * Classifies a project's candidates against its index as the run would find it, and counts their chunks and, for
+     * a semantic run, what it would embed; {@code profile} is null for a lexical run.
+     */
+    private record Preview(ProjectContext context, WalkResult scan, FileInspector inspector, EmbeddingProfile profile) {
+
+        IndexPreview.Changes changes() throws IOException {
+            // Opening read-only never creates the index; a missing one is reported as not found.
+            try (SqliteStorage storage = SqliteStorage.openReadOnly(context.databasePath(), context.projectRoot())) {
+                return classify(storage, IndexPreview.IndexState.CURRENT);
+            } catch (IndexAccessException failure) {
+                if (failure.reason() == IndexAccessException.Reason.NOT_FOUND) {
+                    return classifyWithoutIndex();
+                }
+
+                if (failure.reason() != IndexAccessException.Reason.MIGRATION_REQUIRED) {
+                    return IndexPreview.Changes.unreadable(StorageFailure.of(failure), failure.getMessage());
+                }
+            } catch (SQLException failure) {
+                return IndexPreview.Changes.unreadable(StorageFailure.of(failure), failure.getMessage());
+            }
+
+            return classifyUpgraded();
+        }
+
+        /** Upgrades a copy of an index of an older format outside the project and classifies against the copy. */
+        private IndexPreview.Changes classifyUpgraded() throws IOException {
+            Path database = context.databasePath();
+            Path directory = Files.createTempDirectory("pecia-preview-");
+
+            try {
+                Path copy = directory.resolve(database.getFileName());
+                Files.copy(database, copy);
+                // A journal left by an interrupted run belongs to the database; the upgrade rolls it back first.
+                Path journal = database.resolveSibling(database.getFileName() + "-journal");
+
+                if (Files.exists(journal, LinkOption.NOFOLLOW_LINKS)) {
+                    Files.copy(journal, directory.resolve(journal.getFileName()));
+                }
+
+                try (SqliteStorage storage = SqliteStorage.open(copy, context.projectRoot())) {
+                    return classify(storage, IndexPreview.IndexState.UPGRADE);
+                } catch (SQLException failure) {
+                    return IndexPreview.Changes.unreadable(StorageFailure.of(failure), failure.getMessage());
+                }
+            } finally {
+                deleteRecursively(directory);
+            }
+        }
+
+        private IndexPreview.Changes classifyWithoutIndex() {
+            ChunkEstimate estimate = new ChunkEstimate(context.loadedConfig().config());
+            List<IndexPreview.PlannedFile> added = new ArrayList<>();
+            List<IndexResult.FileIssue> rejected = new ArrayList<>();
+
+            for (Path candidate : scan.files()) {
+                try {
+                    added.add(planned(inspector.inspectNew(candidate), estimate));
+                } catch (ExtractionException failure) {
+                    rejected.add(issue(context, candidate, failure));
+                }
+            }
+
+            IndexPreview.Changes changes = new IndexPreview.Changes(
+                    IndexPreview.IndexState.NONE,
+                    added,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    rejected,
+                    List.of(),
+                    null,
+                    null,
+                    null);
+
+            return profile == null ? changes : withEmbeddings(changes, 0, 0);
+        }
+
+        private IndexPreview.Changes classify(SqliteStorage storage, IndexPreview.IndexState state)
+                throws IOException, SQLException {
+            ChunkEstimate estimate = new ChunkEstimate(context.loadedConfig().config());
+            Map<Long, Long> stored = storage.chunkCounts();
+            Map<Long, EmbeddingCoverage> coverage =
+                    profile == null ? Map.of() : storage.embeddingCoverageByFile(profile);
+            List<IndexPreview.PlannedFile> added = new ArrayList<>();
+            List<IndexPreview.PlannedFile> changed = new ArrayList<>();
+            List<IndexPreview.PlannedFile> rechunked = new ArrayList<>();
+            List<IndexPreview.PlannedFile> unchanged = new ArrayList<>();
+            List<IndexResult.FileIssue> rejected = new ArrayList<>();
+            long backfill = 0;
+
+            for (Path candidate : scan.files()) {
+                try {
+                    switch (inspector.inspect(candidate, storage)) {
+                        case FileInspector.Unchanged kept -> {
+                            unchanged.add(storedFile(kept.file(), stored));
+                            EmbeddingCoverage fileCoverage =
+                                    coverage.get(kept.file().id());
+
+                            // Unchanged chunks without an embedding of this model are embedded from storage.
+                            if (fileCoverage != null) {
+                                backfill += fileCoverage.stale() + fileCoverage.missing();
+                            }
+                        }
+                        case FileInspector.Readable readable -> {
+                            List<IndexPreview.PlannedFile> kind =
+                                    switch (readable.kind()) {
+                                        case NEW -> added;
+                                        case CHANGED -> changed;
+                                        case RECHUNKED -> rechunked;
+                                    };
+                            kind.add(planned(readable, estimate));
+                        }
+                    }
+                } catch (ExtractionException failure) {
+                    rejected.add(issue(context, candidate, failure));
+                }
+            }
+
+            List<IndexPreview.PlannedFile> removed = List.of();
+
+            // A run deletes only after reading every candidate and path, as indexFiles does.
+            if (rejected.isEmpty() && scan.complete()) {
+                IndexDeletionPlanner planner = new IndexDeletionPlanner(context);
+                removed = planner.plan(scan, storage.files().findAll()).stream()
+                        .map(file -> storedFile(file, stored))
+                        .toList();
+            }
+
+            IndexPreview.Changes changes = new IndexPreview.Changes(
+                    state, added, changed, rechunked, unchanged, rejected, removed, null, null, null);
+
+            if (profile == null) {
+                return changes;
+            }
+
+            // The run discards every embedding of another model version before it embeds anything.
+            return withEmbeddings(
+                    changes, backfill, storage.embeddingCoverage(profile).stale());
+        }
+
+        /** Adds the semantic counts; whether the model is cached is filled in by the caller. */
+        private static IndexPreview.Changes withEmbeddings(
+                IndexPreview.Changes changes, long backfill, long discarded) {
+            IndexPreview.SemanticChanges semantic = new IndexPreview.SemanticChanges(
+                    SemanticModel.MINILM.name(),
+                    IndexPreview.ModelState.CACHED,
+                    0,
+                    changes.chunksToWrite().plus(IndexPreview.Count.known(backfill)),
+                    discarded);
+
+            return new IndexPreview.Changes(
+                    changes.index(),
+                    changes.newFiles(),
+                    changes.changedFiles(),
+                    changes.rechunkedFiles(),
+                    changes.unchangedFiles(),
+                    changes.rejectedFiles(),
+                    changes.removedFiles(),
+                    semantic,
+                    null,
+                    null);
+        }
+
+        private static IndexPreview.PlannedFile planned(FileInspector.Readable readable, ChunkEstimate estimate) {
+            Document document = readable.document();
+            // An empty file has no chunks for certain.
+            IndexPreview.Count chunks = readable.size() == 0
+                    ? IndexPreview.Count.known(0)
+                    : IndexPreview.Count.estimate(estimate.chunks(document.type(), readable.size()));
+
+            return new IndexPreview.PlannedFile(document.sourcePath(), chunks);
+        }
+
+        private static IndexPreview.PlannedFile storedFile(StoredFile file, Map<Long, Long> stored) {
+            return new IndexPreview.PlannedFile(
+                    file.sourcePath(), IndexPreview.Count.known(stored.getOrDefault(file.id(), 0L)));
+        }
+    }
+
+    private static IndexResult.FileIssue issue(ProjectContext context, Path candidate, ExtractionException failure) {
+        return new IndexResult.FileIssue(context.sourcePath(candidate), failure.reason(), failure.getMessage());
+    }
+
+    private static void deleteRecursively(Path directory) throws IOException {
+        try (var paths = Files.walk(directory)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
     }
 
     /**

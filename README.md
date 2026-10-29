@@ -54,7 +54,7 @@ On Windows use `gradlew.bat` instead of `./gradlew`.
 java -jar pecia-cli/build/libs/pecia.jar --help                             # list commands
 java -jar pecia-cli/build/libs/pecia.jar --version                          # print version
 java -jar pecia-cli/build/libs/pecia.jar init                               # write a default .pecia.toml into the current directory
-java -jar pecia-cli/build/libs/pecia.jar index . --dry-run                  # list candidate files without writing an index
+java -jar pecia-cli/build/libs/pecia.jar index . --dry-run                  # show what indexing would change, writing nothing
 java -jar pecia-cli/build/libs/pecia.jar index .                            # build the local lexical index
 java -jar pecia-cli/build/libs/pecia.jar index . --semantic                 # also build embeddings (downloads the model once)
 java -jar pecia-cli/build/libs/pecia.jar query "authentication middleware"  # search in the default auto mode
@@ -76,13 +76,36 @@ Run `index` before `query`. Every command accepts `--help`.
 
 | Option | Effect |
 | --- | --- |
-| `--dry-run` | Lists the files that would be indexed and whether semantic indexing would run, without reading their contents, writing an index, or downloading anything. |
+| `--dry-run` | Shows what the run would do without changing the project: it reads the files to compare them with the index, but never writes the index, downloads the model, or loads it. An index of an older format is compared after upgrading a temporary copy, which is then deleted. See [Dry runs](#dry-runs). |
 | `--semantic` | Builds embeddings in this run, overriding `semantic.enabled` in `.pecia.toml`. The first semantic run downloads the model (about 90 MB) and says so on stderr. |
 | `--no-semantic` | Builds only the lexical index in this run. Embeddings that are already stored stay, except those of changed or deleted files. |
 
 Without either flag, `semantic.enabled` in `.pecia.toml` decides; it is `false` by default. The summary counts candidate, indexed, rechunked, unchanged, and deleted files, written chunks, and rejected and failed files; semantic runs add the model, discarded embeddings of an earlier model, and the chunks they embedded and backfilled.
 
 Ctrl+C stops a run before its next file or embedding batch, prints the summary of what it finished, and exits with `130`. Files indexed until then stay in the index, a file in progress keeps its previous version, and no deleted files are removed; the next run continues from there.
+
+#### Dry runs
+
+`--dry-run` compares the files with the index as a run would, then prints a summary and the files the run would change:
+
+```
+config: /home/me/project/.pecia.toml
+index: /home/me/project/.pecia/index.db (current)
+semantic: enabled
+files: 1 new, 1 changed, 0 rechunked, 41 unchanged, 1 rejected, 0 removed
+chunks: ~9 to write, 312 kept, 0 removed
+model: all-MiniLM-L6-v2 cached
+embeddings: ~9 to make, 0 to discard
+
+new:
+  docs/refunds.md (~3 chunks)
+changed:
+  src/auth/middleware.ts (~6 chunks)
+rejected:
+  assets/logo.txt: BINARY_CONTENT: File contains binary control characters: /home/me/project/assets/logo.txt
+```
+
+Counts marked `~` are estimated from file sizes; the others are read from the index. The `index` line says whether the index is `current`, does not exist yet (`none yet; would be created`), has an older format (`older format; would be upgraded`), or `cannot be read`, in which case the dry run fails as the run would, with the same advice. The `model` line says whether the model is cached or would be downloaded, with its size. A rejected file or an unreadable folder keeps the run from removing deleted files, so none are listed then. A dry run exits with `0`, even with rejected files, unless the index cannot be read or a folder cannot be scanned.
 
 #### When something goes wrong
 
@@ -183,7 +206,7 @@ The cache holds the model, downloaded from Hugging Face and checked against its 
 
 ### 📂 File discovery
 
-Pecia selects files using `.gitignore` rules and the include/exclude patterns in `.pecia.toml`. It skips symbolic links, internal index files, and its own `.pecia.toml` configuration files, which include patterns cannot admit; `--dry-run` previews this selection without processing file contents.
+Pecia selects files using `.gitignore` rules and the include/exclude patterns in `.pecia.toml`. It skips symbolic links, internal index files, and its own `.pecia.toml` configuration files, which include patterns cannot admit; `--dry-run` previews this selection and what indexing would change.
 
 ### ✂️ Extraction and chunking
 

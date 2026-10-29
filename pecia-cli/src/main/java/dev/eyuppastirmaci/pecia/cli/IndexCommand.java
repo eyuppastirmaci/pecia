@@ -153,6 +153,19 @@ public class IndexCommand implements Callable<Integer> {
                 reportScanIssue(preview.target(), issue);
             }
 
+            IndexPreview.Changes changes = preview.changes();
+
+            if (changes.index() == IndexPreview.IndexState.UNREADABLE) {
+                // The run would fail the same way, so the dry run says so as index does.
+                spec.commandLine()
+                        .getErr()
+                        .println("pecia index: " + IndexResult.Status.FAILED + ": " + changes.storageFailure() + ": "
+                                + changes.storageMessage());
+                spec.commandLine().getErr().println(storageAdvice(changes.storageFailure(), preview.databasePath()));
+
+                return 1;
+            }
+
             if (!result.complete()) {
                 spec.commandLine()
                         .getErr()
@@ -362,10 +375,11 @@ public class IndexCommand implements Callable<Integer> {
         return String.format(Locale.ROOT, "%.1f MB", bytes / 1_000_000.0);
     }
 
+    /** Prints what the run would do: a summary, then the files it would change, by kind. */
     private void report(IndexPreview preview) {
         PrintWriter out = spec.commandLine().getOut();
         LoadedConfig loaded = preview.loadedConfig();
-        List<Path> files = preview.walkResult().files();
+        IndexPreview.Changes changes = preview.changes();
 
         if (loaded.fromFile()) {
             out.println("config: " + loaded.root().resolve(PeciaConfigFile.FILE_NAME));
@@ -373,11 +387,93 @@ public class IndexCommand implements Callable<Integer> {
             out.println("config: defaults (no " + PeciaConfigFile.FILE_NAME + " found)");
         }
 
+        out.println("index: " + preview.databasePath() + " (" + describe(changes.index()) + ")");
         out.println("semantic: " + (preview.semanticEnabled() ? "enabled" : "disabled"));
-        out.println(files.size() + " file(s) would be indexed:");
 
-        for (Path file : files) {
-            out.println("  " + FileWalker.portablePath(file));
+        if (changes.index() == IndexPreview.IndexState.UNREADABLE) {
+            return;
         }
+
+        out.println("files: "
+                + changes.newFiles().size() + " new, "
+                + changes.changedFiles().size() + " changed, "
+                + changes.rechunkedFiles().size() + " rechunked, "
+                + changes.unchangedFiles().size() + " unchanged, "
+                + changes.rejectedFiles().size() + " rejected, "
+                + changes.removedFiles().size() + " removed");
+        out.println("chunks: "
+                + format(changes.chunksToWrite()) + " to write, "
+                + format(changes.chunksKept()) + " kept, "
+                + format(changes.chunksRemoved()) + " removed");
+
+        IndexPreview.SemanticChanges semantic = changes.semantic();
+
+        if (semantic != null) {
+            out.println("model: " + semantic.model() + " " + describe(semantic));
+            out.println("embeddings: "
+                    + format(semantic.chunksToEmbed()) + " to make, "
+                    + semantic.embeddingsToDiscard() + " to discard");
+        }
+
+        List<String> groups = new ArrayList<>();
+        addGroup(groups, "new", planned(changes.newFiles()));
+        addGroup(groups, "changed", planned(changes.changedFiles()));
+        addGroup(groups, "rechunked", planned(changes.rechunkedFiles()));
+        addGroup(
+                groups,
+                "rejected",
+                changes.rejectedFiles().stream()
+                        .map(issue -> FileWalker.portablePath(issue.sourcePath()) + ": " + issue.reason() + ": "
+                                + issue.message())
+                        .toList());
+        addGroup(groups, "removed", planned(changes.removedFiles()));
+
+        if (!groups.isEmpty()) {
+            out.println();
+            groups.forEach(out::println);
+        }
+    }
+
+    /** Adds a heading and its indented entries, unless there are no entries. */
+    private static void addGroup(List<String> lines, String heading, List<String> entries) {
+        if (entries.isEmpty()) {
+            return;
+        }
+
+        lines.add(heading + ":");
+
+        for (String entry : entries) {
+            lines.add("  " + entry);
+        }
+    }
+
+    /** Describes each file by its path and chunk count. */
+    private static List<String> planned(List<IndexPreview.PlannedFile> files) {
+        return files.stream()
+                .map(file -> FileWalker.portablePath(file.sourcePath()) + " (" + format(file.chunks()) + " chunk"
+                        + (file.chunks().value() == 1 ? "" : "s") + ")")
+                .toList();
+    }
+
+    /** Formats a count, marking an estimate with a tilde. */
+    private static String format(IndexPreview.Count count) {
+        return (count.estimated() ? "~" : "") + count.value();
+    }
+
+    static String describe(IndexPreview.IndexState state) {
+        return switch (state) {
+            case NONE -> "none yet; would be created";
+            case CURRENT -> "current";
+            case UPGRADE -> "older format; would be upgraded";
+            case UNREADABLE -> "cannot be read";
+        };
+    }
+
+    static String describe(IndexPreview.SemanticChanges semantic) {
+        return switch (semantic.modelState()) {
+            case CACHED -> "cached";
+            case DOWNLOAD -> "would be downloaded (" + megabytes(semantic.downloadBytes()) + ")";
+            case UNAVAILABLE -> "cache cannot be read";
+        };
     }
 }

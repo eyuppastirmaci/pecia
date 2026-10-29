@@ -20,6 +20,19 @@ public record TokenizerIdentity(
 
     private static final int SHA_256_HEX_LENGTH = 64;
 
+    /**
+     * The identity of the bundled MiniLM tokenizer. It lives here so that callers can compare indexes with it without
+     * initializing the tokenizer, which loads its vocabulary on first use.
+     */
+    public static final TokenizerIdentity MINILM = new TokenizerIdentity(
+            "sentence-transformers/all-MiniLM-L6-v2",
+            "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+            "bert-uncased-wordpiece-v2",
+            "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+            30_522,
+            256,
+            2);
+
     /** Validates non-blank identifiers, a lowercase SHA-256 digest, and consistent token limits. */
     public TokenizerIdentity {
         modelId = requireText(modelId, "modelId");

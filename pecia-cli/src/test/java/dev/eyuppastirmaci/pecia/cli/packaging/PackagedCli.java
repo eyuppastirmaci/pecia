@@ -209,6 +209,38 @@ final class PackagedCli {
         return result;
     }
 
+    /**
+     * Runs a semantic dry run offline like {@link #runReadOnly}: it may initialize the model cache and embedding
+     * profile classes to report the model and embeddings, but never ONNX Runtime or the tokenizer, never reaches the
+     * network, and writes nothing in the project, home, cache, or temporary directories.
+     */
+    Result runSemanticPreview(Path directory, String... arguments) throws Exception {
+        if (offline == null) {
+            throw new IllegalStateException("A semantic preview is checked under the offline guard");
+        }
+
+        List<Path> entries = projectEntries();
+        Map<Path, ContentHash> contents = projectContents();
+        Result result = run(
+                directory,
+                List.of(),
+                evidence -> {
+                    evidence.verifyNothingWritten();
+
+                    for (String type : List.of("ai.onnxruntime.OrtEnvironment", MiniLmTokenizer.class.getName())) {
+                        assertFalse(
+                                OfflineEnvironment.initialized(evidence.initializationLog(), type),
+                                type + " must not be initialized by a dry run");
+                    }
+                },
+                DEFAULT_TIMEOUT,
+                arguments);
+        assertSuccess(result);
+        assertEquals(entries, projectEntries(), "A dry run must not create or delete project entries");
+        assertEquals(contents, projectContents(), "A dry run must preserve source and index bytes");
+        return result;
+    }
+
     List<Path> projectEntries() throws IOException {
         try (var paths = Files.walk(project)) {
             return paths.filter(path -> !path.equals(project))

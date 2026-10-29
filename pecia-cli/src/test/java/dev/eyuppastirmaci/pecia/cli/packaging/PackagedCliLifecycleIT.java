@@ -114,7 +114,9 @@ class PackagedCliLifecycleIT {
         assertRanking(cli.runReadOnly(project, "query", "ranking"));
         assertIndexSummary(cli.run(project, "index"), database, 4, 0, 0);
         Result preview = cli.runReadOnly(project, "index", "--dry-run");
-        assertTrue(preview.out().contains("4 file(s) would be indexed:\n"), preview.out());
+        assertTrue(
+                preview.out().contains("files: 0 new, 0 changed, 0 rechunked, 4 unchanged, 0 rejected, 0 removed\n"),
+                preview.out());
         assertFalse(preview.out().contains("Ödeme.md"), preview.out());
     }
 
@@ -130,7 +132,10 @@ class PackagedCliLifecycleIT {
         writeCalendarConfig(26, 1);
 
         Result freshPreview = cli.runReadOnly(project, "index", "--dry-run");
-        assertTrue(freshPreview.out().contains("1 file(s) would be indexed:\n  docs/calendar.txt\n"));
+        assertTrue(
+                freshPreview.out().contains("index: " + database + " (none yet; would be created)\n"),
+                freshPreview.out());
+        assertTrue(freshPreview.out().contains("\nnew:\n  docs/calendar.txt (~"), freshPreview.out());
         assertFalse(Files.exists(project.resolve("state")));
         assertIndexSummary(cli.run(project, "index"), database, 1, 2);
         Result original = assertCalendarQuery(docs, large);
@@ -139,7 +144,7 @@ class PackagedCliLifecycleIT {
 
         writeCalendarConfig(14, 1);
         Result changedPreview = cli.runReadOnly(project, "index", "--dry-run");
-        assertTrue(changedPreview.out().contains("1 file(s) would be indexed:\n  docs/calendar.txt\n"));
+        assertTrue(changedPreview.out().contains("\nrechunked:\n  docs/calendar.txt (~"), changedPreview.out());
         // Preview and query must leave the old chunks intact until a real index run.
         assertEquals(original.out(), assertCalendarQuery(docs, large).out());
         // Only the chunk settings changed, so the file is counted as rechunked.

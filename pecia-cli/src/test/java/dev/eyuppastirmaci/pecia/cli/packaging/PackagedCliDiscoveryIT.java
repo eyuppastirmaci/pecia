@@ -78,13 +78,17 @@ class PackagedCliDiscoveryIT {
 
         assertSuccess(result);
         assertEquals("""
-            config: defaults (no .pecia.toml found)
-            semantic: disabled
-            3 file(s) would be indexed:
-              Dockerfile
-              Main.JS
-              notes.md
-            """, result.out());
+                config: defaults (no .pecia.toml found)
+                index: %s (none yet; would be created)
+                semantic: disabled
+                files: 3 new, 0 changed, 0 rechunked, 0 unchanged, 0 rejected, 0 removed
+                chunks: ~3 to write, 0 kept, 0 removed
+
+                new:
+                  Dockerfile (~1 chunk)
+                  Main.JS (~1 chunk)
+                  notes.md (~1 chunk)
+                """.formatted(project.resolve(".pecia/index.db")), result.out());
         assertEquals(before, cli.projectEntries());
         assertFalse(Files.exists(project.resolve(".pecia.toml")));
         assertFalse(Files.exists(project.resolve(".pecia")));
@@ -113,8 +117,10 @@ class PackagedCliDiscoveryIT {
 
         assertSuccess(result);
         assertEquals(
-                "config: " + project.resolve(".pecia.toml")
-                        + "\nsemantic: disabled\n1 file(s) would be indexed:\n  keep.md\n",
+                "config: " + project.resolve(".pecia.toml") + "\nindex: " + project.resolve(".pecia/index.db")
+                        + " (none yet; would be created)\nsemantic: disabled\nfiles: 1 new, 0 changed, 0 rechunked, 0"
+                        + " unchanged, 0 rejected, 0 removed\nchunks: ~1 to write, 0 kept, 0 removed\n\nnew:\n"
+                        + "  docs/keep.md (~1 chunk)\n",
                 result.out());
         assertEquals(config, Files.readString(project.resolve(".pecia.toml")));
         assertEquals(before, cli.projectEntries());
@@ -165,7 +171,10 @@ class PackagedCliDiscoveryIT {
 
         assertEquals(1, result.exitCode());
         assertEquals(
-                "config: defaults (no .pecia.toml found)\nsemantic: disabled\n1 file(s) would be indexed:\n  good.md\n",
+                "config: defaults (no .pecia.toml found)\nindex: " + project.resolve(".pecia/index.db")
+                        + " (none yet; would be created)\nsemantic: disabled\nfiles: 1 new, 0 changed, 0 rechunked, 0"
+                        + " unchanged, 0 rejected, 0 removed\nchunks: ~1 to write, 0 kept, 0 removed\n\nnew:\n"
+                        + "  good.md (~1 chunk)\n",
                 result.out());
         assertTrue(invalidIgnore.endsWith(".gitignore"));
         assertTrue(result.err().startsWith("warning: bad/.gitignore: IO_ERROR: "), result.err());

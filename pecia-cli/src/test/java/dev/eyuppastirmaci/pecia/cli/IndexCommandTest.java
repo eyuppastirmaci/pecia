@@ -51,7 +51,7 @@ class IndexCommandTest {
         Files.writeString(docs.resolve("keep.md"), "text");
         Files.writeString(docs.resolve("drop.md"), "text");
         assertEquals(0, run(docs.toString(), "--dry-run"));
-        assertTrue(out.toString().contains("1 file(s)"));
+        assertTrue(out.toString().contains("files: 1 new, "), out.toString());
         assertFalse(out.toString().contains("drop.md"));
     }
 
@@ -109,7 +109,8 @@ class IndexCommandTest {
         Files.writeString(docs.resolve("keep.md"), "text");
         Files.writeString(docs.resolve("drop.md"), "text");
         assertEquals(0, run(docs.toString(), "--dry-run"));
-        assertTrue(out.toString().contains("  keep.md"));
+        // Paths are relative to the project, as in index and query output.
+        assertTrue(out.toString().contains("  docs/keep.md (~1 chunk)"), out.toString());
         assertFalse(out.toString().contains("drop.md"));
     }
 
@@ -120,7 +121,7 @@ class IndexCommandTest {
         Files.writeString(root.resolve("app.min.js"), "text");
         Files.writeString(root.resolve("document.pdf"), "text");
         assertEquals(0, run(root.toString(), "--dry-run"));
-        assertTrue(out.toString().contains("2 file(s)"));
+        assertTrue(out.toString().contains("files: 2 new, "), out.toString());
         assertTrue(out.toString().contains("Main.JS"));
         assertTrue(out.toString().contains("Dockerfile"));
         assertFalse(Files.exists(root.resolve(".pecia")));
@@ -153,8 +154,8 @@ class IndexCommandTest {
         int exitCode = run(root.toString(), "--dry-run");
 
         assertEquals(0, exitCode);
-        assertTrue(out.toString().contains("1 file(s) would be indexed:"));
-        assertTrue(out.toString().contains("notes.md"));
+        assertTrue(out.toString().contains("files: 1 new, "), out.toString());
+        assertTrue(out.toString().contains("  notes.md (~1 chunk)"), out.toString());
         assertFalse(out.toString().contains("data.bin"));
     }
 
@@ -193,7 +194,12 @@ class IndexCommandTest {
         int exitCode = flag == null ? run(root.toString(), "--dry-run") : run(root.toString(), "--dry-run", flag);
 
         assertEquals(0, exitCode);
-        assertEquals("semantic: " + expected, out.toString().lines().toList().get(1));
+        assertEquals(
+                List.of("semantic: " + expected),
+                out.toString()
+                        .lines()
+                        .filter(line -> line.startsWith("semantic: "))
+                        .toList());
         assertEquals("", err.toString());
     }
 
@@ -268,7 +274,7 @@ class IndexCommandTest {
     }
 
     /** Rewrites the stored embeddings under another profile, as an index written before a model update holds them. */
-    private static void moveEmbeddingsToAnEarlierProfile(Path database) throws SQLException {
+    static void moveEmbeddingsToAnEarlierProfile(Path database) throws SQLException {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
                 Statement statement = connection.createStatement()) {
             statement.executeUpdate("""
@@ -668,18 +674,20 @@ class IndexCommandTest {
     }
 
     @Test
-    void invalidTokenBudgetFailsRealIndexButDoesNotAffectDryRun() throws IOException {
+    void invalidTokenBudgetFailsTheDryRunAsItFailsTheRealIndex() throws IOException {
         Files.writeString(root.resolve(".pecia.toml"), "[index]\ninclude = ['*.txt']\n[chunk]\nmax_tokens = 512\n");
         Files.writeString(root.resolve("a.txt"), "needle");
 
         assertEquals(1, run(root.toString()));
         assertFalse(Files.exists(root.resolve(".pecia")));
 
+        String indexError = err.toString();
         out.getBuffer().setLength(0);
         err.getBuffer().setLength(0);
 
-        assertEquals(0, run(root.toString(), "--dry-run"));
-        assertTrue(out.toString().contains("1 file(s) would be indexed"));
+        assertEquals(1, run(root.toString(), "--dry-run"));
+        assertEquals(indexError, err.toString());
+        assertTrue(err.toString().contains("chunk.max_tokens"), err.toString());
         assertFalse(Files.exists(root.resolve(".pecia")));
     }
 

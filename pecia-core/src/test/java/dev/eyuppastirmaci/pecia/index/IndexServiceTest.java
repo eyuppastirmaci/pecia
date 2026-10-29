@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,13 +37,28 @@ class IndexServiceTest {
     }
 
     @Test
-    void previewRequiresTargetConfigurationAndScanResult() {
+    void previewRequiresTargetConfigurationScanResultAndChanges() {
         var loaded = new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), root, false);
         var walked = new WalkResult(List.of(), List.of());
+        var database = root.resolve(".pecia/index.db");
+        var changes = new IndexPreview.Changes(
+                IndexPreview.IndexState.NONE,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null);
 
-        assertThrows(NullPointerException.class, () -> new IndexPreview(null, loaded, walked, false));
-        assertThrows(NullPointerException.class, () -> new IndexPreview(root, null, walked, false));
-        assertThrows(NullPointerException.class, () -> new IndexPreview(root, loaded, null, false));
+        assertThrows(
+                NullPointerException.class, () -> new IndexPreview(null, database, loaded, walked, false, changes));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, database, null, walked, false, changes));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, database, loaded, null, false, changes));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, database, loaded, walked, false, null));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, null, loaded, walked, false, changes));
     }
 
     @Test
@@ -156,27 +172,41 @@ class IndexServiceTest {
     }
 
     @Test
-    void discoversCandidatesWithoutApplyingContentProcessingSettings() throws IOException {
+    void previewsRejectionsAsTheRunWouldWithoutChangingAnything() throws IOException {
         String config = """
             [index]
             include = ["**/*.md"]
-            max_file_bytes = 1
-            [chunk]
-            max_tokens = 512
+            max_file_bytes = 4
             """;
         Files.writeString(root.resolve(".pecia.toml"), config);
-        // The invalid UTF-8 and incompatible processing limits must not affect file discovery.
-        byte[] content = {(byte) 0xc3, (byte) 0x28};
-        Path candidate = Files.write(root.resolve("candidate.md"), content);
+        byte[] invalid = {(byte) 0xc3, (byte) 0x28};
+        Path candidate = Files.write(root.resolve("candidate.md"), invalid);
+        Files.writeString(root.resolve("large.md"), "too large");
 
         IndexPreview preview = service.preview(root);
 
-        assertEquals(List.of(Path.of("candidate.md")), preview.walkResult().files());
-        assertTrue(preview.walkResult().complete());
-        assertEquals(1, preview.loadedConfig().config().maxFileBytes());
-        assertEquals(512, preview.loadedConfig().config().maxTokens());
+        assertEquals(
+                List.of(Path.of("candidate.md"), Path.of("large.md")),
+                preview.walkResult().files());
+        assertEquals(
+                List.of(ExtractionException.Reason.INVALID_UTF8, ExtractionException.Reason.TOO_LARGE),
+                preview.changes().rejectedFiles().stream()
+                        .map(IndexResult.FileIssue::reason)
+                        .toList());
+        assertEquals(IndexPreview.IndexState.NONE, preview.changes().index());
         assertEquals(config, Files.readString(root.resolve(".pecia.toml")));
-        assertArrayEquals(content, Files.readAllBytes(candidate));
+        assertArrayEquals(invalid, Files.readAllBytes(candidate));
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void anInvalidChunkBudgetFailsThePreviewAsItFailsTheRun() throws IOException {
+        Files.writeString(root.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 512\n");
+        Files.writeString(root.resolve("notes.md"), "notes");
+
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> service.preview(root));
+
+        assertTrue(failure.getMessage().contains("chunk.max_tokens"), failure.getMessage());
         assertFalse(Files.exists(root.resolve(".pecia")));
     }
 }
