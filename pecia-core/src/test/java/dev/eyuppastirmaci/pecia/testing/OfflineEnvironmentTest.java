@@ -196,6 +196,34 @@ class OfflineEnvironmentTest {
     }
 
     @Test
+    void allowsOnlyTheRuntimesExtractionDirectoriesAndTheirContents() throws Exception {
+        OfflineEnvironment isolated = OfflineEnvironment.create(sandbox);
+        Path existing = Files.writeString(isolated.home().resolve("notes.txt"), "keep");
+        Map<Path, String> before = isolated.snapshot();
+        Path extraction = Files.createDirectory(isolated.temporary().resolve("onnxruntime-java123"));
+        Files.writeString(extraction.resolve("onnxruntime.dll"), "still loaded");
+        Files.createDirectory(isolated.temporary().resolve("onnxruntime-java456"));
+
+        isolated.assertOnlyRuntimeExtraction(before);
+
+        for (Path unexpected : List.of(
+                isolated.temporary().resolve(".ses"),
+                isolated.temporary().resolve("onnxruntime-javaX"),
+                isolated.home().resolve("onnxruntime-java789"),
+                isolated.cache().resolve("deviceid"))) {
+            Files.writeString(unexpected, "unexpected");
+            assertThrows(
+                    AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before), unexpected.toString());
+            Files.delete(unexpected);
+        }
+
+        Files.writeString(existing, "edit");
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before));
+        Files.delete(existing);
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before));
+    }
+
+    @Test
     void detectsSameSizeContentChangesAndDeletedModels() throws Exception {
         OfflineEnvironment isolated = OfflineEnvironment.create(sandbox);
         Path model = Files.writeString(isolated.cache().resolve("model.bin"), "first");

@@ -89,9 +89,11 @@ public final class Embedder implements AutoCloseable {
     }
 
     private static OrtEnvironment environment(String osName, String osArch) throws EmbeddingException {
+        OrtEnvironment environment;
+
         try {
             // The process-wide environment lives until exit; only warnings worth an error reach standard error.
-            return OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR, "pecia");
+            environment = OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR, "pecia");
         } catch (LinkageError | RuntimeException failure) {
             // A native library that fails to load surfaces as a linkage error, also on every later attempt.
             throw new EmbeddingException(
@@ -99,6 +101,18 @@ public final class Embedder implements AutoCloseable {
                     "ONNX Runtime could not load its native library on " + osName + " on " + osArch,
                     failure);
         }
+
+        try {
+            // The Windows library reports trace events to the operating system's telemetry unless they are turned off.
+            environment.setTelemetry(false);
+        } catch (OrtException failure) {
+            throw new EmbeddingException(
+                    EmbeddingException.Reason.RUNTIME_UNAVAILABLE,
+                    "ONNX Runtime could not turn off telemetry",
+                    failure);
+        }
+
+        return environment;
     }
 
     private static void checkContract(OrtSession session, Path file) throws EmbeddingException {

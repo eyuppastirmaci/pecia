@@ -12,11 +12,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Checks in fresh JVMs when ONNX Runtime initializes, which a test JVM that already ran an embedder cannot show. */
+/**
+ * Checks in fresh JVMs when ONNX Runtime initializes and what it leaves behind, which a test JVM that already ran an
+ * embedder cannot show.
+ */
 class EmbedderLoadingTest {
 
     private static final String RUNTIME = "ai.onnxruntime.OrtEnvironment";
@@ -45,6 +49,17 @@ class EmbedderLoadingTest {
     }
 
     @Test
+    void embeddingWritesNothingOutsideTheRuntimesExtractionDirectory() throws Exception {
+        // Telemetry builds of the runtime keep a device id and an event store under the user's home directory.
+        OfflineEnvironment isolated = OfflineEnvironment.create(Files.createDirectory(sandbox.resolve("isolated")));
+        Map<Path, String> before = isolated.snapshot();
+
+        assertEquals("EMBEDDED 1", probe(sandbox.resolve("isolated.log"), isolated, "embed"));
+
+        isolated.assertOnlyRuntimeExtraction(before);
+    }
+
+    @Test
     void aRuntimeThatCannotLoadItsNativeLibraryFailsClearlyEveryTime() throws Exception {
         // ONNX Runtime loads its libraries only from this directory when the property is set.
         Path empty = Files.createDirectory(sandbox.resolve("no-native-libraries"));
@@ -56,6 +71,15 @@ class EmbedderLoadingTest {
     }
 
     private static String probe(Path log, List<String> options, String mode) throws Exception {
+        return probe(log, options, null, mode);
+    }
+
+    private static String probe(Path log, OfflineEnvironment isolated, String mode) throws Exception {
+        return probe(log, isolated.jvmArguments(), isolated, mode);
+    }
+
+    private static String probe(Path log, List<String> options, OfflineEnvironment isolated, String mode)
+            throws Exception {
         List<String> command = new ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         command.add(OfflineSandbox.initializationLogArgument(log));
@@ -66,7 +90,13 @@ class EmbedderLoadingTest {
                 EmbedderLoadingProbe.class.getName(),
                 mode,
                 EmbedderTest.model("tiny").toString()));
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+
+        if (isolated != null) {
+            isolated.configure(builder.environment());
+        }
+
+        Process process = builder.start();
         process.getOutputStream().close();
 
         String output = read(process);

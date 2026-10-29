@@ -24,6 +24,7 @@ import java.util.regex.Pattern;
 /** Isolates child-process user storage and verifies lexical execution leaves no model artifacts. */
 public final class OfflineEnvironment {
 
+    private static final Pattern RUNTIME_EXTRACTION = Pattern.compile("onnxruntime-java[0-9]+");
     private static final Pattern SQLITE_TEMPORARY_FILE =
             Pattern.compile("sqlite-[0-9]+(?:\\.[0-9]+)+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-"
                     + "(?:libsqlitejdbc\\.(?:so|dylib)|sqlitejdbc\\.dll)(?:\\.lck)?");
@@ -194,6 +195,41 @@ public final class OfflineEnvironment {
         if (!changed.isEmpty() || !added.equals(expected)) {
             throw new AssertionError("Offline home/cache/tmp changed: expected only " + expected + ", added " + added
                     + ", changed or" + " removed " + changed);
+        }
+    }
+
+    /**
+     * Fails unless the only differences since {@code before} are ONNX Runtime's native extraction directories in the
+     * temporary root, with whatever they still hold: each process extracts the libraries into its own directory, and
+     * Windows cannot delete libraries that are still loaded at exit.
+     */
+    public void assertOnlyRuntimeExtraction(Map<Path, String> before) throws IOException {
+        Objects.requireNonNull(before, "before");
+        Map<Path, String> after = snapshot();
+        Path temporaryRoot = sandbox.relativize(temporary);
+        Set<Path> unexpected = new TreeSet<>();
+
+        for (Map.Entry<Path, String> entry : after.entrySet()) {
+            Path path = entry.getKey();
+            boolean extraction = path.startsWith(temporaryRoot)
+                    && path.getNameCount() > temporaryRoot.getNameCount()
+                    && RUNTIME_EXTRACTION
+                            .matcher(path.getName(temporaryRoot.getNameCount()).toString())
+                            .matches();
+
+            if (!extraction && !entry.getValue().equals(before.get(path))) {
+                unexpected.add(path);
+            }
+        }
+
+        for (Path path : before.keySet()) {
+            if (!after.containsKey(path)) {
+                unexpected.add(path);
+            }
+        }
+
+        if (!unexpected.isEmpty()) {
+            throw new AssertionError("Offline home/cache/tmp changed outside the runtime extraction: " + unexpected);
         }
     }
 
