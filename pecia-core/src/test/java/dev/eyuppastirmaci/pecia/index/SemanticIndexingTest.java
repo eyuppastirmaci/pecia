@@ -58,7 +58,7 @@ class SemanticIndexingTest {
     }
 
     @Test
-    void everyNewChunkStoresTheEmbeddingOfItsContentUnderTheMiniLmProfile() throws Exception {
+    void everyNewChunkStoresTheEmbeddingOfItsInputUnderTheMiniLmProfile() throws Exception {
         IndexResult result = service(TINY).index(root, IndexOptions.semantic(true));
 
         assertEquals(IndexResult.Status.COMPLETE, result.status());
@@ -74,9 +74,13 @@ class SemanticIndexingTest {
                 List.copyOf(query(result, "SELECT fingerprint, fingerprint FROM embedding_profiles")
                         .keySet()));
 
+        Map<String, String> inputs =
+                StoredEmbeddingInputs.byChunkId(result.context().databasePath());
+
         try (Embedder embedder = Embedder.open(TINY)) {
             for (var chunk : contents.entrySet()) {
-                float[] expected = embedder.embed(List.of(chunk.getValue()))[0];
+                // The chunk is embedded with its path and heading context, which search results never show.
+                float[] expected = embedder.embed(List.of(inputs.get(chunk.getKey())))[0];
 
                 assertArrayEquals(expected, decode(vectors.get(chunk.getKey())), 1e-6f, chunk.getValue());
             }

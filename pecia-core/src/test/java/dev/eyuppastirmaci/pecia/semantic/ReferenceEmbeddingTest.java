@@ -123,8 +123,9 @@ class ReferenceEmbeddingTest {
     }
 
     @Test
-    void semanticIndexingStoresTheReferenceEmbeddingOfEachChunk() throws Exception {
-        // One file per case whose text is a single chunk, so each stored chunk's content is a reference text.
+    void semanticIndexingStoresTheRealModelsEmbeddingOfEachChunksInput() throws Exception {
+        // One file per case whose text is a single chunk. The chunk is embedded with its path as context, so the stored
+        // vector is the real model's embedding of that input; the cases above compare the model with the references.
         Path root = Files.createDirectories(sandbox.resolve("project")).toRealPath();
         Map<String, ReferenceCase> byText = new LinkedHashMap<>();
 
@@ -153,7 +154,9 @@ class ReferenceEmbeddingTest {
             while (rows.next()) {
                 ReferenceCase reference = byText.get(rows.getString(1));
                 assertNotNull(reference, "Every chunk must hold a reference text");
-                assertMatches(reference, decode(rows.getBytes(2)));
+                String input = EmbeddingInput.of(Path.of(reference.name() + ".txt"), List.of(), reference.text());
+                float[] expected = embedder.embed(List.of(input))[0];
+                assertMatches(new ReferenceCase(reference.name(), input, expected), decode(rows.getBytes(2)));
                 matched++;
             }
 

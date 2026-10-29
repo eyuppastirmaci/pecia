@@ -32,7 +32,7 @@ class EmbeddingProfileTest {
                         256,
                         "mean",
                         "l2",
-                        "chunk-content"),
+                        "path-heading-content-v1"),
                 profile);
     }
 
@@ -40,7 +40,7 @@ class EmbeddingProfileTest {
     void theFingerprintIsPinnedForTheMiniLmProfile() {
         // Computed independently from the documented format; changing it would orphan every stored vector.
         assertEquals(
-                "2274f3cc351575f7c78b4b45da24075c272b1957ec0a969a94f414e909cc49f9",
+                "a8bacc41422dac42ec11462b18c260a77dd0d274339c331d14c772521120ae47",
                 EmbeddingProfile.minilm().fingerprint());
     }
 

@@ -127,7 +127,7 @@ id = "long-line"
 input = "content/long-line.txt"
 sha256 = "98c8dbe3c8631ff9bb378231dbe86f412f2ad1c4cfd1370375cd9dc3c838ad22"
 outcome = "indexed"
-chunks = 9
+chunks = 11
 description = "A single 10,000-byte line that exceeds the token budget many times."
 
 # Hostile configuration files. Each case uses one file from config/ as .pecia.toml in a project with one text file.

@@ -73,7 +73,7 @@ public record EmbeddingProfile(
                 tokenizer.maxInputTokens(),
                 "mean",
                 "l2",
-                "chunk-content");
+                EmbeddingInput.NAME);
     }
 
     /**
