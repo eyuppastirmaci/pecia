@@ -247,7 +247,12 @@ public record IndexResult(
          */
         EMBEDDING_FAILED,
         /** A storage operation failed after discovery completed. */
-        FAILED
+        FAILED,
+        /**
+         * The caller cancelled the run; files and backfill pages committed before it stay, no file is half written,
+         * and no deletions ran. The next run continues from there.
+         */
+        CANCELLED
     }
 
     /** A file extraction issue identified by its normalized project-relative source path. */

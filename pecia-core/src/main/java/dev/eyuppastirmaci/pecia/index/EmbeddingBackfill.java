@@ -31,8 +31,9 @@ final class EmbeddingBackfill {
      *
      * @param fileIds files whose stored chunks are known to match their current content and chunking
      * @throws EmbeddingException if embedding fails; earlier pages stay committed and are counted by {@link #stored()}
+     * @throws Cancellation.CancelledException if the run is cancelled before a page; earlier pages stay committed
      */
-    void run(List<Long> fileIds) throws SQLException, EmbeddingException {
+    void run(List<Long> fileIds) throws SQLException, EmbeddingException, Cancellation.CancelledException {
         // Counting first keeps only one page of content in memory while still reporting the total up front.
         List<Long> pending = new ArrayList<>();
         long total = 0;
@@ -77,7 +78,8 @@ final class EmbeddingBackfill {
         return stored;
     }
 
-    private void store(List<UnembeddedChunk> page) throws SQLException, EmbeddingException {
+    private void store(List<UnembeddedChunk> page)
+            throws SQLException, EmbeddingException, Cancellation.CancelledException {
         List<float[]> vectors = semantic.embedTexts(page.stream()
                 .map(chunk -> EmbeddingInput.of(chunk.sourcePath(), chunk.headingPath(), chunk.content()))
                 .toList());

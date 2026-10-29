@@ -74,8 +74,8 @@ final class FileIndexer {
     Result index(Path candidate, SqliteStorage storage) throws ExtractionException, SQLException {
         try {
             return index(candidate, storage, null);
-        } catch (EmbeddingException impossible) {
-            throw new IllegalStateException("A lexical replacement cannot embed", impossible);
+        } catch (EmbeddingException | Cancellation.CancelledException impossible) {
+            throw new IllegalStateException("A lexical replacement cannot embed or be cancelled", impossible);
         }
     }
 
@@ -84,9 +84,10 @@ final class FileIndexer {
      * embedded first and stored with their vectors in the same replacement. Unchanged files are not embedded.
      *
      * @throws EmbeddingException if embedding fails, before the file is written
+     * @throws Cancellation.CancelledException if the run is cancelled while embedding, before the file is written
      */
     Result index(Path candidate, SqliteStorage storage, SemanticIndexing semantic)
-            throws ExtractionException, SQLException, EmbeddingException {
+            throws ExtractionException, SQLException, EmbeddingException, Cancellation.CancelledException {
         Objects.requireNonNull(storage, "storage");
         Path absolute = context.absoluteSource(candidate);
 

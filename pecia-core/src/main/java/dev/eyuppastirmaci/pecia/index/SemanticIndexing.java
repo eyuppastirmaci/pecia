@@ -9,7 +9,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-/** The embedder and profile of one semantic indexing run, which embeds each changed file's chunks in batches. */
+/**
+ * The embedder and profile of one semantic indexing run, which embeds each changed file's chunks in batches and checks
+ * for cancellation before each batch.
+ */
 final class SemanticIndexing {
 
     // Bounds the memory of one inference call; on the CPU, larger batches do not embed full chunks faster.
@@ -17,10 +20,12 @@ final class SemanticIndexing {
 
     private final TextEmbedder embedder;
     private final EmbeddingProfile profile;
+    private final Cancellation cancellation;
 
-    SemanticIndexing(TextEmbedder embedder, EmbeddingProfile profile) {
+    SemanticIndexing(TextEmbedder embedder, EmbeddingProfile profile, Cancellation cancellation) {
         this.embedder = Objects.requireNonNull(embedder, "embedder");
         this.profile = Objects.requireNonNull(profile, "profile");
+        this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
     }
 
     EmbeddingProfile profile() {
@@ -28,7 +33,7 @@ final class SemanticIndexing {
     }
 
     /** Embeds each chunk with its path and heading context, as {@link EmbeddingInput} describes. */
-    List<float[]> embed(List<Chunk> chunks) throws EmbeddingException {
+    List<float[]> embed(List<Chunk> chunks) throws EmbeddingException, Cancellation.CancelledException {
         return embedTexts(chunks.stream()
                 .map(chunk ->
                         EmbeddingInput.of(chunk.sourcePath(), chunk.metadata().headingPath(), chunk.content()))
@@ -36,10 +41,11 @@ final class SemanticIndexing {
     }
 
     /** Embeds prepared embedding inputs in batches, one embedding per text in order. */
-    List<float[]> embedTexts(List<String> contents) throws EmbeddingException {
+    List<float[]> embedTexts(List<String> contents) throws EmbeddingException, Cancellation.CancelledException {
         List<float[]> vectors = new ArrayList<>(contents.size());
 
         for (int start = 0; start < contents.size(); start += BATCH_SIZE) {
+            cancellation.check();
             List<String> texts = contents.subList(start, Math.min(start + BATCH_SIZE, contents.size()));
             float[][] batch = embedder.embed(texts);
 

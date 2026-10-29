@@ -156,6 +156,9 @@ public final class IndexService {
      * their own, so an interrupted run leaves only the rest for the next one; the progress listener hears how far this
      * has come. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs the model.
      *
+     * <p>A cancelled run stops before its next file, embedding batch, or backfill page, skips deletions, closes the
+     * embedder and storage, and returns {@link IndexResult.Status#CANCELLED} with what it committed.
+     *
      * @param target directory whose descendants are indexed
      * @param options the caller's choices for this run
      * @throws NullPointerException if target or options is null, before any filesystem access
@@ -175,7 +178,7 @@ public final class IndexService {
         boolean semanticEnabled =
                 options.resolveSemanticEnabled(context.loadedConfig().config());
 
-        return indexFiles(context, scanResult, semanticEnabled ? options : null);
+        return indexFiles(context, scanResult, options, semanticEnabled);
     }
 
     private void requireCompleteScan(ProjectContext context, WalkResult scanResult) throws IndexException {
@@ -189,18 +192,20 @@ public final class IndexService {
         throw new IndexException("Indexing requires a complete scan", null, result, scanResult.issues());
     }
 
-    /** Indexes the scanned files; {@code semanticOptions} is null when the run does not need the semantic model. */
-    private IndexResult indexFiles(ProjectContext context, WalkResult scanResult, IndexOptions semanticOptions)
+    /** Indexes the scanned files, making the semantic model available only when {@code semanticEnabled}. */
+    private IndexResult indexFiles(
+            ProjectContext context, WalkResult scanResult, IndexOptions options, boolean semanticEnabled)
             throws IndexException {
         List<Path> candidates = scanResult.files();
+        Cancellation cancellation = options.cancellation() == null ? new Cancellation() : options.cancellation();
         // Constructing the file pipeline validates the real tokenizer budget before opening storage.
         FileIndexer indexer = new FileIndexer(context);
-        ModelOutcome semanticModel = semanticOptions == null ? null : ensureModel(context, candidates, semanticOptions);
+        ModelOutcome semanticModel = semanticEnabled ? ensureModel(context, candidates, options) : null;
         // Semantic classes are created only for a semantic run; the profile comes first so nothing can fail between
         // opening the embedder and the try block that closes it.
         EmbeddingProfile profile = semanticModel == null ? null : profiles.get();
         TextEmbedder embedder = semanticModel == null ? null : openEmbedder(context, candidates, semanticModel);
-        SemanticIndexing semantic = embedder == null ? null : new SemanticIndexing(embedder, profile);
+        SemanticIndexing semantic = embedder == null ? null : new SemanticIndexing(embedder, profile, cancellation);
         int indexedFiles = 0;
         int rechunkedFiles = 0;
         int unchangedFiles = 0;
@@ -222,6 +227,8 @@ public final class IndexService {
             }
 
             for (Path candidate : candidates) {
+                cancellation.check();
+
                 try {
                     FileIndexer.Result result = indexer.index(candidate, storage, semantic);
                     if (result.unchanged()) {
@@ -245,6 +252,9 @@ public final class IndexService {
                 }
             }
 
+            // A cancelled run's scan may be stale by the time it stops, so it deletes nothing.
+            cancellation.check();
+
             if (issues.isEmpty()) {
                 IndexDeletionPlanner planner = new IndexDeletionPlanner(context);
                 var missing = planner.plan(scanResult, storage.files().findAll());
@@ -255,7 +265,7 @@ public final class IndexService {
 
             if (semantic != null) {
                 // Unchanged files' chunks match their content and chunking, so they are embedded from storage.
-                backfill = new EmbeddingBackfill(storage, semantic, semanticOptions.progressListener());
+                backfill = new EmbeddingBackfill(storage, semantic, options.progressListener());
                 backfill.run(unchanged);
                 coverage = storage.embeddingCoverage(profile);
             }
@@ -297,6 +307,23 @@ public final class IndexService {
                     rechunkedFiles);
 
             throw new IndexException("Semantic indexing could not embed a file's chunks", failure, result, List.of());
+        } catch (Cancellation.CancelledException cancelled) {
+            // Storage and the embedder are already closed; the file in progress was not written.
+            return new IndexResult(
+                    context,
+                    IndexResult.Status.CANCELLED,
+                    candidates.size(),
+                    indexedFiles,
+                    unchangedFiles,
+                    deletedFiles,
+                    writtenChunks,
+                    issues,
+                    semanticModel,
+                    embeddedChunks,
+                    backfilled(backfill),
+                    discardedEmbeddings,
+                    null,
+                    rechunkedFiles);
         }
 
         IndexResult.Status status = issues.isEmpty() ? IndexResult.Status.COMPLETE : IndexResult.Status.PARTIAL;
