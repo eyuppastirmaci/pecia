@@ -16,6 +16,7 @@ import java.util.Map;
 public final class MarkdownChunker implements DocumentChunker {
 
     private final MarkdownBlockPlanner planner;
+    private final MarkdownGroupMerger merger;
     private final TextChunker fallback;
     private final MarkdownSectionParser sectionParser = new MarkdownSectionParser();
 
@@ -28,13 +29,23 @@ public final class MarkdownChunker implements DocumentChunker {
      * @throws IllegalArgumentException if the token budget or overlap is invalid
      */
     public MarkdownChunker(TokenCounter tokenCounter, int maxTokens, int overlapTokens) {
+        this(tokenCounter, maxTokens, overlapTokens, true);
+    }
+
+    /** Creates a chunker that keeps tiny groups apart when {@code mergeTinyGroups} is false, for section tests. */
+    MarkdownChunker(TokenCounter tokenCounter, int maxTokens, int overlapTokens, boolean mergeTinyGroups) {
         fallback = new TextChunker(tokenCounter, maxTokens, overlapTokens);
         planner = new MarkdownBlockPlanner(tokenCounter, maxTokens);
+        merger = mergeTinyGroups
+                ? new MarkdownGroupMerger(
+                        tokenCounter, maxTokens - tokenCounter.identity().specialTokenCount())
+                : null;
     }
 
     /**
      * Splits Markdown at structural boundaries with token-bounded text fallback and overlap confined
-     * to oversized leaf blocks.
+     * to oversized leaf blocks, then joins tiny groups, such as a heading with one short line, to a neighbour under
+     * the same parent heading; a joined chunk carries the heading path both groups share.
      *
      * @param document extracted document whose original text and source identity are preserved
      * @return immutable source-ordered chunks with UTF-16 offsets, line ranges, and heading paths, or
@@ -53,7 +64,7 @@ public final class MarkdownChunker implements DocumentChunker {
 
         SourceText boundaries = new SourceText(document.content());
         List<MarkdownSection> sections = sectionParser.parse(document.content());
-        List<Chunk> chunks = new ArrayList<>();
+        List<MarkdownGroupMerger.HeadedGroup> headed = new ArrayList<>();
         int sectionIndex = 0;
 
         for (MarkdownBlockGroup group : groups) {
@@ -66,12 +77,28 @@ public final class MarkdownChunker implements DocumentChunker {
                 sectionIndex++;
             }
 
-            List<String> headingPath = sections.get(sectionIndex).headingPath();
+            headed.add(new MarkdownGroupMerger.HeadedGroup(
+                    group.startOffset(),
+                    group.endOffset(),
+                    group.requiresSplit(),
+                    sections.get(sectionIndex).headingPath()));
+        }
 
+        List<Chunk> chunks = new ArrayList<>();
+
+        List<MarkdownGroupMerger.HeadedGroup> planned =
+                merger == null ? headed : merger.merge(document.content(), headed);
+
+        for (MarkdownGroupMerger.HeadedGroup group : planned) {
             if (group.requiresSplit()) {
-                appendFallback(document, boundaries, group, headingPath, chunks);
+                appendFallback(
+                        document,
+                        boundaries,
+                        new MarkdownBlockGroup(group.startOffset(), group.endOffset(), true),
+                        group.headingPath(),
+                        chunks);
             } else {
-                append(document, boundaries, group.startOffset(), group.endOffset(), headingPath, chunks);
+                append(document, boundaries, group.startOffset(), group.endOffset(), group.headingPath(), chunks);
             }
         }
 

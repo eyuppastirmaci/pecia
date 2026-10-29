@@ -20,6 +20,7 @@ import java.util.Optional;
  * @param fallback why an {@code auto} query searched lexically; present exactly then
  * @param notices what the caller should know about how the text was searched; only queries that compared embeddings
  *     have any
+ * @param queryShape the text's shape, which weighed the two rankings; present exactly when hybrid search ran
  */
 public record QueryResult(
         List<SearchHit> hits,
@@ -28,16 +29,18 @@ public record QueryResult(
         SearchMode requestedMode,
         SearchMode effectiveMode,
         Optional<ModeFallback> fallback,
-        List<QueryNotice> notices) {
+        List<QueryNotice> notices,
+        Optional<QueryShape> queryShape) {
 
     /**
      * Copies the lists and checks that the modes, fallback, coverage, and notices agree.
      *
-     * @throws NullPointerException if a list, any element, a mode, or the fallback is null
+     * @throws NullPointerException if a list, any element, a mode, the fallback, or the query shape is null
      * @throws IllegalArgumentException if the effective mode is {@code AUTO}; an explicit mode differs from the
      *     effective one; {@code auto} produced a mode other than lexical or hybrid; a fallback is present other than
      *     for {@code auto} searching lexically, or missing then; coverage is present exactly when it is not expected;
-     *     or a notice does not fit the effective mode
+     *     a notice does not fit the effective mode; or a query shape is present other than for hybrid results, or
+     *     missing for them
      */
     public QueryResult {
         hits = List.copyOf(hits);
@@ -46,6 +49,7 @@ public record QueryResult(
         Objects.requireNonNull(requestedMode, "requestedMode");
         Objects.requireNonNull(effectiveMode, "effectiveMode");
         Objects.requireNonNull(fallback, "fallback");
+        Objects.requireNonNull(queryShape, "queryShape");
 
         if (effectiveMode == SearchMode.AUTO) {
             throw new IllegalArgumentException("The effective mode is never auto");
@@ -63,6 +67,10 @@ public record QueryResult(
             throw new IllegalArgumentException("Coverage is reported exactly when embeddings were compared");
         }
 
+        if (queryShape.isPresent() != (effectiveMode == SearchMode.HYBRID)) {
+            throw new IllegalArgumentException("Exactly hybrid results report the query shape");
+        }
+
         for (QueryNotice notice : notices) {
             boolean fits =
                     switch (notice.code()) {
@@ -78,6 +86,14 @@ public record QueryResult(
 
     /** Creates an explicitly lexical query's result. */
     public QueryResult(List<SearchHit> hits, List<Warning> warnings) {
-        this(hits, warnings, null, SearchMode.LEXICAL, SearchMode.LEXICAL, Optional.empty(), List.of());
+        this(
+                hits,
+                warnings,
+                null,
+                SearchMode.LEXICAL,
+                SearchMode.LEXICAL,
+                Optional.empty(),
+                List.of(),
+                Optional.empty());
     }
 }

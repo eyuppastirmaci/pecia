@@ -126,7 +126,7 @@ final class EmbeddingScenario {
 
     /**
      * Queries the semantically indexed corpus with its shortest chunk's text and the tiny model beside the project,
-     * semantically, in hybrid mode, and in the default auto mode: that chunk comes first, with similarity 1 and then
+     * semantically, in hybrid mode, and in the default auto mode: that chunk comes first, semantically and then
      * ranked first by both sides, auto chooses hybrid search, and every chunk could be compared.
      */
     static void querySemantically(Path root) throws Exception {
@@ -151,7 +151,8 @@ final class EmbeddingScenario {
         check(
                 (first.sourcePath().toString().replace('\\', '/') + "#" + first.chunkIndex()).equals(key)
                         && first.score().kind() == SearchScore.Kind.COSINE_SIMILARITY
-                        && Math.abs(first.score().value() - 1) < 1e-5,
+                        // The stored chunk was embedded with its path and heading context, the query without it.
+                        && first.score().value() > 0.5,
                 "A packaged semantic query with a chunk's text must find that chunk first");
 
         QueryResult hybrid = QueryService.withModelLookup(

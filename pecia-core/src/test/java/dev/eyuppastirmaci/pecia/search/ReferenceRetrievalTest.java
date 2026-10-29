@@ -18,7 +18,9 @@ import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -35,31 +37,41 @@ import org.junit.jupiter.params.provider.CsvSource;
 @Tag("reference")
 class ReferenceRetrievalTest {
 
-    private static final Map<String, String> CORPUS = Map.of(
-            "refunds.md",
-            "Customers who return a purchase get their money back on the original card within five business days.\n",
-            "passwords.md",
-            "To recover your account, open the sign-in page and choose the forgotten password link; we email a reset"
-                    + " code.\n",
-            "shipping.md",
-            "Parcels leave our warehouse every weekday morning, and couriers deliver them in two to four days.\n",
-            "backups.md",
-            "Nightly backups copy the PostgreSQL database to encrypted object storage and keep thirty days of"
-                    + " snapshots.\n",
-            "weather.md",
-            "Heavy rain and strong winds are expected along the coast tomorrow afternoon.\n",
-            "cooking.md",
-            "Simmer the tomatoes with garlic and olive oil for twenty minutes to make a simple pasta sauce.\n",
-            "cats.md",
-            "Cats sleep for most of the day and groom themselves carefully after every meal.\n",
-            "docs/runbook.md",
-            "Deploys run every Tuesday after the staging checks pass. If the build server reports X9Q7ZK, clear the"
-                    + " artifact cache and start the pipeline again. Rollbacks restore the previous release from the"
-                    + " archive within ten minutes.\n",
-            "inventory.md",
-            "Warehouse shelves hold the X9, Q7, and ZK barcode scanner models.\n");
+    private static final Map<String, String> CORPUS = Map.ofEntries(
+            Map.entry(
+                    "refunds.md",
+                    "Customers who return a purchase get their money back on the original card within five business days.\n"),
+            Map.entry(
+                    "passwords.md",
+                    "To recover your account, open the sign-in page and choose the forgotten password link; we email a reset"
+                            + " code.\n"),
+            Map.entry(
+                    "shipping.md",
+                    "Parcels leave our warehouse every weekday morning, and couriers deliver them in two to four days.\n"),
+            Map.entry(
+                    "backups.md",
+                    "Nightly backups copy the PostgreSQL database to encrypted object storage and keep thirty days of"
+                            + " snapshots.\n"),
+            Map.entry("weather.md", "Heavy rain and strong winds are expected along the coast tomorrow afternoon.\n"),
+            Map.entry(
+                    "cooking.md",
+                    "Simmer the tomatoes with garlic and olive oil for twenty minutes to make a simple pasta sauce.\n"),
+            Map.entry("cats.md", "Cats sleep for most of the day and groom themselves carefully after every meal.\n"),
+            Map.entry(
+                    "docs/runbook.md",
+                    "Deploys run every Tuesday after the staging checks pass. If the build server reports X9Q7ZK, clear the"
+                            + " artifact cache and start the pipeline again. Rollbacks restore the previous release from the"
+                            + " archive within ten minutes.\n"),
+            Map.entry("inventory.md", "Warehouse shelves hold the X9, Q7, and ZK barcode scanner models.\n"),
+            Map.entry(
+                    "src/RetrySettings.java", "final class RetrySettings {\n    static final int retryLimit = 5;\n}\n"),
+            Map.entry(
+                    "docs/retries.md",
+                    "The retryLimit setting says how many times a failed payment is tried again, waiting longer"
+                            + " before each new attempt.\n"));
 
     private static final Path RUNBOOK = Path.of("docs", "runbook.md");
+    private static final Path DEFINITION = Path.of("src", "RetrySettings.java");
 
     @TempDir
     static Path sandbox;
@@ -109,7 +121,8 @@ class ReferenceRetrievalTest {
                 "How do felines behave? | cats.md"
             })
     void aQuestionFindsTheTextThatAnswersItFirst(String question, String answer) throws Exception {
-        QueryResult result = service.query(root, new SearchRequest(question), QueryOptions.mode(SearchMode.SEMANTIC));
+        QueryResult result = service.query(
+                root, new SearchRequest(question, SearchRequest.MAX_LIMIT), QueryOptions.mode(SearchMode.SEMANTIC));
 
         assertEquals(new EmbeddingCoverage(CORPUS.size(), 0, 0), result.embeddingCoverage());
         assertEquals(CORPUS.size(), result.hits().size());
@@ -151,6 +164,23 @@ class ReferenceRetrievalTest {
 
         assertTrue(lexical.hits().stream().noneMatch(hit -> hit.sourcePath().equals(Path.of(answer))));
         assertEquals(Path.of(answer), hybrid.hits().getFirst().sourcePath(), () -> ranking(hybrid));
+    }
+
+    @Test
+    void anIdentifierQueryFindsItsDefinitionFirstWhereEqualWeightsPreferAProseMention() throws Exception {
+        // The prose file mentions the setting and is semantically closer to it; the definition is the lexical #1.
+        SearchRequest request = new SearchRequest("retryLimit", SearchRequest.MAX_LIMIT);
+        QueryResult lexical = service.query(root, request, QueryOptions.mode(SearchMode.LEXICAL));
+        QueryResult semantic = service.query(root, request, QueryOptions.mode(SearchMode.SEMANTIC));
+
+        QueryResult hybrid = service.query(root, request, QueryOptions.mode(SearchMode.HYBRID));
+        List<SearchHit> equalWeights = RankFusion.fuse(lexical.hits(), semantic.hits(), SearchRequest.MAX_LIMIT);
+
+        assertEquals(Path.of("docs", "retries.md"), semantic.hits().getFirst().sourcePath(), () -> ranking(semantic));
+        assertEquals(Path.of("docs", "retries.md"), equalWeights.getFirst().sourcePath());
+        assertEquals(Optional.of(QueryShape.IDENTIFIER), hybrid.queryShape());
+        assertEquals(DEFINITION, hybrid.hits().getFirst().sourcePath(), () -> ranking(hybrid));
+        assertEquals(Path.of("docs", "retries.md"), hybrid.hits().get(1).sourcePath(), () -> ranking(hybrid));
     }
 
     private static String ranking(QueryResult result) {

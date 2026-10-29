@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingInput;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
@@ -45,7 +46,11 @@ final class FileIndexer {
 
         this.context = context;
         this.extraction = new DocumentExtractionService(contentLoader, extractor);
-        this.chunkers = DocumentChunkerFactory.create(tokenizer, config.maxTokens(), config.overlapTokens());
+        // Chunks leave room for the context line their embedding input starts with, so content is never cut; the
+        // constant is inlined, so lexical runs never initialize the semantic class that declares it.
+        int maxTokens = Math.min(config.maxTokens(), limits.maxInputTokens() - EmbeddingInput.CONTEXT_TOKENS);
+        int overlapTokens = Math.min(config.overlapTokens(), maxTokens - limits.specialTokenCount() - 1);
+        this.chunkers = DocumentChunkerFactory.create(tokenizer, maxTokens, overlapTokens);
         this.identity = ChunkingIdentity.from(config, tokenizer.identity());
     }
 

@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.index;
 
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingInput;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,12 +27,15 @@ final class SemanticIndexing {
         return profile;
     }
 
-    /** Embeds each chunk's stored content, as the profile's {@code chunk-content} input describes. */
+    /** Embeds each chunk with its path and heading context, as {@link EmbeddingInput} describes. */
     List<float[]> embed(List<Chunk> chunks) throws EmbeddingException {
-        return embedTexts(chunks.stream().map(Chunk::content).toList());
+        return embedTexts(chunks.stream()
+                .map(chunk ->
+                        EmbeddingInput.of(chunk.sourcePath(), chunk.metadata().headingPath(), chunk.content()))
+                .toList());
     }
 
-    /** Embeds stored chunk contents in batches, one embedding per text in order. */
+    /** Embeds prepared embedding inputs in batches, one embedding per text in order. */
     List<float[]> embedTexts(List<String> contents) throws EmbeddingException {
         List<float[]> vectors = new ArrayList<>(contents.size());
 

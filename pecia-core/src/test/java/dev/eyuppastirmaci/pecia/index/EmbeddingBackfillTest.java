@@ -72,9 +72,17 @@ class EmbeddingBackfillTest {
         assertEquals(0, observer.finish().writeCount(), "No file, chunk, identity, or profile is written");
         assertEquals(before, dump(semantic).withoutEmbeddings());
 
+        // Backfill embeds the same input as indexing a changed file: path and heading context, then content.
+        Map<String, String> inputs =
+                StoredEmbeddingInputs.byContent(semantic.context().databasePath());
+
         try (Embedder embedder = Embedder.open(TINY)) {
             for (var chunk : storedVectors(semantic).entrySet()) {
-                assertArrayEquals(embedder.embed(List.of(chunk.getKey()))[0], chunk.getValue(), 1e-6f, chunk.getKey());
+                assertArrayEquals(
+                        embedder.embed(List.of(inputs.get(chunk.getKey())))[0],
+                        chunk.getValue(),
+                        1e-6f,
+                        chunk.getKey());
             }
         }
     }

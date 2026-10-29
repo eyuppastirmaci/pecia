@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.index;
 
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingInput;
 import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.sql.SQLException;
@@ -77,8 +78,9 @@ final class EmbeddingBackfill {
     }
 
     private void store(List<UnembeddedChunk> page) throws SQLException, EmbeddingException {
-        List<float[]> vectors =
-                semantic.embedTexts(page.stream().map(UnembeddedChunk::content).toList());
+        List<float[]> vectors = semantic.embedTexts(page.stream()
+                .map(chunk -> EmbeddingInput.of(chunk.sourcePath(), chunk.headingPath(), chunk.content()))
+                .toList());
 
         stored += storage.storeEmbeddings(semantic.profile(), page, vectors);
     }

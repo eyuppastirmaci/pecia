@@ -8,7 +8,7 @@ Every expected chunk specifies its complete content, index, source path/type, in
 | --- | ---: | --- |
 | Text | 7 | Empty/whitespace produce no chunks; Turkish, emoji, and combining marks remain unchanged; LF/CRLF inputs split after two fitting lines; an oversized paragraph uses four content tokens with two-token overlap; paragraph boundaries precede later word boundaries. |
 | Source | 8 | Empty/whitespace and Unicode preservation; LF/CRLF inputs split after three fitting lines; an oversized line uses word overlap; full-line overlap reuses the third line; dedent preference ends the first chunk before `end`. |
-| Markdown | 8 | Empty/whitespace and Unicode headings; nested headings split into Root and Root/Child contexts under LF/CRLF; oversized paragraph overlap stays within its leaf; fitting fences remain intact; oversized fences split without inventing or losing delimiters. |
+| Markdown | 8 | Empty/whitespace and Unicode headings; under LF/CRLF a tiny Root section (three content tokens, below the 64-token budget's threshold of seven) joins its Child subsection in one chunk with the shared Root path; oversized paragraph overlap stays within its leaf; fitting fences remain intact; oversized fences split without inventing or losing delimiters. |
 
 ## Review and maintenance
 

@@ -7,6 +7,7 @@ import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -157,20 +158,40 @@ final class SqliteEmbeddingRepository {
         List<UnembeddedChunk> chunks = new ArrayList<>();
 
         try (var query = connection.prepareStatement("""
-                SELECT c.id, c.content FROM chunks c
+                SELECT c.id, f.source_path, c.content FROM chunks c JOIN files f ON f.id = c.file_id
                 WHERE c.file_id = ? AND NOT EXISTS (SELECT 1 FROM chunk_embeddings e WHERE e.chunk_id = c.id)
                 ORDER BY c.chunk_index
-                """)) {
+                """);
+                var headings = connection.prepareStatement(
+                        "SELECT heading FROM chunk_headings WHERE chunk_id = ? ORDER BY position")) {
             query.setLong(1, fileId);
 
             try (var result = query.executeQuery()) {
                 while (result.next()) {
-                    chunks.add(new UnembeddedChunk(result.getLong(1), result.getString(2)));
+                    long id = result.getLong(1);
+                    chunks.add(new UnembeddedChunk(
+                            id,
+                            SqlitePath.decode(result.getString(2)),
+                            headingPath(headings, id),
+                            result.getString(3)));
                 }
             }
         }
 
         return chunks;
+    }
+
+    private static List<String> headingPath(PreparedStatement headings, long chunkId) throws SQLException {
+        List<String> path = new ArrayList<>();
+        headings.setLong(1, chunkId);
+
+        try (var result = headings.executeQuery()) {
+            while (result.next()) {
+                path.add(result.getString(1));
+            }
+        }
+
+        return path;
     }
 
     /**

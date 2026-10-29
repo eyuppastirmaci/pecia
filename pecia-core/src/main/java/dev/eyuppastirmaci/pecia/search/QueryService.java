@@ -206,7 +206,8 @@ public final class QueryService {
                 requested,
                 SearchMode.LEXICAL,
                 fallback,
-                List.of());
+                List.of(),
+                Optional.empty());
     }
 
     /**
@@ -245,7 +246,15 @@ public final class QueryService {
 
         if (coverage.chunks() == 0) {
             // Nothing is stored to compare, like a lexical query that matches nothing.
-            return new QueryResult(List.of(), warnings, coverage, requested, effective, Optional.empty(), List.of());
+            return new QueryResult(
+                    List.of(),
+                    warnings,
+                    coverage,
+                    requested,
+                    effective,
+                    Optional.empty(),
+                    List.of(),
+                    queryShape(request, effective));
         }
 
         if (coverage.embedded() == 0) {
@@ -262,7 +271,19 @@ public final class QueryService {
                 : storage.semanticSearch(profile).search(queryEmbedding, request.limit());
 
         return new QueryResult(
-                hits, warnings, coverage, requested, effective, Optional.empty(), notices(request, effective));
+                hits,
+                warnings,
+                coverage,
+                requested,
+                effective,
+                Optional.empty(),
+                notices(request, effective),
+                queryShape(request, effective));
+    }
+
+    /** Returns the shape that weighed a hybrid query's rankings, which hybrid search derives from the same text. */
+    private static Optional<QueryShape> queryShape(SearchRequest request, SearchMode effective) {
+        return effective == SearchMode.HYBRID ? Optional.of(QueryShape.of(request.query())) : Optional.empty();
     }
 
     /** Tells the caller when the embedded text was cut or a hybrid query could not search lexically. */

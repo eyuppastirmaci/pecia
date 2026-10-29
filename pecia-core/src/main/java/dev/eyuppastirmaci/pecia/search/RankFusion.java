@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 
@@ -36,9 +37,15 @@ final class RankFusion {
 
     private RankFusion() {}
 
+    /** Fuses natural-language rankings, where both sides weigh the same; see {@link #fuse(List, List, int, QueryShape)}. */
+    static List<SearchHit> fuse(List<SearchHit> lexical, List<SearchHit> semantic, int limit) {
+        return fuse(lexical, semantic, limit, QueryShape.NATURAL_LANGUAGE);
+    }
+
     /**
-     * Ranks the union of both candidate lists by {@code 1 / (K + lexicalRank) + 1 / (K + semanticRank)} with 1-based
-     * ranks, where a side that did not rank a chunk contributes zero. Candidates beyond {@link #CANDIDATE_DEPTH} on
+     * Ranks the union of both candidate lists by {@code wl / (K + lexicalRank) + ws / (K + semanticRank)} with 1-based
+     * ranks and the shape's {@link QueryShape#lexicalWeight() lexical} and {@link QueryShape#semanticWeight() semantic}
+     * weights, where a side that did not rank a chunk contributes zero. Candidates beyond {@link #CANDIDATE_DEPTH} on
      * either side are ignored. Ties use binary source path, chunk position, then chunk ID. A fused hit keeps the
      * lexical candidate's fields when there is one, so its snippet shows the matched terms, and the semantic
      * candidate's otherwise.
@@ -46,12 +53,15 @@ final class RankFusion {
      * @param lexical lexical candidates in their ranked order, all scored {@link SearchScore.Kind#SQLITE_BM25}
      * @param semantic semantic candidates in their ranked order, all scored {@link SearchScore.Kind#COSINE_SIMILARITY}
      * @param limit the maximum number of fused hits, between 1 and {@link SearchRequest#MAX_LIMIT}
+     * @param shape the query's shape, which sets the weights
      * @return up to {@code limit} hits scored {@link SearchScore.Kind#RECIPROCAL_RANK_FUSION}, best first
-     * @throws NullPointerException if a list or a candidate is null
+     * @throws NullPointerException if a list, a candidate, or the shape is null
      * @throws IllegalArgumentException if limit is out of bounds, a list holds a chunk twice or another score kind, or
      *     the lists place one chunk at different positions
      */
-    static List<SearchHit> fuse(List<SearchHit> lexical, List<SearchHit> semantic, int limit) {
+    static List<SearchHit> fuse(List<SearchHit> lexical, List<SearchHit> semantic, int limit, QueryShape shape) {
+        Objects.requireNonNull(shape, "shape");
+
         if (limit < 1 || limit > SearchRequest.MAX_LIMIT) {
             throw new IllegalArgumentException("limit must be between 1 and " + SearchRequest.MAX_LIMIT);
         }
@@ -69,12 +79,12 @@ final class RankFusion {
                 requireSamePosition(hit, semanticCandidates.get(semanticRank - 1));
             }
 
-            fused.add(fused(hit, rank(lexicalRanks.get(hit.chunkId())), rank(semanticRank)));
+            fused.add(fused(hit, rank(lexicalRanks.get(hit.chunkId())), rank(semanticRank), shape));
         }
 
         for (SearchHit hit : semanticCandidates) {
             if (!lexicalRanks.containsKey(hit.chunkId())) {
-                fused.add(fused(hit, OptionalInt.empty(), rank(semanticRanks.get(hit.chunkId()))));
+                fused.add(fused(hit, OptionalInt.empty(), rank(semanticRanks.get(hit.chunkId())), shape));
             }
         }
 
@@ -121,9 +131,11 @@ final class RankFusion {
         return rank == null ? OptionalInt.empty() : OptionalInt.of(rank);
     }
 
-    private static SearchHit fused(SearchHit base, OptionalInt lexicalRank, OptionalInt semanticRank) {
+    private static SearchHit fused(
+            SearchHit base, OptionalInt lexicalRank, OptionalInt semanticRank, QueryShape shape) {
         // Lexical first, then semantic, so equal rank pairs always sum to the same double.
-        double score = contribution(lexicalRank) + contribution(semanticRank);
+        double score =
+                contribution(lexicalRank, shape.lexicalWeight()) + contribution(semanticRank, shape.semanticWeight());
 
         return new SearchHit(
                 base.chunkId(),
@@ -138,8 +150,8 @@ final class RankFusion {
                 Optional.of(new FusedRanks(lexicalRank, semanticRank)));
     }
 
-    private static double contribution(OptionalInt rank) {
-        return rank.isPresent() ? 1.0 / (K + rank.getAsInt()) : 0;
+    private static double contribution(OptionalInt rank, double weight) {
+        return rank.isPresent() ? weight / (K + rank.getAsInt()) : 0;
     }
 
     /** Orders portable paths by their UTF-8 bytes, as SQLite's BINARY collation orders the stored paths. */

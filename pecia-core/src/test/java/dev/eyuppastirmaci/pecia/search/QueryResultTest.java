@@ -96,6 +96,30 @@ class QueryResultTest {
         assertThrows(IllegalArgumentException.class, () -> new QueryNotice(QueryNotice.Code.LEXICAL_SIDE_SKIPPED, " "));
         assertThrows(NullPointerException.class, () -> new QueryNotice(null, "notice"));
         assertEquals(List.of(), new QueryResult(List.of(), List.of()).notices());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new QueryResult(
+                        List.of(),
+                        List.of(),
+                        null,
+                        SearchMode.LEXICAL,
+                        SearchMode.LEXICAL,
+                        Optional.empty(),
+                        List.of(),
+                        Optional.of(QueryShape.IDENTIFIER)),
+                "Only hybrid results report the query shape");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new QueryResult(
+                        List.of(),
+                        List.of(),
+                        new EmbeddingCoverage(1, 0, 0),
+                        SearchMode.HYBRID,
+                        SearchMode.HYBRID,
+                        Optional.empty(),
+                        List.of(),
+                        Optional.empty()),
+                "Hybrid results must report it");
     }
 
     @Test
@@ -117,7 +141,8 @@ class QueryResultTest {
 
     private static QueryResult result(
             EmbeddingCoverage coverage, SearchMode requested, SearchMode effective, Optional<ModeFallback> fallback) {
-        return new QueryResult(List.of(), List.of(), coverage, requested, effective, fallback, List.of());
+        return new QueryResult(
+                List.of(), List.of(), coverage, requested, effective, fallback, List.of(), shapeFor(effective));
     }
 
     private static QueryResult withNotice(SearchMode effective, QueryNotice.Code code) {
@@ -131,7 +156,12 @@ class QueryResultTest {
                 effective,
                 effective,
                 fallback,
-                List.of(new QueryNotice(code, "notice")));
+                List.of(new QueryNotice(code, "notice")),
+                shapeFor(effective));
+    }
+
+    private static Optional<QueryShape> shapeFor(SearchMode effective) {
+        return effective == SearchMode.HYBRID ? Optional.of(QueryShape.NATURAL_LANGUAGE) : Optional.empty();
     }
 
     @Test

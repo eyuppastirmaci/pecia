@@ -46,6 +46,35 @@ class RankFusionTest {
     }
 
     @Test
+    void identifierWeightsKeepTheLexicalOrderAndPutSemanticOnlyChunksAfterIt() {
+        // As for maxAttempts in a real corpus: the exact lexical answer has no semantic rank, while lower lexical
+        // candidates do; with equal weights any of them would beat it.
+        List<SearchHit> lexical = List.of(
+                lexical(1, "retry/README.md"),
+                lexical(2, "commander/Retry.java"),
+                lexical(3, "retry/Retry.java"),
+                lexical(4, "retry/Backoff.java"),
+                lexical(5, "health/RetryConfig.java"));
+        List<SearchHit> semantic = List.of(
+                semantic(9, "localization/ko/README.md"),
+                semantic(8, "other.md"),
+                semantic(5, "health/RetryConfig.java"),
+                semantic(2, "commander/Retry.java"));
+
+        List<SearchHit> natural = RankFusion.fuse(lexical, semantic, 10, QueryShape.NATURAL_LANGUAGE);
+        List<SearchHit> identifier = RankFusion.fuse(lexical, semantic, 10, QueryShape.IDENTIFIER);
+
+        // Equal weights put both chunks ranked on each side first, and the exact answer only ties with the semantic #1.
+        assertEquals(List.of(2L, 5L, 9L, 1L), ids(natural).subList(0, 4));
+        assertEquals(List.of(1L, 2L, 3L, 4L, 5L, 9L, 8L), ids(identifier));
+        assertEquals(1.0 / 61, identifier.get(0).score().value());
+        assertEquals(1.0 / 62 + 0.002 / 64, identifier.get(1).score().value());
+        assertEquals(0.002 / 61, identifier.get(5).score().value());
+        assertEquals(RankFusion.fuse(lexical, semantic, 10), natural);
+        assertThrows(NullPointerException.class, () -> RankFusion.fuse(lexical, semantic, 10, null));
+    }
+
+    @Test
     void equalScoresBreakByBinaryPathThenPositionThenChunkId() {
         // Each chunk is ranked once at rank 1 or once at rank 2 on one side, so equal ranks give equal scores.
         List<SearchHit> lexical = List.of(lexical(10, "b.md", 0), lexical(11, "é.md", 0));

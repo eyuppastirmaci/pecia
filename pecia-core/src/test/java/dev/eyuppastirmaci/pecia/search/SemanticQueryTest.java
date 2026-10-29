@@ -15,6 +15,7 @@ import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.semantic.Embedder;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingInput;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
 import dev.eyuppastirmaci.pecia.semantic.ModelLookup;
@@ -88,7 +89,10 @@ class SemanticQueryTest {
         assertEquals(new EmbeddingCoverage(chunks.size(), 0, 0), result.embeddingCoverage());
         assertEquals(javaRanking(chunks, text), keys(result.hits()));
         assertEquals(Path.of("refunds.md"), result.hits().getFirst().sourcePath());
-        assertEquals(1.0, result.hits().getFirst().score().value(), 1e-6);
+        // Chunks are embedded with their path as context, which the bare query text lacks, so the match is close to 1.
+        assertTrue(
+                result.hits().getFirst().score().value() > 0.9,
+                () -> String.valueOf(result.hits().getFirst().score()));
 
         for (SearchHit hit : result.hits()) {
             assertEquals(SearchScore.Kind.COSINE_SIMILARITY, hit.score().kind());
@@ -368,7 +372,9 @@ class SemanticQueryTest {
     private static List<String> javaRanking(Map<String, String> chunks, String text) throws EmbeddingException {
         List<String> keys = new ArrayList<>(chunks.keySet());
         List<String> texts = new ArrayList<>(List.of(text));
-        texts.addAll(chunks.values());
+        // Stored chunks are embedded with their path as context; these one-line files have no headings.
+        chunks.forEach((key, content) ->
+                texts.add(EmbeddingInput.of(Path.of(key.substring(0, key.indexOf('#'))), List.of(), content)));
         float[][] embeddings;
 
         try (Embedder embedder = Embedder.open(TinyModel.cached())) {

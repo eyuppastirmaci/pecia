@@ -76,7 +76,16 @@ class HybridQueryTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"the order", "warehouse", "Refunds are issued", "card passwords", "?!"})
+    @ValueSource(
+            strings = {
+                "the order",
+                "warehouse",
+                "Refunds are issued",
+                "card passwords",
+                "?!",
+                "refunds.md",
+                "sign-in page"
+            })
     void hitsAreTheFusionOfTheSeparateLexicalAndSemanticQueries(String text) throws Exception {
         List<SearchHit> lexical = service.query(
                         root, new SearchRequest(text, SearchRequest.MAX_LIMIT), QueryOptions.mode(SearchMode.LEXICAL))
@@ -85,10 +94,32 @@ class HybridQueryTest {
                         root, new SearchRequest(text, SearchRequest.MAX_LIMIT), QueryOptions.mode(SearchMode.SEMANTIC))
                 .hits();
 
-        List<SearchHit> hybrid =
-                service.query(root, new SearchRequest(text, 3), HYBRID).hits();
+        QueryResult hybrid = service.query(root, new SearchRequest(text, 3), HYBRID);
 
-        assertEquals(RankFusion.fuse(lexical, semantic, 3), hybrid);
+        assertEquals(Optional.of(QueryShape.of(text)), hybrid.queryShape());
+        assertEquals(RankFusion.fuse(lexical, semantic, 3, QueryShape.of(text)), hybrid.hits());
+    }
+
+    @Test
+    void anIdentifierQueryKeepsTheLexicalOrder() throws Exception {
+        QueryResult result = service.query(root, new SearchRequest("refunds.md"), HYBRID);
+
+        assertEquals(Optional.of(QueryShape.IDENTIFIER), result.queryShape());
+        assertEquals(Path.of("refunds.md"), result.hits().getFirst().sourcePath());
+        assertEquals(
+                OptionalInt.of(1),
+                result.hits().getFirst().fusedRanks().orElseThrow().lexical());
+
+        // Every chunk the lexical side found comes before every chunk only the semantic side found.
+        List<Boolean> lexicallyFound = result.hits().stream()
+                .map(hit -> hit.fusedRanks().orElseThrow().lexical().isPresent())
+                .toList();
+        assertEquals(
+                lexicallyFound.stream().sorted((a, b) -> Boolean.compare(b, a)).toList(), lexicallyFound);
+        assertEquals(
+                Optional.of(QueryShape.NATURAL_LANGUAGE),
+                service.query(root, new SearchRequest("Refunds are issued"), HYBRID)
+                        .queryShape());
     }
 
     @Test

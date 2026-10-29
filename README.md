@@ -95,7 +95,7 @@ Without either flag, `semantic.enabled` in `.pecia.toml` decides; it is `false` 
 | --- | --- | --- | --- |
 | `lexical` | BM25 over the words of the query; every word must match. | A lexical index. | Exact identifiers, error codes, file names, and phrases. |
 | `semantic` | Cosine similarity between the embedded query and each chunk's embedding. | Embeddings of the current model, the cached model, and a supported platform. | Questions and paraphrases that share few words with the answer. |
-| `hybrid` | Reciprocal rank fusion of the lexical and semantic rankings: `1/(60 + lexical rank) + 1/(60 + semantic rank)`, over each side's first 100 candidates. | The same as `semantic`. | Mixed queries; chunks without an embedding can still come from the lexical side. |
+| `hybrid` | Reciprocal rank fusion of the lexical and semantic rankings: `1/(60 + lexical rank) + 1/(60 + semantic rank)`, over each side's first 100 candidates. Identifier-like text (up to three words, one of them looking like code: `maxAttempts`, `BUFFER_THRESHOLD`, `com.example.retry`, `src/App.java`) keeps the lexical order, and chunks only semantic search found follow. | The same as `semantic`. | Mixed queries; chunks without an embedding can still come from the lexical side. |
 | `auto` (default) | `hybrid` when the index has embeddings and everything semantic search needs is available, otherwise `lexical`. | Nothing. | Everyday use: a lexical-only project stays exactly as fast as plain lexical search. |
 
 Queries never download the model. Lexical queries accept at most 64 words; a hybrid query with more words ranks by the semantic side alone, and only the first 254 tokens of a semantic or hybrid query are embedded. In both cases the query still succeeds and a note on stderr says so.
@@ -117,7 +117,7 @@ docs/payments.md:3-5
 | --- | --- |
 | `BM25: -0.86` | Lexical score from SQLite FTS5; lower is better. |
 | `cosine: 0.33` | Semantic similarity from -1 to 1; higher is better. |
-| `RRF: 0.0328 (lexical #1, semantic #1)` | Hybrid score; higher is better. The parentheses list the sides that ranked the chunk and its rank on each. |
+| `RRF: 0.0328 (lexical #1, semantic #1)` | Hybrid score; higher is better. The parentheses list the sides that ranked the chunk and its rank on each, and end with `; identifier query` when the lexical order decided. |
 
 Results go to stdout, so scripts can read them. Configuration warnings and `note:` lines go to stderr; a note explains, for example, why `auto` searched lexically although the index has embeddings, such as a model that is no longer cached. `No results.` is printed when nothing matches.
 
@@ -163,7 +163,7 @@ Pecia selects files using `.gitignore` rules and the include/exclude patterns in
 
 ### ✂️ Extraction and chunking
 
-Supported text files are read with size and UTF-8 validation, then split into chunks within the configured token budget. Chunks retain source paths, line ranges, and Markdown heading context where available.
+Supported text files are read with size and UTF-8 validation, then split into chunks within the configured token budget, less 32 tokens kept free for the embedding context line described below (so the default 256-token budget gives chunks of up to 224 tokens). Chunks retain source paths, line ranges, and Markdown heading context where available. A tiny Markdown section, such as a heading with one short line, or a few items of a long list that had to be split, joins a neighbouring section under the same parent heading, so no chunk is too small to say anything on its own.
 
 ### 🗃️ Local indexing
 
@@ -175,7 +175,7 @@ Each indexed chunk has a deterministic SHA-256 ID derived from its project-relat
 
 ### 🧠 Embeddings
 
-Semantic indexing embeds each chunk's content with [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) through ONNX Runtime on the CPU, producing one 384-dimensional unit vector per chunk, stored next to the chunk in the same SQLite file. Changed files are embedded as they are indexed; stored chunks without an embedding, for example after earlier lexical runs, are embedded from the index in pages that commit on their own, so an interrupted run resumes where it stopped. Each embedding records the model, revision, tokenizer, and input it was made with; when these change, the next semantic run replaces the old embeddings, and chunks are reused when only the model changed.
+Semantic indexing embeds each chunk with [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) through ONNX Runtime on the CPU, producing one 384-dimensional unit vector per chunk. The embedded text starts with one context line, the chunk's path and heading path (for example `bridge/README.md > Intent`), then a blank line and the content, so a chunk is also found by what its file and section are about; search results and lexical search show only the content. Vectors are stored next to the chunk in the same SQLite file. Changed files are embedded as they are indexed; stored chunks without an embedding, for example after earlier lexical runs, are embedded from the index in pages that commit on their own, so an interrupted run resumes where it stopped. Each embedding records the model, revision, tokenizer, and input it was made with; when these change, the next semantic run replaces the old embeddings, and chunks are reused when only the model changed.
 
 ### 🔎 Search
 
