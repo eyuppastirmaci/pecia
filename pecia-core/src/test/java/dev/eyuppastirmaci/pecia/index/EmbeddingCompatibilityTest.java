@@ -78,6 +78,7 @@ class EmbeddingCompatibilityTest {
         assertEquals(chunks, rebuilt.discardedEmbeddings());
         assertEquals(chunks, rebuilt.backfilledChunks());
         assertEquals(0, rebuilt.indexedFiles());
+        assertEquals(0, rebuilt.rechunkedFiles(), "A model-only change keeps every chunk");
         assertEquals(0, rebuilt.embeddedChunks());
         assertEquals(new EmbeddingCoverage(chunks, 0, 0), rebuilt.embeddingCoverage());
         assertEquals(0, observer.finish().writeCount(), "No file, chunk, identity, or profile row is written");

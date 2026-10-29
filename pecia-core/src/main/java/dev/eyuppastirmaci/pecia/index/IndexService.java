@@ -202,6 +202,7 @@ public final class IndexService {
         TextEmbedder embedder = semanticModel == null ? null : openEmbedder(context, candidates, semanticModel);
         SemanticIndexing semantic = embedder == null ? null : new SemanticIndexing(embedder, profile);
         int indexedFiles = 0;
+        int rechunkedFiles = 0;
         int unchangedFiles = 0;
         int deletedFiles = 0;
         long writtenChunks = 0;
@@ -228,6 +229,10 @@ public final class IndexService {
                         unchanged.add(result.file().id());
                     } else {
                         indexedFiles++;
+
+                        if (result.rechunked()) {
+                            rechunkedFiles++;
+                        }
                     }
 
                     writtenChunks += result.chunkCount();
@@ -268,7 +273,8 @@ public final class IndexService {
                     embeddedChunks,
                     backfilled(backfill),
                     discardedEmbeddings,
-                    null);
+                    null,
+                    rechunkedFiles);
 
             throw new IndexException("Index storage or cleanup operation failed", failure, result, List.of());
         } catch (EmbeddingException failure) {
@@ -287,7 +293,8 @@ public final class IndexService {
                     embeddedChunks,
                     backfilled(backfill),
                     discardedEmbeddings,
-                    null);
+                    null,
+                    rechunkedFiles);
 
             throw new IndexException("Semantic indexing could not embed a file's chunks", failure, result, List.of());
         }
@@ -307,7 +314,8 @@ public final class IndexService {
                 embeddedChunks,
                 backfilled(backfill),
                 discardedEmbeddings,
-                coverage);
+                coverage,
+                rechunkedFiles);
     }
 
     private static long backfilled(EmbeddingBackfill backfill) {

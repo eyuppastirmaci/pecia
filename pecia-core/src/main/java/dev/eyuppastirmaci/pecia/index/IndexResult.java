@@ -23,6 +23,8 @@ import java.util.Objects;
  *     profiles; zero when the run did not embed
  * @param embeddingCoverage how many chunks have this run's embeddings when the run completed its embedding; null
  *     when the run did not embed or stopped before
+ * @param rechunkedFiles indexed files whose content was unchanged but whose chunks were rebuilt for other extraction,
+ *     tokenizer, or chunking settings; a subset of {@code indexedFiles}
  */
 public record IndexResult(
         ProjectContext context,
@@ -37,7 +39,8 @@ public record IndexResult(
         long embeddedChunks,
         long backfilledChunks,
         long discardedEmbeddings,
-        EmbeddingCoverage embeddingCoverage) {
+        EmbeddingCoverage embeddingCoverage,
+        int rechunkedFiles) {
 
     /**
      * Copies issues and rejects negative counters, more processed files than candidates, and embeddings beyond the
@@ -69,6 +72,42 @@ public record IndexResult(
                 || (semanticModel == null && (discardedEmbeddings > 0 || embeddingCoverage != null))) {
             throw new IllegalArgumentException("Invalid embedding compatibility counters");
         }
+
+        if (rechunkedFiles < 0 || rechunkedFiles > indexedFiles) {
+            throw new IllegalArgumentException("rechunkedFiles must be between zero and indexedFiles");
+        }
+    }
+
+    /** Creates an outcome that rebuilt no file's chunks for new settings. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            int unchangedFiles,
+            int deletedFiles,
+            long writtenChunks,
+            List<FileIssue> issues,
+            ModelOutcome semanticModel,
+            long embeddedChunks,
+            long backfilledChunks,
+            long discardedEmbeddings,
+            EmbeddingCoverage embeddingCoverage) {
+        this(
+                context,
+                status,
+                candidateCount,
+                indexedFiles,
+                unchangedFiles,
+                deletedFiles,
+                writtenChunks,
+                issues,
+                semanticModel,
+                embeddedChunks,
+                backfilledChunks,
+                discardedEmbeddings,
+                embeddingCoverage,
+                0);
     }
 
     /** Creates an outcome that discarded no embeddings and reports no coverage. */

@@ -136,6 +136,8 @@ class LegacyIndexMigrationTest {
         assertEquals(IndexResult.Status.COMPLETE, result.status());
         assertEquals(corpusSize, result.candidateCount());
         assertEquals(0, result.deletedFiles());
+        // The corpus bytes match every fixture, so each rewrite is a rebuild for new settings.
+        assertEquals(rewritten ? corpusSize : 0, result.rechunkedFiles());
         if (rewritten) {
             assertEquals(corpusSize, result.indexedFiles());
             assertEquals(corpus, writes.writtenFiles());
