@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ConnectException;
+import java.net.ProxySelector;
 import java.net.http.HttpClient;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
@@ -69,10 +70,15 @@ public final class ModelCache {
     }
 
     static HttpClient defaultClient() {
+        return client(ProxyEnvironment.selector(System.getenv(), System::getProperty));
+    }
+
+    static HttpClient client(ProxySelector proxy) {
         // NORMAL follows redirects except from HTTPS to HTTP, so a redirect cannot downgrade the transport.
         return HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
                 .followRedirects(HttpClient.Redirect.NORMAL)
+                .proxy(proxy)
                 .build();
     }
 
@@ -82,7 +88,7 @@ public final class ModelCache {
      *
      * @return whether the file was already cached or was downloaded now, and where it is
      * @throws ModelException if the file cannot be made available; no unverified file is left under its name
-     * @throws IllegalArgumentException if the cache directory setting is invalid
+     * @throws IllegalArgumentException if the cache directory or proxy setting is invalid
      */
     public ModelOutcome ensure() throws ModelException {
         Path target = model.cachedFile(cacheRoot.get());

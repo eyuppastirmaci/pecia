@@ -21,8 +21,10 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -123,6 +125,39 @@ class ModelCacheTest {
 
         assertEquals(ModelOutcome.Status.DOWNLOADED, cache().ensure().status());
         assertEquals(2, requests.get());
+    }
+
+    @Test
+    void httpsProxyCarriesTheDownloadThroughTheProxy() throws Exception {
+        // The local server plays the proxy: it receives the absolute URI of a host that does not resolve.
+        List<String> seen = new CopyOnWriteArrayList<>();
+        behavior = exchange -> {
+            seen.add(exchange.getRequestURI().toString());
+            respond(exchange, 200, PAYLOAD);
+        };
+        model = descriptorAt("http://models.example.invalid/");
+        Map<String, String> environment =
+                Map.of("HTTPS_PROXY", "http://127.0.0.1:" + server.getAddress().getPort());
+
+        ModelOutcome outcome = proxiedCache(environment).ensure();
+
+        assertEquals(ModelOutcome.Status.DOWNLOADED, outcome.status());
+        assertEquals(List.of("http://models.example.invalid" + MODEL_PATH), seen);
+    }
+
+    @Test
+    void noProxyHostsAreReachedDirectly() throws Exception {
+        int closedPort;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            closedPort = socket.getLocalPort();
+        }
+        Map<String, String> environment =
+                Map.of("HTTPS_PROXY", "http://127.0.0.1:" + closedPort, "NO_PROXY", "127.0.0.1");
+
+        assertEquals(
+                ModelOutcome.Status.DOWNLOADED,
+                proxiedCache(environment).ensure().status());
+        assertEquals(1, requests.get());
     }
 
     @Test
@@ -297,6 +332,14 @@ class ModelCacheTest {
         return new ModelCache(model, () -> cacheRoot, ModelCache::defaultClient, stallTimeout);
     }
 
+    private ModelCache proxiedCache(Map<String, String> environment) {
+        return new ModelCache(
+                model,
+                () -> cacheRoot,
+                () -> ModelCache.client(ProxyEnvironment.selector(environment, name -> null)),
+                Duration.ofSeconds(5));
+    }
+
     private static void respond(HttpExchange exchange, int status, byte[] body) throws IOException {
         exchange.sendResponseHeaders(status, body.length == 0 ? -1 : body.length);
         try (OutputStream output = exchange.getResponseBody()) {
@@ -305,9 +348,13 @@ class ModelCacheTest {
     }
 
     private static SemanticModel descriptor(int port) {
+        return descriptorAt("http://127.0.0.1:" + port + "/");
+    }
+
+    private static SemanticModel descriptorAt(String host) {
         return new SemanticModel(
                 "test-model",
-                URI.create("http://127.0.0.1:" + port + "/"),
+                URI.create(host),
                 "test/model",
                 REVISION,
                 "onnx/model.bin",
