@@ -49,8 +49,6 @@ public final class QueryException extends Exception {
         CORRUPT_INDEX,
         /** Project resolution, index access, or result retrieval failed. */
         READ_FAILED,
-        /** The query's search mode is not available yet. */
-        SEMANTIC_UNAVAILABLE,
         /** No stored chunk has an embedding of the current model, so a semantic query has nothing to compare. */
         EMBEDDINGS_MISSING,
         /** The semantic model is not in the cache; queries never download it. */

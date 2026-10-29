@@ -162,11 +162,11 @@ final class ConfigurationScenario {
 
         try {
             queryService.query(root, request, QueryOptions.mode(SearchMode.HYBRID));
-            throw new AssertionError("The hybrid mode must fail in the packaged core");
+            throw new AssertionError("A packaged hybrid query of a lexical index must fail");
         } catch (QueryException failure) {
             check(
-                    failure.reason() == QueryException.Reason.SEMANTIC_UNAVAILABLE,
-                    "An unavailable packaged search mode must be classified");
+                    failure.reason() == QueryException.Reason.EMBEDDINGS_MISSING,
+                    "A packaged hybrid query of a lexical index must report the missing embeddings");
         }
 
         check(

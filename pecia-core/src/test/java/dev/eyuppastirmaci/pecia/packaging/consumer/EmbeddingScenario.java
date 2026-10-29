@@ -121,8 +121,9 @@ final class EmbeddingScenario {
     }
 
     /**
-     * Queries the semantically indexed corpus with its shortest chunk's text and the tiny model beside the project:
-     * that chunk comes first with similarity 1, and every chunk could be compared.
+     * Queries the semantically indexed corpus with its shortest chunk's text and the tiny model beside the project,
+     * semantically and then in hybrid mode: that chunk comes first, with similarity 1 and then ranked first by both
+     * sides, and every chunk could be compared.
      */
     static void querySemantically(Path root) throws Exception {
         ModelOutcome tiny =
@@ -148,6 +149,20 @@ final class EmbeddingScenario {
                         && first.score().kind() == SearchScore.Kind.COSINE_SIMILARITY
                         && Math.abs(first.score().value() - 1) < 1e-5,
                 "A packaged semantic query with a chunk's text must find that chunk first");
+
+        QueryResult hybrid = QueryService.withModelLookup(
+                        new PeciaConfigLoader(new PeciaConfigParser()), () -> Optional.of(tiny))
+                .query(root, new SearchRequest(chunks.get(key)), QueryOptions.mode(SearchMode.HYBRID));
+        SearchHit fused = hybrid.hits().getFirst();
+
+        check(
+                hybrid.embeddingCoverage() != null
+                        && hybrid.embeddingCoverage().embedded() == chunks.size()
+                        && (fused.sourcePath().toString().replace('\\', '/') + "#" + fused.chunkIndex()).equals(key)
+                        && fused.score().kind() == SearchScore.Kind.RECIPROCAL_RANK_FUSION
+                        && fused.fusedRanks().orElseThrow().semantic().orElse(0) == 1
+                        && fused.fusedRanks().orElseThrow().lexical().isPresent(),
+                "A packaged hybrid query with a chunk's text must find that chunk first on both sides");
     }
 
     /** Queries semantically with the user's empty model cache, which must fail without downloading anything. */

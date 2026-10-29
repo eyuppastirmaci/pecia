@@ -4,26 +4,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.index.IndexService;
-import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class QueryOptionsTest {
 
@@ -58,16 +56,16 @@ class QueryOptionsTest {
                 "none, lexical, hits",
                 "none, auto, hits",
                 "none, semantic, EMBEDDINGS_MISSING",
-                "none, hybrid, SEMANTIC_UNAVAILABLE",
+                "none, hybrid, EMBEDDINGS_MISSING",
                 "lexical, none, hits",
                 "lexical, auto, hits",
                 "lexical, semantic, EMBEDDINGS_MISSING",
-                "lexical, hybrid, SEMANTIC_UNAVAILABLE",
+                "lexical, hybrid, EMBEDDINGS_MISSING",
                 "semantic, none, EMBEDDINGS_MISSING",
                 "semantic, lexical, hits",
                 "semantic, auto, hits",
-                "semantic, hybrid, SEMANTIC_UNAVAILABLE",
-                "hybrid, none, SEMANTIC_UNAVAILABLE",
+                "semantic, hybrid, EMBEDDINGS_MISSING",
+                "hybrid, none, EMBEDDINGS_MISSING",
                 "hybrid, lexical, hits",
                 "hybrid, semantic, EMBEDDINGS_MISSING"
             })
@@ -90,49 +88,35 @@ class QueryOptionsTest {
         }
     }
 
-    @Test
-    void anUnavailableModeExplainsItselfAndKeepsTheWarnings() throws Exception {
-        String config = "[search]\nmode = \"hybrid\"\n\n[chunk]\nmax_token = 1\n";
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void modesThatNeedEmbeddingsFailOnALexicalIndexAndKeepTheWarnings(SearchMode mode) throws Exception {
+        String config = "[search]\nmode = \"" + mode.configValue() + "\"\n\n[chunk]\nmax_token = 1\n";
         Files.writeString(root.resolve(".pecia.toml"), config);
         new IndexService(loader).index(root);
 
         QueryException failure = assertThrows(QueryException.class, () -> service.query(root, REQUEST));
 
-        assertEquals(QueryException.Reason.SEMANTIC_UNAVAILABLE, failure.reason());
-        assertEquals("hybrid search is not available yet; use the lexical or auto mode", failure.getMessage());
+        assertEquals(QueryException.Reason.EMBEDDINGS_MISSING, failure.reason());
         assertNull(failure.getCause());
         assertEquals(
                 List.of("unknown key chunk.max_token (did you mean chunk.max_tokens?)"),
                 failure.warnings().stream().map(Warning::message).toList());
     }
 
-    @Test
-    void anUnavailableModeFailsBeforeOpeningTheIndexAndWithoutOne() throws Exception {
-        new IndexService(loader).index(root);
-        AtomicBoolean opened = new AtomicBoolean();
-        QueryService tracking = new QueryService(loader, context -> {
-            opened.set(true);
-
-            return SqliteStorage.openReadOnly(context.databasePath(), context.projectRoot());
-        });
-
-        QueryException failure = assertThrows(
-                QueryException.class, () -> tracking.query(root, REQUEST, QueryOptions.mode(SearchMode.HYBRID)));
-
-        assertEquals(QueryException.Reason.SEMANTIC_UNAVAILABLE, failure.reason());
-        assertFalse(opened.get());
-        assertEquals(
-                1,
-                tracking.query(root, REQUEST, QueryOptions.mode(SearchMode.LEXICAL))
-                        .hits()
-                        .size());
-        assertTrue(opened.get());
-
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void modesThatNeedEmbeddingsNeverCreateAnIndex(SearchMode mode) throws Exception {
         Path unindexed = Files.createDirectories(sandbox.resolve("unindexed")).toRealPath();
-        QueryException withoutIndex = assertThrows(
-                QueryException.class, () -> service.query(unindexed, REQUEST, QueryOptions.mode(SearchMode.HYBRID)));
 
-        assertEquals(QueryException.Reason.SEMANTIC_UNAVAILABLE, withoutIndex.reason());
+        QueryException failure =
+                assertThrows(QueryException.class, () -> service.query(unindexed, REQUEST, QueryOptions.mode(mode)));
+
+        assertEquals(QueryException.Reason.INDEX_NOT_FOUND, failure.reason());
 
         try (Stream<Path> files = Files.list(unindexed)) {
             assertEquals(0, files.count());

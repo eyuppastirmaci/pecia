@@ -62,7 +62,7 @@ public class QueryCommand implements Callable<Integer> {
 
     /**
      * Searches the stored index; returns 0 for successful queries and 1 for core validation/access
-     * failures, including a search mode that is not available. Configuration warnings are printed to stderr before
+     * failures, including missing semantic prerequisites. Configuration warnings are printed to stderr before
      * any other output and do not change the exit code.
      */
     @Override

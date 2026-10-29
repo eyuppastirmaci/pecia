@@ -44,6 +44,8 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.sqlite.SQLiteConfig;
 
 /** Semantic queries through the query service, with the tiny model and the bundled vector extension. */
@@ -114,11 +116,14 @@ class SemanticQueryTest {
         assertFalse(keys(result.hits()).contains("shipping.md#0"));
     }
 
-    @Test
-    void anIndexWithoutEmbeddingsFailsBeforeLookingForTheModel() throws Exception {
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void anIndexWithoutEmbeddingsFailsBeforeLookingForTheModel(SearchMode mode) throws Exception {
         new IndexService(loader).index(root);
 
-        QueryException failure = assertFailsWithoutChanges(service(TinyModel.cached()), "refunds");
+        QueryException failure = assertFailsWithoutChanges(service(TinyModel.cached()), "refunds", mode);
 
         assertEquals(QueryException.Reason.EMBEDDINGS_MISSING, failure.reason());
         assertEquals(
@@ -127,8 +132,11 @@ class SemanticQueryTest {
         assertEquals(0, modelLookups.get());
     }
 
-    @Test
-    void embeddingsOfAnotherModelAreReportedAsFromAnEarlierModel() throws Exception {
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void embeddingsOfAnotherModelAreReportedAsFromAnEarlierModel(SearchMode mode) throws Exception {
         indexSemantically();
         EmbeddingProfile current = EmbeddingProfile.minilm();
         EmbeddingProfile later = new EmbeddingProfile(
@@ -145,18 +153,21 @@ class SemanticQueryTest {
         QueryService service =
                 new QueryService(loader, readOnly(), lookup(TinyModel.cached()), this::library, () -> later);
 
-        QueryException failure = assertFailsWithoutChanges(service, "refunds");
+        QueryException failure = assertFailsWithoutChanges(service, "refunds", mode);
 
         assertEquals(QueryException.Reason.EMBEDDINGS_MISSING, failure.reason());
         assertTrue(failure.getMessage().contains("only embeddings of an earlier semantic model"), failure.getMessage());
         assertEquals(0, modelLookups.get());
     }
 
-    @Test
-    void aModelThatIsNotCachedFailsBeforeTheExtensionIsPlaced() throws Exception {
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void aModelThatIsNotCachedFailsBeforeTheExtensionIsPlaced(SearchMode mode) throws Exception {
         indexSemantically();
 
-        QueryException missing = assertFailsWithoutChanges(service(Optional::empty), "refunds");
+        QueryException missing = assertFailsWithoutChanges(service(Optional::empty), "refunds", mode);
 
         assertEquals(QueryException.Reason.MODEL_NOT_CACHED, missing.reason());
         assertEquals(
@@ -169,15 +180,19 @@ class SemanticQueryTest {
                 service(() -> {
                     throw unreadable;
                 }),
-                "refunds");
+                "refunds",
+                mode);
 
         assertEquals(QueryException.Reason.MODEL_NOT_CACHED, failed.reason());
         assertEquals(unreadable, failed.getCause());
         assertEquals(0, libraryLookups.get());
     }
 
-    @Test
-    void anExtensionThatCannotBePlacedOrLoadedMakesVectorSearchUnavailable() throws Exception {
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void anExtensionThatCannotBePlacedOrLoadedMakesVectorSearchUnavailable(SearchMode mode) throws Exception {
         indexSemantically();
         VectorExtensionException unplaced = new VectorExtensionException("No sqlite-vec library is bundled", null);
         Path notALibrary = Files.writeString(sandbox.resolve("not-a-library.so"), "not a library");
@@ -191,7 +206,8 @@ class SemanticQueryTest {
                             throw unplaced;
                         },
                         () -> EmbeddingProfile.minilm()),
-                "refunds");
+                "refunds",
+                mode);
         QueryException unloadable = assertFailsWithoutChanges(
                 new QueryService(
                         loader,
@@ -199,7 +215,8 @@ class SemanticQueryTest {
                         lookup(TinyModel.cached()),
                         () -> notALibrary,
                         () -> EmbeddingProfile.minilm()),
-                "refunds");
+                "refunds",
+                mode);
 
         assertEquals(QueryException.Reason.VECTOR_SEARCH_UNAVAILABLE, unplacedFailure.reason());
         assertEquals("No sqlite-vec library is bundled", unplacedFailure.getMessage());
@@ -208,14 +225,18 @@ class SemanticQueryTest {
         assertInstanceOf(SQLException.class, unloadable.getCause());
     }
 
-    @Test
-    void anEmbedderThatCannotOpenOrEmbedFailsWithItsOwnReason() throws Exception {
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void anEmbedderThatCannotOpenOrEmbedFailsWithItsOwnReason(SearchMode mode) throws Exception {
         indexSemantically();
         // The embedder opens after the extension, whose verified copy is the only file a semantic query writes.
         VectorExtensionAccess.library(cache);
 
-        QueryException unopened = assertFailsWithoutChanges(service(TinyModel.cached("missing-input")), "refunds");
-        QueryException failed = assertFailsWithoutChanges(service(TinyModel.cached("non-finite")), "refunds");
+        QueryException unopened =
+                assertFailsWithoutChanges(service(TinyModel.cached("missing-input")), "refunds", mode);
+        QueryException failed = assertFailsWithoutChanges(service(TinyModel.cached("non-finite")), "refunds", mode);
 
         assertEquals(QueryException.Reason.EMBEDDER_UNAVAILABLE, unopened.reason());
         assertInstanceOf(EmbeddingException.class, unopened.getCause());
@@ -223,12 +244,16 @@ class SemanticQueryTest {
         assertInstanceOf(EmbeddingException.class, failed.getCause());
     }
 
-    @Test
-    void anIndexWithoutChunksReturnsNoHitsWithoutLookingForTheModel() throws Exception {
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void anIndexWithoutChunksReturnsNoHitsWithoutLookingForTheModel(SearchMode mode) throws Exception {
         Path empty = Files.createDirectories(sandbox.resolve("empty")).toRealPath();
         new IndexService(loader).index(empty);
 
-        QueryResult result = service(TinyModel.cached()).query(empty, new SearchRequest("refunds"), SEMANTIC);
+        QueryResult result =
+                service(TinyModel.cached()).query(empty, new SearchRequest("refunds"), QueryOptions.mode(mode));
 
         assertEquals(List.of(), result.hits());
         assertEquals(new EmbeddingCoverage(0, 0, 0), result.embeddingCoverage());
@@ -308,12 +333,13 @@ class SemanticQueryTest {
     }
 
     /** Runs a failing semantic query and checks that neither the project nor the cache changed. */
-    private QueryException assertFailsWithoutChanges(QueryService service, String text) throws Exception {
+    private QueryException assertFailsWithoutChanges(QueryService service, String text, SearchMode mode)
+            throws Exception {
         Map<Path, String> project = snapshot(root);
         Map<Path, String> cached = snapshot(cache);
 
-        QueryException failure =
-                assertThrows(QueryException.class, () -> service.query(root, new SearchRequest(text), SEMANTIC));
+        QueryException failure = assertThrows(
+                QueryException.class, () -> service.query(root, new SearchRequest(text), QueryOptions.mode(mode)));
 
         assertEquals(project, snapshot(root));
         assertEquals(cached, snapshot(cache));

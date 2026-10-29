@@ -217,11 +217,12 @@ class QueryCommandTest {
                 "none, lexical, 0, none",
                 "none, auto, 0, none",
                 "none, semantic, 1, EMBEDDINGS_MISSING",
-                "none, hybrid, 1, SEMANTIC_UNAVAILABLE",
+                "none, hybrid, 1, EMBEDDINGS_MISSING",
                 "semantic, none, 1, EMBEDDINGS_MISSING",
                 "semantic, lexical, 0, none",
                 "semantic, auto, 0, none",
                 "lexical, semantic, 1, EMBEDDINGS_MISSING",
+                "hybrid, none, 1, EMBEDDINGS_MISSING",
                 "hybrid, auto, 0, none"
             })
     void modeFlagOverridesTheConfiguredMode(String file, String flag, int exitCode, String reason) throws Exception {
@@ -248,19 +249,20 @@ class QueryCommandTest {
     }
 
     @Test
-    void unavailableModePrintsWarningsThenTheErrorWithoutAnIndexHint() throws Exception {
+    void missingEmbeddingsPrintWarningsThenTheErrorWithoutAnIndexHint() throws Exception {
         Path config = Files.writeString(root.resolve(".pecia.toml"), "[chunk]\nmax_token = 64\n");
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nneedle\n");
+        new IndexService(loader).index(root);
 
         assertEquals(1, run("needle", "--root", root.toString(), "--mode", "hybrid"));
 
         assertEquals(
                 List.of(
                         typoWarning(config),
-                        "pecia query: SEMANTIC_UNAVAILABLE: hybrid search is not available yet;"
-                                + " use the lexical or auto mode"),
+                        "pecia query: EMBEDDINGS_MISSING: The index has no embeddings for semantic search; index the"
+                                + " project semantically first"),
                 err.toString().lines().toList());
         assertEquals("", out.toString());
-        assertFalse(Files.exists(root.resolve(".pecia")));
     }
 
     @Test

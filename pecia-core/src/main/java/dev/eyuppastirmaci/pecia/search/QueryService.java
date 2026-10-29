@@ -88,8 +88,8 @@ public final class QueryService {
      *     directory
      * @param request the same validated plain-text request accepted by LexicalSearch
      * @return immutable ranked hits; no matches is a successful empty result
-     * @throws QueryException if the configured search mode is unavailable or context/index access or retrieval
-     *     fails, preserving the cause
+     * @throws QueryException if a semantic prerequisite of the configured mode is missing or context/index access or
+     *     retrieval fails, preserving the cause
      * @throws IllegalArgumentException if query/configuration/path validation fails
      * @throws NullPointerException if a required argument is null
      */
@@ -105,8 +105,8 @@ public final class QueryService {
      * @param startDirectory project context starting directory, usually the caller's working directory
      * @param request the same validated plain-text request accepted by LexicalSearch
      * @return immutable ranked hits and configuration warnings
-     * @throws QueryException if the configured search mode is unavailable or context/index access or retrieval
-     *     fails, preserving the cause
+     * @throws QueryException if a semantic prerequisite of the configured mode is missing or context/index access or
+     *     retrieval fails, preserving the cause
      * @throws IllegalArgumentException if query/configuration/path validation fails
      * @throws NullPointerException if a required argument is null
      */
@@ -116,13 +116,13 @@ public final class QueryService {
 
     /**
      * Searches like {@link #query(Path, SearchRequest)} in the mode the caller chooses, which overrides {@code
-     * search.mode}. {@link SearchMode#LEXICAL} and {@link SearchMode#AUTO} search lexically, and {@link
-     * SearchMode#HYBRID} fails with {@link QueryException.Reason#SEMANTIC_UNAVAILABLE} after the configuration loads
-     * and before the index is opened.
+     * search.mode}. {@link SearchMode#LEXICAL} and {@link SearchMode#AUTO} search lexically.
      *
      * <p>{@link SearchMode#SEMANTIC} ranks the chunks that have an embedding of the current model by their similarity
-     * to the embedded query text, and reports that coverage in the result. Its prerequisites are checked in order, each
-     * failing with its own reason and without writing anything: stored embeddings of the current model ({@link
+     * to the embedded query text. {@link SearchMode#HYBRID} fuses that ranking with the lexical one by reciprocal rank
+     * fusion, as {@link HybridSearch} describes, so chunks without an embedding can still come from the lexical side.
+     * Both report the embedding coverage in the result and check the same prerequisites in order, each failing with its
+     * own reason and without writing anything: stored embeddings of the current model ({@link
      * QueryException.Reason#EMBEDDINGS_MISSING}), the cached model, which is never downloaded ({@link
      * QueryException.Reason#MODEL_NOT_CACHED}), the vector search extension ({@link
      * QueryException.Reason#VECTOR_SEARCH_UNAVAILABLE}), and the embedder ({@link
@@ -133,7 +133,7 @@ public final class QueryService {
      * @param request the same validated plain-text request accepted by LexicalSearch
      * @param options the caller's choices for this query
      * @return immutable ranked hits and configuration warnings
-     * @throws QueryException if the search mode is unavailable or context/index access or retrieval fails,
+     * @throws QueryException if a semantic prerequisite is missing or context/index access or retrieval fails,
      *     preserving the cause
      * @throws IllegalArgumentException if query/configuration/path validation fails
      * @throws NullPointerException if a required argument is null, before any filesystem access
@@ -148,14 +148,14 @@ public final class QueryService {
             ProjectContext context = contextResolver.resolve(startDirectory);
             warnings = context.loadedConfig().warnings();
             SearchMode mode = options.resolveMode(context.loadedConfig().config());
-            requireAvailable(mode, warnings);
 
             try (SqliteStorage storage = storageOpener.open(context)) {
-                if (mode == SearchMode.SEMANTIC) {
-                    return semanticQuery(storage, request, warnings);
-                }
-
-                return new QueryResult(storage.lexicalSearch().search(request), warnings);
+                return switch (mode) {
+                    // Auto stays lexical until it can choose by what the index holds.
+                    case LEXICAL, AUTO ->
+                        new QueryResult(storage.lexicalSearch().search(request), warnings);
+                    case SEMANTIC, HYBRID -> embeddingQuery(storage, request, mode, warnings);
+                };
             }
         } catch (IndexAccessException failure) {
             QueryException.Reason reason =
@@ -174,7 +174,9 @@ public final class QueryService {
         }
     }
 
-    private QueryResult semanticQuery(SqliteStorage storage, SearchRequest request, List<Warning> warnings)
+    /** Answers a semantic or hybrid query once the prerequisites both modes share are in place. */
+    private QueryResult embeddingQuery(
+            SqliteStorage storage, SearchRequest request, SearchMode mode, List<Warning> warnings)
             throws QueryException, SQLException, SearchException {
         EmbeddingProfile profile = profiles.get();
         EmbeddingCoverage coverage = storage.embeddingCoverage(profile);
@@ -196,9 +198,11 @@ public final class QueryService {
         ModelOutcome model = findModel(profile, warnings);
         loadVectorExtension(storage, warnings);
         float[] queryEmbedding = embedQuery(model, request.query(), warnings);
+        List<SearchHit> hits = mode == SearchMode.HYBRID
+                ? storage.hybridSearch(profile).search(request, queryEmbedding)
+                : storage.semanticSearch(profile).search(queryEmbedding, request.limit());
 
-        return new QueryResult(
-                storage.semanticSearch(profile).search(queryEmbedding, request.limit()), warnings, coverage);
+        return new QueryResult(hits, warnings, coverage);
     }
 
     private ModelOutcome findModel(EmbeddingProfile profile, List<Warning> warnings) throws QueryException {
@@ -255,23 +259,6 @@ public final class QueryService {
         } catch (EmbeddingException failure) {
             throw new QueryException(
                     QueryException.Reason.EMBEDDING_FAILED, "Could not embed the query text", failure, warnings);
-        }
-    }
-
-    private static void requireAvailable(SearchMode mode, List<Warning> warnings) throws QueryException {
-        // Auto stays lexical until it can choose by what the index holds.
-        boolean available =
-                switch (mode) {
-                    case LEXICAL, AUTO, SEMANTIC -> true;
-                    case HYBRID -> false;
-                };
-
-        if (!available) {
-            throw new QueryException(
-                    QueryException.Reason.SEMANTIC_UNAVAILABLE,
-                    mode.configValue() + " search is not available yet; use the lexical or auto mode",
-                    null,
-                    warnings);
         }
     }
 
