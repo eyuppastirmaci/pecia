@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 
 /** Runs the packaged CLI JAR against a temporary project and observes the project's entries and bytes. */
 final class PackagedCli {
+
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
     private final Path sandbox;
     private final Path project;
@@ -67,7 +70,12 @@ final class PackagedCli {
     }
 
     Result run(Path directory, List<String> jvmArguments, String... arguments) throws Exception {
-        return run(directory, jvmArguments, null, arguments);
+        return run(directory, jvmArguments, null, DEFAULT_TIMEOUT, arguments);
+    }
+
+    /** Runs like {@link #run(Path, String...)} with a longer limit, for commands that index large projects. */
+    Result runWithin(Duration timeout, Path directory, String... arguments) throws Exception {
+        return run(directory, List.of(), null, timeout, arguments);
     }
 
     /**
@@ -79,7 +87,12 @@ final class PackagedCli {
             throw new IllegalStateException("A denied download needs the offline guard");
         }
 
-        return run(directory, List.of(), evidence -> evidence.verifyDeniedDownload(host, lockFile), arguments);
+        return run(
+                directory,
+                List.of(),
+                evidence -> evidence.verifyDeniedDownload(host, lockFile),
+                DEFAULT_TIMEOUT,
+                arguments);
     }
 
     /**
@@ -130,7 +143,8 @@ final class PackagedCli {
     }
 
     /** Runs the distribution; {@code check} replaces the lexical checks of offline runs when it is not null. */
-    private Result run(Path directory, List<String> jvmArguments, EvidenceCheck check, String... arguments)
+    private Result run(
+            Path directory, List<String> jvmArguments, EvidenceCheck check, Duration timeout, String... arguments)
             throws Exception {
         OfflineSandbox.Run evidence = offline == null ? null : offline.newRun();
         List<String> command = command(jvmArguments, evidence, arguments);
@@ -149,7 +163,7 @@ final class PackagedCli {
 
         try {
             process.getOutputStream().close();
-            boolean completed = process.waitFor(30, TimeUnit.SECONDS);
+            boolean completed = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
 
             if (!completed) {
                 process.destroyForcibly();

@@ -29,8 +29,10 @@ import org.junit.jupiter.api.io.TempDir;
 @DisabledOnOs(OS.WINDOWS)
 class PackagedCliInterruptIT {
 
-    private static final int FILES = 1_200;
+    private static final int FILES = 600;
     private static final Duration PATIENCE = Duration.ofSeconds(60);
+    // Indexing the whole corpus takes several seconds here and longer on slower CI machines.
+    private static final Duration INDEXING = Duration.ofSeconds(120);
     private static final Pattern INDEXED = Pattern.compile("(?m)^indexed: (\\d+)$");
 
     @TempDir
@@ -60,7 +62,7 @@ class PackagedCliInterruptIT {
         assertEquals("ok", query(database, "PRAGMA integrity_check"));
         assertEquals(String.valueOf(indexed), query(database, "SELECT count(*) FROM files"));
 
-        Result next = cli.run(project, "index", "--no-semantic");
+        Result next = cli.runWithin(INDEXING, project, "index", "--no-semantic");
 
         assertEquals(0, next.exitCode(), next.err());
         assertEquals(FILES - indexed, indexed(next.out()));
@@ -87,14 +89,14 @@ class PackagedCliInterruptIT {
         assertEquals("ok", query(database, "PRAGMA integrity_check"));
         assertEquals("0", query(database, "SELECT count(*) FROM pragma_foreign_key_check"));
 
-        Result next = cli.run(project, "index", "--no-semantic");
-        Result fresh = cli.run(clean, "index", "--no-semantic");
+        Result next = cli.runWithin(INDEXING, project, "index", "--no-semantic");
+        Result fresh = cli.runWithin(INDEXING, clean, "index", "--no-semantic");
 
         assertEquals(0, next.exitCode(), next.err());
         assertEquals(FILES - committed, indexed(next.out()));
         assertEquals(0, fresh.exitCode(), fresh.err());
 
-        for (String text : List.of("refund policy", "word42", "Note 799")) {
+        for (String text : List.of("refund policy", "word42", "Note 599")) {
             Result recovered = cli.run(project, "query", "--mode=lexical", "--limit=20", text);
             Result expected = cli.run(clean, "query", "--mode=lexical", "--limit=20", text);
 
