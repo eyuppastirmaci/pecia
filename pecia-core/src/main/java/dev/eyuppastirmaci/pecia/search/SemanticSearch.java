@@ -27,17 +27,21 @@ public abstract class SemanticSearch {
      * @throws SearchException if storage is closed or reading fails, preserving the cause
      */
     public final List<SearchHit> search(float[] queryEmbedding, int limit) throws SearchException {
-        for (float value : queryEmbedding) {
-            if (!Float.isFinite(value)) {
-                throw new IllegalArgumentException("queryEmbedding must hold only finite values");
-            }
-        }
+        requireFinite(queryEmbedding);
 
         if (limit < 1 || limit > SearchRequest.MAX_LIMIT) {
             throw new IllegalArgumentException("limit must be between 1 and " + SearchRequest.MAX_LIMIT);
         }
 
         return retrieve(queryEmbedding.clone(), limit);
+    }
+
+    static void requireFinite(float[] queryEmbedding) {
+        for (float value : queryEmbedding) {
+            if (!Float.isFinite(value)) {
+                throw new IllegalArgumentException("queryEmbedding must hold only finite values");
+            }
+        }
     }
 
     /** Reads ranked hits for a validated query embedding. */

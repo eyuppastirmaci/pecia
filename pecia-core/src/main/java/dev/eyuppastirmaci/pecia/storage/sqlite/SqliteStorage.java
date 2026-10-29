@@ -10,6 +10,7 @@ import dev.eyuppastirmaci.pecia.content.ExtractionRequest;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.IndexDecision;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
+import dev.eyuppastirmaci.pecia.search.HybridSearch;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.search.SemanticSearch;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
@@ -193,12 +194,29 @@ public final class SqliteStorage implements AutoCloseable {
      */
     public SemanticSearch semanticSearch(EmbeddingProfile profile) {
         Objects.requireNonNull(profile, "profile");
+        requireVectorExtension();
 
+        return new SqliteSemanticSearch(new SqliteVectorRetriever(this), profile);
+    }
+
+    /**
+     * Returns hybrid search over this storage's lexical index and its embeddings of the given profile, borrowing the
+     * existing connection. Both sides' candidates are read in one snapshot.
+     *
+     * @throws IllegalStateException if the vector extension has not been loaded with {@link #loadVectorExtension}
+     * @throws NullPointerException if profile is null
+     */
+    public HybridSearch hybridSearch(EmbeddingProfile profile) {
+        Objects.requireNonNull(profile, "profile");
+        requireVectorExtension();
+
+        return new SqliteHybridSearch(this, new SqliteLexicalRetriever(this), new SqliteVectorRetriever(this), profile);
+    }
+
+    private void requireVectorExtension() {
         if (!vectorExtensionLoaded) {
             throw new IllegalStateException("Semantic search needs the vector extension; load it first");
         }
-
-        return new SqliteSemanticSearch(new SqliteVectorRetriever(this), profile);
     }
 
     /**
