@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -82,6 +83,37 @@ class EmbedderTest {
                 }
             }
         }
+    }
+
+    @Test
+    void aFixedThreadCountGivesTheSameEmbeddingsAndAllowsConcurrentCalls() throws Exception {
+        List<String> texts = List.of("deploy succeeded", "İstanbul'da ödeme", "a");
+        ModelOutcome model = new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, model("tiny"));
+
+        try (Embedder runtimeThreads = Embedder.open(model);
+                Embedder oneThread = Embedder.open(model, 1)) {
+            float[][] expected = runtimeThreads.embed(texts);
+            List<float[][]> concurrent = IntStream.range(0, 8)
+                    .parallel()
+                    .mapToObj(call -> embed(oneThread, texts))
+                    .toList();
+
+            for (float[][] embeddings : concurrent) {
+                for (int index = 0; index < texts.size(); index++) {
+                    assertArrayEquals(expected[index], embeddings[index], 1e-6f, texts.get(index));
+                }
+            }
+        }
+    }
+
+    @Test
+    void fewerThanOneThreadIsRejected() {
+        ModelOutcome model = new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, model("tiny"));
+
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> Embedder.open(model, 0));
+
+        assertEquals("intraOpThreads must be at least 1, got 0", failure.getMessage());
+        assertThrows(NullPointerException.class, () -> Embedder.open(null, 1));
     }
 
     @Test
@@ -169,6 +201,14 @@ class EmbedderTest {
                 "ONNX Runtime has no native library for " + osName + " on " + osArch + "; semantic indexing runs on"
                         + " Linux on x64 or arm64, macOS on Apple silicon, and Windows on x64",
                 failure.getMessage());
+    }
+
+    private static float[][] embed(Embedder embedder, List<String> texts) {
+        try {
+            return embedder.embed(texts);
+        } catch (EmbeddingException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     private static Embedder open(String model) throws Exception {

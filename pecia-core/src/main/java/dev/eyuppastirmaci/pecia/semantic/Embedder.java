@@ -34,6 +34,8 @@ public final class Embedder implements AutoCloseable {
     private static final String TOKEN_TYPE_IDS = "token_type_ids";
     private static final String OUTPUT = "last_hidden_state";
     private static final int PADDING_ID = 0;
+    // Leaves the number of threads for each inference call to ONNX Runtime.
+    private static final int RUNTIME_THREADS = 0;
 
     private final OrtEnvironment environment;
     private final OrtSession session;
@@ -54,10 +56,33 @@ public final class Embedder implements AutoCloseable {
      * @throws NullPointerException if model is null
      */
     public static Embedder open(ModelOutcome model) throws EmbeddingException {
-        return open(model.file(), System.getProperty("os.name", ""), System.getProperty("os.arch", ""));
+        return open(
+                model.file(), System.getProperty("os.name", ""), System.getProperty("os.arch", ""), RUNTIME_THREADS);
+    }
+
+    /**
+     * Opens like {@link #open(ModelOutcome)}, with each inference call limited to the given number of threads, so
+     * that several calls can run side by side without competing for the same cores.
+     *
+     * @param intraOpThreads threads one inference call may use
+     * @throws IllegalArgumentException if intraOpThreads is less than 1, before ONNX Runtime is loaded
+     * @throws EmbeddingException as {@link #open(ModelOutcome)} does
+     * @throws NullPointerException if model is null
+     */
+    public static Embedder open(ModelOutcome model, int intraOpThreads) throws EmbeddingException {
+        if (intraOpThreads < 1) {
+            throw new IllegalArgumentException("intraOpThreads must be at least 1, got " + intraOpThreads);
+        }
+
+        return open(model.file(), System.getProperty("os.name", ""), System.getProperty("os.arch", ""), intraOpThreads);
     }
 
     static Embedder open(Path file, String osName, String osArch) throws EmbeddingException {
+        return open(file, osName, osArch, RUNTIME_THREADS);
+    }
+
+    private static Embedder open(Path file, String osName, String osArch, int intraOpThreads)
+            throws EmbeddingException {
         // Checking the bundled libraries first gives a clear failure without touching ONNX Runtime.
         if (!RuntimePlatform.bundled(osName, osArch)) {
             throw new EmbeddingException(
@@ -72,6 +97,11 @@ public final class Embedder implements AutoCloseable {
 
         try (OrtSession.SessionOptions options = new OrtSession.SessionOptions()) {
             options.setSessionLogLevel(OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR);
+
+            if (intraOpThreads != RUNTIME_THREADS) {
+                options.setIntraOpNumThreads(intraOpThreads);
+            }
+
             session = environment.createSession(file.toString(), options);
         } catch (OrtException failure) {
             throw new EmbeddingException(

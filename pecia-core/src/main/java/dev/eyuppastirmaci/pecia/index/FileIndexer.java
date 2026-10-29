@@ -13,8 +13,8 @@ import dev.eyuppastirmaci.pecia.content.FileContentLoader;
 import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
-import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingInput;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
@@ -72,22 +72,17 @@ final class FileIndexer {
      * Programming/chunking failures propagate without being disguised as content rejections.
      */
     Result index(Path candidate, SqliteStorage storage) throws ExtractionException, SQLException {
-        try {
-            return index(candidate, storage, null);
-        } catch (EmbeddingException | Cancellation.CancelledException impossible) {
-            throw new IllegalStateException("A lexical replacement cannot embed or be cancelled", impossible);
-        }
+        return switch (prepare(candidate, storage)) {
+            case Unchanged unchanged -> unchanged.result();
+            case Changed changed -> write(changed, storage);
+        };
     }
 
     /**
-     * Indexes like {@link #index(Path, SqliteStorage)}; when {@code semantic} is not null, a changed file's chunks are
-     * embedded first and stored with their vectors in the same replacement. Unchanged files are not embedded.
-     *
-     * @throws EmbeddingException if embedding fails, before the file is written
-     * @throws Cancellation.CancelledException if the run is cancelled while embedding, before the file is written
+     * Loads and hashes a candidate and, unless its stored state matches, extracts and chunks it without writing, so
+     * that its chunks can be embedded before {@link #write(Changed, SqliteStorage, EmbeddingProfile, List)}.
      */
-    Result index(Path candidate, SqliteStorage storage, SemanticIndexing semantic)
-            throws ExtractionException, SQLException, EmbeddingException, Cancellation.CancelledException {
+    Prepared prepare(Path candidate, SqliteStorage storage) throws ExtractionException, SQLException {
         Objects.requireNonNull(storage, "storage");
         Path absolute = context.absoluteSource(candidate);
 
@@ -101,7 +96,7 @@ final class FileIndexer {
         var unchanged = storage.findUnchangedFile(request, content.contentHash(), identity);
 
         if (unchanged.isPresent()) {
-            return new Result(unchanged.orElseThrow(), 0, true);
+            return new Unchanged(new Result(unchanged.orElseThrow(), 0, true));
         }
 
         // Same path and bytes but not unchanged: the stored chunks were made under other processing settings. A
@@ -119,16 +114,44 @@ final class FileIndexer {
             throw new IllegalArgumentException("Extracted document must preserve the loaded source identity and hash");
         }
 
-        List<Chunk> chunks = chunkers.getChunker(document).chunk(document);
+        return new Changed(document, chunkers.getChunker(document).chunk(document), rechunked);
+    }
 
-        if (semantic == null) {
-            return new Result(storage.replaceFile(document, chunks, identity), chunks.size(), false, rechunked, 0);
+    /** Replaces a changed file with its chunks and no embeddings. */
+    Result write(Changed changed, SqliteStorage storage) throws SQLException {
+        StoredFile file = storage.replaceFile(changed.document(), changed.chunks(), identity);
+
+        return new Result(file, changed.chunks().size(), false, changed.rechunked(), 0);
+    }
+
+    /** Replaces a changed file with its chunks and their embeddings, one per chunk in order, in one transaction. */
+    Result write(Changed changed, SqliteStorage storage, EmbeddingProfile profile, List<float[]> vectors)
+            throws SQLException {
+        StoredFile file = storage.replaceFile(changed.document(), changed.chunks(), identity, profile, vectors);
+
+        return new Result(file, changed.chunks().size(), false, changed.rechunked(), vectors.size());
+    }
+
+    /** A prepared candidate: unchanged, or changed and chunked but not yet written. */
+    sealed interface Prepared permits Unchanged, Changed {}
+
+    /** A candidate whose stored file matches its content and chunking. */
+    record Unchanged(Result result) implements Prepared {}
+
+    /**
+     * A changed candidate's document and chunks, ready to be written.
+     *
+     * @param rechunked whether only the processing settings changed, as {@link Result} describes
+     */
+    record Changed(Document document, List<Chunk> chunks, boolean rechunked) implements Prepared {
+
+        /** Returns each chunk's embedding input: its path and heading context, then its content. */
+        List<String> embeddingInputs() {
+            return chunks.stream()
+                    .map(chunk -> EmbeddingInput.of(
+                            chunk.sourcePath(), chunk.metadata().headingPath(), chunk.content()))
+                    .toList();
         }
-
-        List<float[]> vectors = semantic.embed(chunks);
-        StoredFile file = storage.replaceFile(document, chunks, identity, semantic.profile(), vectors);
-
-        return new Result(file, chunks.size(), false, rechunked, vectors.size());
     }
 
     /**

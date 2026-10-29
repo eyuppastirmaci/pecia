@@ -62,7 +62,7 @@ class IndexCancellationTest {
         IndexResult result = service().index(cancelled, options(true));
 
         assertEquals(IndexResult.Status.CANCELLED, result.status());
-        assertEquals(1, embedCalls, "The second of three batches never starts");
+        assertEquals(1, embedCalls, "The second of nine batches never starts");
         assertEquals(1, closedEmbedders);
         assertEquals(0, result.indexedFiles());
         assertEquals(0, result.writtenChunks());
@@ -118,14 +118,15 @@ class IndexCancellationTest {
         Path uninterrupted = manyChunkProject("uninterrupted");
         service().index(cancelled);
         service().index(uninterrupted);
-        cancelDuring = texts -> embedCalls == 1;
+        // The fourth batch of eight completes the first page of 32.
+        cancelDuring = texts -> embedCalls == 4;
 
         IndexResult result = service().index(cancelled, options(true));
 
         assertEquals(IndexResult.Status.CANCELLED, result.status());
         assertEquals(1, result.unchangedFiles());
         assertEquals(32, result.backfilledChunks());
-        assertEquals(1, embedCalls);
+        assertEquals(4, embedCalls);
         assertEquals(1, closedEmbedders);
         assertNull(result.embeddingCoverage());
         assertEquals(32, dump(result).embeddings().size());
@@ -162,10 +163,12 @@ class IndexCancellationTest {
         return project;
     }
 
-    /** Writes a project whose single file splits into 70 six-token chunks, embedded in three batches. */
+    /** Writes a project whose single file splits into 70 six-token chunks, embedded by one worker in nine batches. */
     private Path manyChunkProject(String name) throws IOException {
         Path project = Files.createDirectories(sandbox.resolve(name)).toRealPath();
-        Files.writeString(project.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n");
+        Files.writeString(
+                project.resolve(".pecia.toml"),
+                "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n\n[embed]\nconcurrency = 1\n");
         Files.writeString(project.resolve("words.txt"), "alpha beta gamma delta ".repeat(70) + "\n");
         return project;
     }
@@ -193,13 +196,16 @@ class IndexCancellationTest {
     }
 
     /** Opens the tiny model's embedder, which cancels the run while it embeds a batch that {@code cancelDuring} picks. */
-    private TextEmbedder open(ModelOutcome model) throws EmbeddingException {
-        TextEmbedder embedder = TextEmbedder.open(model);
+    private TextEmbedder open(ModelOutcome model, int threads) throws EmbeddingException {
+        TextEmbedder embedder = TextEmbedder.open(model, threads);
 
         return new TextEmbedder() {
             @Override
             public float[][] embed(List<String> texts) throws EmbeddingException {
-                embedCalls++;
+                // Workers call concurrently; the lock orders the calls and their bookkeeping.
+                synchronized (this) {
+                    embedCalls++;
+                }
 
                 if (cancelDuring.test(texts)) {
                     cancellation.cancel();

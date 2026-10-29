@@ -159,7 +159,7 @@ class SemanticIndexingTest {
     }
 
     @Test
-    void largeFilesAreEmbeddedInBatchesOfThirtyTwo() throws Exception {
+    void largeFilesAreEmbeddedInBatchesOfEight() throws Exception {
         Path project = Files.createDirectories(sandbox.resolve("batches")).toRealPath();
         // Six tokens leave four for content, so each repetition of the four words becomes one chunk.
         Files.writeString(project.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n");
@@ -168,7 +168,9 @@ class SemanticIndexingTest {
         IndexResult result = service(TINY).index(project, IndexOptions.semantic(true));
 
         assertEquals(70, result.embeddedChunks());
-        assertEquals(List.of(32, 32, 6), batchSizes);
+        // Workers may finish batches in any order.
+        assertEquals(
+                List.of(6, 8, 8, 8, 8, 8, 8, 8, 8), batchSizes.stream().sorted().toList());
     }
 
     @Test
@@ -242,9 +244,10 @@ class SemanticIndexingTest {
 
     @Test
     void lexicalRunsAndPreviewsNeverOpenAnEmbedder() throws Exception {
-        IndexService service = new IndexService(loader, context -> openStorage(context), listener -> TINY, model -> {
-            throw new AssertionError("No embedder may open");
-        });
+        IndexService service =
+                new IndexService(loader, context -> openStorage(context), listener -> TINY, (model, threads) -> {
+                    throw new AssertionError("No embedder may open");
+                });
 
         IndexResult result = service.index(root);
         service.preview(root, IndexOptions.semantic(true));
@@ -263,17 +266,22 @@ class SemanticIndexingTest {
     }
 
     /** Opens the real embedder, recording its lifecycle and batches and failing on a chosen call. */
-    private TextEmbedder open(ModelOutcome model) throws EmbeddingException {
-        TextEmbedder embedder = TextEmbedder.open(model);
+    private TextEmbedder open(ModelOutcome model, int threads) throws EmbeddingException {
+        TextEmbedder embedder = TextEmbedder.open(model, threads);
         events.add("open");
 
         return new TextEmbedder() {
             @Override
             public float[][] embed(List<String> texts) throws EmbeddingException {
-                embedCalls++;
-                batchSizes.add(texts.size());
+                int call;
 
-                if (embedCalls == failOnCall) {
+                // Workers call concurrently; the lock numbers the calls and records their sizes.
+                synchronized (this) {
+                    call = ++embedCalls;
+                    batchSizes.add(texts.size());
+                }
+
+                if (call == failOnCall) {
                     throw new EmbeddingException(EmbeddingException.Reason.INFERENCE_FAILED, "injected", null);
                 }
 

@@ -110,7 +110,8 @@ class EmbeddingBackfillTest {
             service().index(project);
             Files.delete(project.resolve("removed.txt"));
         }
-        failOnCall = 2;
+        // One worker embeds in order: the first page's four batches of eight succeed and the next page fails.
+        failOnCall = 5;
 
         IndexException failure =
                 assertThrows(IndexException.class, () -> service().index(interrupted, semantic()));
@@ -209,6 +210,31 @@ class EmbeddingBackfillTest {
     }
 
     @Test
+    void progressNeverPassesTheCountedTotalWhenAnotherProcessAddsChunks() throws Exception {
+        Path project = manyChunkProject("growing");
+        service().index(project);
+        IndexOptions options = IndexOptions.semantic(true).withProgressListener(update -> {
+            progress.add(update);
+
+            if (progress.size() == 1) {
+                // After counting, another process rewrites the file with more chunks under the same file id.
+                try {
+                    Files.writeString(project.resolve("words.txt"), "alpha beta gamma delta ".repeat(100) + "\n");
+                    service().index(project);
+                } catch (Exception failure) {
+                    throw new IllegalStateException(failure);
+                }
+            }
+        });
+
+        IndexResult semantic = service().index(project, options);
+
+        assertEquals(100, semantic.backfilledChunks());
+        assertEquals(new IndexProgress(IndexProgress.Stage.BACKFILL, 70, 70), progress.getLast());
+        assertTrue(progress.stream().allMatch(update -> update.total() == 70), progress.toString());
+    }
+
+    @Test
     void lexicalRunsAndPreviewsNeverBackfillOrReportProgress() throws Exception {
         IndexOptions lexical = IndexOptions.semantic(false).withProgressListener(progress::add);
 
@@ -234,10 +260,12 @@ class EmbeddingBackfillTest {
         return IndexOptions.semantic(true).withProgressListener(progress::add);
     }
 
-    /** Writes a project whose single file splits into 70 chunks with six-token chunks. */
+    /** Writes a project whose single file splits into 70 six-token chunks, embedded by one worker in order. */
     private Path manyChunkProject(String name) throws IOException {
         Path project = Files.createDirectories(sandbox.resolve(name)).toRealPath();
-        Files.writeString(project.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n");
+        Files.writeString(
+                project.resolve(".pecia.toml"),
+                "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n\n[embed]\nconcurrency = 1\n");
         Files.writeString(project.resolve("words.txt"), "alpha beta gamma delta ".repeat(70) + "\n");
         return project;
     }
@@ -250,20 +278,25 @@ class EmbeddingBackfillTest {
         return SqliteStorage.open(context.databasePath(), context.projectRoot());
     }
 
-    private TextEmbedder open(ModelOutcome model) throws EmbeddingException {
-        TextEmbedder embedder = TextEmbedder.open(model);
+    private TextEmbedder open(ModelOutcome model, int threads) throws EmbeddingException {
+        TextEmbedder embedder = TextEmbedder.open(model, threads);
 
         return new TextEmbedder() {
             @Override
             public float[][] embed(List<String> texts) throws EmbeddingException {
-                embedCalls++;
-                batchSizes.add(texts.size());
+                int call;
 
-                if (embedCalls == 1) {
+                // Workers call concurrently; the lock numbers the calls and records their sizes.
+                synchronized (this) {
+                    call = ++embedCalls;
+                    batchSizes.add(texts.size());
+                }
+
+                if (call == 1) {
                     duringFirstCall.run();
                 }
 
-                if (embedCalls == failOnCall) {
+                if (call == failOnCall) {
                     throw new EmbeddingException(EmbeddingException.Reason.INFERENCE_FAILED, "injected", null);
                 }
 
