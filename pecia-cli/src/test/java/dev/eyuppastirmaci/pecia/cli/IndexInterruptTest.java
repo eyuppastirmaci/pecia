@@ -44,8 +44,8 @@ class IndexInterruptTest {
         int exitCode = run(root.toString(), "--no-semantic");
 
         assertEquals(130, exitCode);
-        assertTrue(out.toString().contains("candidates: 5\n"), out.toString());
-        assertTrue(out.toString().contains("indexed: 0\n"), out.toString());
+        assertTrue(printed().contains("candidates: 5\n"), printed());
+        assertTrue(printed().contains("indexed: 0\n"), printed());
         assertEquals(
                 "pecia index: cancelled; the files indexed so far are kept, and the next run continues from there\n",
                 err.toString().replace("\r\n", "\n"));
@@ -66,7 +66,7 @@ class IndexInterruptTest {
         out.getBuffer().setLength(0);
 
         assertEquals(0, run(root.toString(), "--no-semantic"));
-        assertTrue(out.toString().contains("indexed: 5\n"), out.toString());
+        assertTrue(printed().contains("indexed: 5\n"), printed());
     }
 
     @Test
@@ -91,6 +91,11 @@ class IndexInterruptTest {
         assertEquals(0, run(root.toString(), "--dry-run"));
 
         assertEquals(0, interrupts.registered);
+    }
+
+    /** Returns standard output with Windows line endings normalized. */
+    private String printed() {
+        return out.toString().replace("\r\n", "\n");
     }
 
     private int run(String... args) {
