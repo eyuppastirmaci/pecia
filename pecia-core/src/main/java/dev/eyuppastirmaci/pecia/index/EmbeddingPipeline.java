@@ -8,10 +8,12 @@ import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 
 /**
  * Embeds texts on worker threads while the calling thread reads files and owns storage. Work arrives in units, such
@@ -32,6 +34,7 @@ final class EmbeddingPipeline implements AutoCloseable {
     private final Cancellation cancellation;
     private final int bound;
     private final ExecutorService workers;
+    private final List<Thread> threads = new CopyOnWriteArrayList<>();
     private final Deque<Unit> units = new ArrayDeque<>();
     private int queued;
 
@@ -48,9 +51,13 @@ final class EmbeddingPipeline implements AutoCloseable {
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
         this.bound = bound;
         // Daemon threads never keep the JVM alive, even if an inference call hangs.
-        this.workers = Executors.newFixedThreadPool(
-                workers,
-                Thread.ofPlatform().name("pecia-embedding-", 1).daemon().factory());
+        ThreadFactory factory =
+                Thread.ofPlatform().name("pecia-embedding-", 1).daemon().factory();
+        this.workers = Executors.newFixedThreadPool(workers, task -> {
+            Thread thread = factory.newThread(task);
+            threads.add(thread);
+            return thread;
+        });
     }
 
     /**
@@ -104,12 +111,28 @@ final class EmbeddingPipeline implements AutoCloseable {
         return queued;
     }
 
-    /** Stops the workers and waits for running batches, so the embedder can be closed afterwards. */
+    /** Stops the workers and waits until their threads have ended, so the embedder can be closed afterwards. */
     @Override
     public void close() {
         workers.shutdownNow();
         // Inference cannot be interrupted, so this waits for running batches; queued ones never start.
         workers.close();
+        // The executor reports termination while its last thread is still exiting, so wait for every thread to end.
+        boolean interrupted = false;
+
+        for (Thread thread : threads) {
+            while (thread.isAlive()) {
+                try {
+                    thread.join();
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                }
+            }
+        }
+
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private float[][] embed(List<String> texts) throws EmbeddingException, Cancellation.CancelledException {
