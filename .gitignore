@@ -32,6 +32,13 @@ build/
 
 ### VS Code ###
 .vscode/
+# Java extension build output
+bin/
+target/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+!**/src/main/**/target/
+!**/src/test/**/target/
 
 ### Cursor ###
 .cursor/
