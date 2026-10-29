@@ -21,7 +21,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Turns texts into all-MiniLM-L6-v2 sentence embeddings: unit-length vectors of {@value #DIMENSIONS} floats, computed
- * on the CPU with ONNX Runtime. ONNX Runtime is loaded only when the first embedder opens. Instances may be shared
+ * on the CPU with ONNX Runtime. ONNX Runtime is loaded only when the first embedder opens, from verified copies of its
+ * native libraries in the user's cache when possible. Instances may be shared
  * between threads; {@link #close()} waits for running calls and makes later ones fail.
  */
 public final class Embedder implements AutoCloseable {
@@ -119,6 +120,8 @@ public final class Embedder implements AutoCloseable {
     }
 
     private static OrtEnvironment environment(String osName, String osArch) throws EmbeddingException {
+        // Before the runtime loads, so that it loads its libraries from the cache instead of extracting them.
+        RuntimeLibraries.configure(osName, osArch);
         OrtEnvironment environment;
 
         try {

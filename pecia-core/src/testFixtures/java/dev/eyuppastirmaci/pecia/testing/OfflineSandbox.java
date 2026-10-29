@@ -224,11 +224,11 @@ public final class OfflineSandbox {
 
         /**
          * Validates a run that opened an embedder offline: no network attempt, ONNX Runtime initialized, and nothing
-         * written except the runtime's native extraction directory.
+         * written except the runtime's native libraries in Pecia's cache.
          */
         public void verifyEmbedding(String requiredClass) throws IOException {
             assertNoNetworkAttempts();
-            environment.assertOnlyRuntimeExtraction(before);
+            environment.assertOnlyRuntimeLibraries(before);
             for (String className :
                     List.of(requiredClass, NetworkGuard.class.getName(), "ai.onnxruntime.OrtEnvironment")) {
                 if (!OfflineEnvironment.initialized(initializationLog(), className)) {
@@ -239,7 +239,7 @@ public final class OfflineSandbox {
 
         /**
          * Validates a semantic query offline: no network attempt, ONNX Runtime initialized, and nothing written except
-         * the runtime's native extraction directory and, on first use, the vector extension's copy in Pecia's cache.
+         * the runtime's native libraries and, on first use, the vector extension's copy in Pecia's cache.
          *
          * @param placedLibrary the extension's path relative to Pecia's cache directory if this run must place it in
          *     an empty cache, or null if it must reuse an earlier copy
@@ -248,17 +248,18 @@ public final class OfflineSandbox {
             Set<Path> additions = new LinkedHashSet<>();
 
             if (placedLibrary != null) {
-                Path entry = environment.peciaCache();
-                additions.add(entry);
+                // The cache and its native directory may already hold the runtime's libraries, so only the entries
+                // below the native directory are the extension's own.
+                Path entry = environment.peciaCache().resolve(placedLibrary.getName(0));
 
-                for (Path part : placedLibrary) {
+                for (Path part : placedLibrary.subpath(1, placedLibrary.getNameCount())) {
                     entry = entry.resolve(part);
                     additions.add(entry);
                 }
             }
 
             assertNoNetworkAttempts();
-            environment.assertOnlyRuntimeExtraction(before, additions);
+            environment.assertOnlyRuntimeLibraries(before, additions);
             for (String className :
                     List.of(requiredClass, NetworkGuard.class.getName(), "ai.onnxruntime.OrtEnvironment")) {
                 if (!OfflineEnvironment.initialized(initializationLog(), className)) {
