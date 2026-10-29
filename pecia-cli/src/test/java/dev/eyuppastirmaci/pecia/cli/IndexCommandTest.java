@@ -192,25 +192,73 @@ class IndexCommandTest {
     }
 
     @Test
-    void semanticRunsAddTheModelToTheSummaryAndLexicalRunsDoNot() throws IOException {
+    void semanticRunsAddTheModelAndEmbeddedChunksToTheSummaryAndLexicalRunsDoNot() throws IOException {
         Files.writeString(root.resolve("a.txt"), "needle");
 
         assertEquals(0, run(root.toString(), "--semantic"));
         List<String> summary = out.toString().lines().toList();
-        assertEquals("model: all-MiniLM-L6-v2 cached", summary.getLast());
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 1"),
+                summary.subList(summary.size() - 2, summary.size()));
         assertEquals("", err.toString());
 
         // The same project indexed from scratch without semantic indexing prints the rest of the summary unchanged.
         deleteIndex();
         assertSuccessfulIndex(1, 1, 0, 0, 1);
         assertEquals(
-                summary.subList(0, summary.size() - 1), out.toString().lines().toList());
+                summary.subList(0, summary.size() - 2), out.toString().lines().toList());
 
         deleteIndex();
         out.getBuffer().setLength(0);
         assertEquals(0, run(root.toString(), "--no-semantic"));
         assertEquals(
-                summary.subList(0, summary.size() - 1), out.toString().lines().toList());
+                summary.subList(0, summary.size() - 2), out.toString().lines().toList());
+    }
+
+    @Test
+    void anUnchangedSemanticRerunEmbedsNothing() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        assertEquals(0, run(root.toString(), "--semantic"));
+        out.getBuffer().setLength(0);
+
+        assertEquals(0, run(root.toString(), "--semantic"));
+
+        assertEquals("embedded: 0", out.toString().lines().toList().getLast());
+    }
+
+    @Test
+    void anEmbedderThatCannotOpenPrintsTheReasonAndTheLexicalWayOutWithoutASummary() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        models = listener -> TinyModel.cached("missing-input");
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        assertEquals("", out.toString());
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(2, lines.size(), err.toString());
+        assertTrue(lines.getFirst().startsWith("pecia index: EMBEDDER_UNAVAILABLE: INVALID_MODEL: The model at "));
+        assertEquals("Run with --no-semantic to build only the lexical index.", lines.getLast());
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void anEmbeddingFailurePrintsTheSummarySoFarTheReasonAndTheLexicalWayOut() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        models = listener -> TinyModel.cached("non-finite");
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        List<String> summary = out.toString().lines().toList();
+        assertEquals("indexed: 0", summary.get(2));
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0"),
+                summary.subList(summary.size() - 2, summary.size()));
+        assertEquals(
+                List.of(
+                        "pecia index: EMBEDDING_FAILED: INVALID_OUTPUT: The model returned token embeddings whose"
+                                + " average is not a finite, non-zero vector",
+                        "Run with --no-semantic to build only the lexical index."),
+                err.toString().lines().toList());
     }
 
     @Test
@@ -228,9 +276,10 @@ class IndexCommandTest {
                 "Downloading all-MiniLM-L6-v2 (90.4 MB) from huggingface.co into " + file.getParent()
                         + System.lineSeparator(),
                 err.toString());
+        List<String> summary = out.toString().lines().toList();
         assertEquals(
-                "model: all-MiniLM-L6-v2 downloaded (90.4 MB)",
-                out.toString().lines().toList().getLast());
+                List.of("model: all-MiniLM-L6-v2 downloaded (90.4 MB)", "embedded: 1"),
+                summary.subList(summary.size() - 2, summary.size()));
     }
 
     @ParameterizedTest

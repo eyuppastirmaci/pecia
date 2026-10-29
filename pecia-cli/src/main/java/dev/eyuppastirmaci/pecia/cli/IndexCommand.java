@@ -9,6 +9,7 @@ import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.index.WalkResult;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
@@ -59,10 +60,10 @@ public class IndexCommand implements Callable<Integer> {
      * Indexes a folder or previews discovery without processing content. Configuration warnings are printed to stderr
      * before any other output and do not change the exit code. The semantic flags override {@code semantic.enabled} for
      * this run, and the preview reports the resolved choice. A semantic run announces a model download on stderr when
-     * one starts and reports the model in its summary.
+     * one starts and reports the model and the number of embedded chunks in its summary.
      *
-     * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan, an unavailable model,
-     *     or storage failure
+     * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan, an unavailable model or
+     *     embedder, an embedding failure, or storage failure
      */
     @Override
     public Integer call() {
@@ -99,9 +100,26 @@ public class IndexCommand implements Callable<Integer> {
         } catch (IndexException failure) {
             WarningPrinter.print(spec.commandLine().getErr(), failure.result().warnings());
 
-            if (failure.result().status() == IndexResult.Status.MODEL_UNAVAILABLE
-                    && failure.getCause() instanceof ModelException model) {
-                reportUnavailableModel(model);
+            IndexResult.Status status = failure.result().status();
+
+            if (status == IndexResult.Status.MODEL_UNAVAILABLE && failure.getCause() instanceof ModelException model) {
+                reportSemanticFailure(status, model.reason(), model.getMessage());
+
+                return 1;
+            }
+
+            if (status == IndexResult.Status.EMBEDDER_UNAVAILABLE
+                    && failure.getCause() instanceof EmbeddingException embedding) {
+                reportSemanticFailure(status, embedding.reason(), embedding.getMessage());
+
+                return 1;
+            }
+
+            if (status == IndexResult.Status.EMBEDDING_FAILED
+                    && failure.getCause() instanceof EmbeddingException embedding) {
+                // Earlier files stay committed, so the summary shows what this run wrote before it stopped.
+                reportIndex(failure.result());
+                reportSemanticFailure(status, embedding.reason(), embedding.getMessage());
 
                 return 1;
             }
@@ -144,6 +162,7 @@ public class IndexCommand implements Callable<Integer> {
                     + (model.status() == ModelOutcome.Status.DOWNLOADED
                             ? " downloaded (" + megabytes(model.model().size()) + ")"
                             : " cached"));
+            out.println("embedded: " + result.embeddedChunks());
         }
 
         for (IndexResult.FileIssue issue : result.issues()) {
@@ -171,11 +190,10 @@ public class IndexCommand implements Callable<Integer> {
                         + file.getParent());
     }
 
-    private void reportUnavailableModel(ModelException failure) {
+    private void reportSemanticFailure(IndexResult.Status status, Enum<?> reason, String message) {
         PrintWriter err = spec.commandLine().getErr();
 
-        err.println("pecia index: " + IndexResult.Status.MODEL_UNAVAILABLE + ": " + failure.reason() + ": "
-                + failure.getMessage());
+        err.println("pecia index: " + status + ": " + reason + ": " + message);
         err.println("Run with --no-semantic to build only the lexical index.");
     }
 
