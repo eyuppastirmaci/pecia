@@ -114,6 +114,8 @@ public final class OfflineEnvironment {
     /** Returns literal JVM arguments; callers must pass them as individual process arguments. */
     public List<String> jvmArguments() {
         return List.of(
+                // On Windows the JVM keeps its monitoring files under TEMP, which points into the audited storage.
+                "-XX:-UsePerfData",
                 "-Duser.home=" + home,
                 "-Djava.io.tmpdir=" + temporary,
                 "-Dorg.sqlite.tmpdir=" + temporary,

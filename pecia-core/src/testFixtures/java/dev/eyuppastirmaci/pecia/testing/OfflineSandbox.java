@@ -172,8 +172,6 @@ public final class OfflineSandbox {
         /** Returns JVM arguments that isolate storage and record network and class-initialization evidence. */
         public List<String> jvmArguments() {
             List<String> arguments = new ArrayList<>(environment.jvmArguments());
-            // Keep JVM monitoring files out of the directory audited for unexpected model writes.
-            arguments.add("-XX:-UsePerfData");
             arguments.add("-Dfile.encoding=UTF-8");
             arguments.add("-Dstdout.encoding=UTF-8");
             arguments.add("-Dstderr.encoding=UTF-8");

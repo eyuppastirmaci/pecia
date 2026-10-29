@@ -87,6 +87,7 @@ class OfflineEnvironmentTest {
         }
         assertEquals(
                 List.of(
+                        "-XX:-UsePerfData",
                         "-Duser.home=" + isolated.home(),
                         "-Djava.io.tmpdir=" + isolated.temporary(),
                         "-Dorg.sqlite.tmpdir=" + isolated.temporary(),
