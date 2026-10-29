@@ -17,6 +17,8 @@ public final class PackagedCoreConsumer {
     private static final Set<String> SCENARIOS = Set.of(
             "semantic-offline",
             "semantic-embedding",
+            "semantic-index",
+            "lexical-after-semantic",
             "lexical-lifecycle",
             "lexical-reopen",
             "lexical-determinism",
@@ -63,6 +65,8 @@ public final class PackagedCoreConsumer {
         switch (scenario) {
             case "semantic-offline" -> ConfigurationScenario.verifyOfflineModelDownload(root);
             case "semantic-embedding" -> EmbeddingScenario.verifyEmbedding(root);
+            case "semantic-index" -> EmbeddingScenario.indexSemantically(root);
+            case "lexical-after-semantic" -> EmbeddingScenario.verifyLexicalAfterSemantic(root);
             case "lexical-lifecycle" -> new LexicalLifecycleScenario(root).runLifecycle();
             case "lexical-reopen" -> new LexicalLifecycleScenario(root).verifyReopened();
             // The dump precedes the success marker on standard output for the packaging test to compare.

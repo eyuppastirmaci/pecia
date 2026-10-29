@@ -11,6 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.search.QueryService;
+import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.semantic.Embedder;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
@@ -115,6 +117,29 @@ class SemanticIndexingTest {
         untouched.keySet().removeIf(key -> key.startsWith("config.yaml#") || key.startsWith("docs/notes.txt#"));
         after.keySet().removeIf(key -> key.startsWith("docs/notes.txt#"));
         assertEquals(untouched, after);
+    }
+
+    @Test
+    void aLexicalRunKeepsUnchangedFilesEmbeddingsAndDropsThoseOfChangedAndDeletedFiles() throws Exception {
+        IndexResult semantic = service(TINY).index(root, IndexOptions.semantic(true));
+        Map<String, String> before = embeddingsByChunk(dump(semantic));
+        Files.writeString(root.resolve(LexicalTestCorpus.NOTES), "Replaced notes about refunds.\n");
+        Files.delete(root.resolve(LexicalTestCorpus.CONFIG));
+        events.clear();
+
+        IndexResult lexical = service(TINY).index(root, IndexOptions.semantic(false));
+        Map<String, String> after = embeddingsByChunk(dump(lexical));
+
+        assertEquals(List.of(), events);
+        assertEquals(0, lexical.embeddedChunks());
+        Map<String, String> expected = new LinkedHashMap<>(before);
+        expected.keySet().removeIf(key -> key.startsWith("docs/notes.txt#") || key.startsWith("config.yaml#"));
+        assertFalse(expected.isEmpty());
+        assertEquals(expected, after);
+        assertFalse(new QueryService(loader)
+                .query(root, new SearchRequest("refunds"))
+                .hits()
+                .isEmpty());
     }
 
     @Test

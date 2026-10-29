@@ -129,6 +129,35 @@ class CorePackagingIT {
     }
 
     @Test
+    void lexicalRunsUpdateAndSearchAnIndexWithEmbeddingsOfflineWithoutTheSemanticRuntime() throws Exception {
+        Path sandbox = Files.createDirectory(fixture.resolve("embedded index")).toRealPath();
+        Path project =
+                Files.createDirectory(fixture.resolve("embedded index project")).toRealPath();
+        try (InputStream model = CorePackagingIT.class.getResourceAsStream("/semantic/tiny/tiny.onnx")) {
+            Files.copy(model, fixture.resolve("tiny.onnx"));
+        }
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-index",
+                runner.runOfflineEmbedding("semantic-index", project, offline)
+                        .stdout()
+                        .strip());
+        // The second process is lexical: no network attempt, no storage change, and no semantic class initialized.
+        assertEquals(
+                "PACKAGED_CORE_OK lexical-after-semantic",
+                runner.runOffline("lexical-after-semantic", project, offline)
+                        .stdout()
+                        .strip());
+    }
+
+    @Test
     void semanticIndexingFailsOfflineWithoutDownloadingOrTouchingTheIndex() throws Exception {
         Path sandbox = Files.createDirectory(fixture.resolve("offline model")).toRealPath();
         Path project =
