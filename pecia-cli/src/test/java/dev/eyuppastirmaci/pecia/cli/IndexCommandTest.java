@@ -284,7 +284,7 @@ class IndexCommandTest {
     }
 
     @Test
-    void aBackfillFailurePrintsTheSummarySoFarTheReasonAndTheLexicalWayOut() throws IOException {
+    void storedChunksThatCannotBeEmbeddedAreReportedAndTheRunIsPartial() throws IOException {
         Files.writeString(root.resolve("a.txt"), "needle");
         assertEquals(0, run(root.toString(), "--no-semantic"));
         out.getBuffer().setLength(0);
@@ -299,9 +299,8 @@ class IndexCommandTest {
                 summary.subList(summary.size() - 4, summary.size()));
         assertEquals(
                 List.of(
-                        "pecia index: EMBEDDING_FAILED: INVALID_OUTPUT: The model returned token embeddings whose"
-                                + " average is not a finite, non-zero vector",
-                        "Run with --no-semantic to build only the lexical index."),
+                        "warning: a.txt: INVALID_OUTPUT: The model returned token embeddings whose average is not a finite,"
+                                + " non-zero vector (indexed without embeddings)"),
                 err.toString().lines().toList());
     }
 
@@ -321,23 +320,53 @@ class IndexCommandTest {
     }
 
     @Test
-    void anEmbeddingFailurePrintsTheSummarySoFarTheReasonAndTheLexicalWayOut() throws IOException {
+    void aFileThatCannotBeEmbeddedIsIndexedWithoutEmbeddingsAndReported() throws IOException {
         Files.writeString(root.resolve("a.txt"), "needle");
         models = listener -> TinyModel.cached("non-finite");
 
         assertEquals(1, run(root.toString(), "--semantic"));
 
         List<String> summary = out.toString().lines().toList();
-        assertEquals("indexed: 0", summary.get(2));
+        assertEquals("indexed: 1", summary.get(2));
         assertEquals(
                 List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 0"),
                 summary.subList(summary.size() - 4, summary.size()));
         assertEquals(
                 List.of(
+                        "warning: a.txt: INVALID_OUTPUT: The model returned token embeddings whose average is not a finite,"
+                                + " non-zero vector (indexed without embeddings)"),
+                err.toString().lines().toList());
+    }
+
+    @Test
+    void embeddingFailuresThatStopTheRunPrintTheSummarySoFarTheReasonAndTheLexicalWayOut() throws IOException {
+        for (String name : List.of("a.txt", "b.txt", "c.txt")) {
+            Files.writeString(root.resolve(name), "needle");
+        }
+        models = listener -> TinyModel.cached("non-finite");
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        List<String> summary = out.toString().lines().toList();
+        assertEquals("indexed: 3", summary.get(2));
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 0"),
+                summary.subList(summary.size() - 4, summary.size()));
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(5, lines.size(), err.toString());
+
+        for (int file = 0; file < 3; file++) {
+            assertTrue(
+                    lines.get(file).startsWith("warning: " + "abc".charAt(file) + ".txt: INVALID_OUTPUT: "),
+                    lines.get(file));
+        }
+
+        assertEquals(
+                List.of(
                         "pecia index: EMBEDDING_FAILED: INVALID_OUTPUT: The model returned token embeddings whose"
                                 + " average is not a finite, non-zero vector",
                         "Run with --no-semantic to build only the lexical index."),
-                err.toString().lines().toList());
+                lines.subList(3, 5));
     }
 
     @Test

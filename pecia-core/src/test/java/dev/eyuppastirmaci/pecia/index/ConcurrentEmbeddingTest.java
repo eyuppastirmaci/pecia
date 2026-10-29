@@ -168,46 +168,83 @@ class ConcurrentEmbeddingTest {
     }
 
     @Test
-    void aFailingWorkerStopsTheRunAndClosesEverything() throws Exception {
-        Path project = project("failing", 3);
+    void aFileThatCannotBeEmbeddedIsWrittenWithoutEmbeddingsWithAnyNumberOfWorkers() throws Exception {
+        List<IndexDump> dumps = new ArrayList<>();
+
+        for (int workers : WORKERS) {
+            Path project = project("failing-" + workers, workers);
+            LexicalTestCorpus.write(project);
+            List<String> events = new ArrayList<>();
+
+            IndexResult result = failingService(EmbeddingException.Reason.INFERENCE_FAILED, events)
+                    .index(project, IndexOptions.semantic(true));
+
+            assertEquals(IndexResult.Status.PARTIAL, result.status());
+            assertEquals(List.of("open", "close"), events);
+            assertEquals(
+                    List.of(Path.of("handbook.txt")),
+                    result.semanticIssues().stream()
+                            .map(IndexResult.SemanticIssue::sourcePath)
+                            .toList());
+            dumps.add(dump(result));
+        }
+
+        // Every file is stored; only handbook.txt's chunks lack embeddings.
+        IndexDump first = dumps.getFirst();
+        assertEquals(7, first.files().size());
+        assertEquals(
+                first.chunks().stream()
+                        .filter(chunk -> !chunk.sourcePath().equals("handbook.txt"))
+                        .count(),
+                first.embeddings().size());
+        dumps.forEach(dump -> assertEquals(first, dump));
+    }
+
+    @Test
+    void aBrokenRuntimeStopsTheRunAtOnceAndClosesEverything() throws Exception {
+        Path project = project("broken", 3);
         LexicalTestCorpus.write(project);
         List<String> events = new ArrayList<>();
-        IndexService service =
-                new IndexService(loader, ConcurrentEmbeddingTest::openStorage, listener -> TINY, (model, threads) -> {
-                    TextEmbedder embedder = TextEmbedder.open(model, threads);
-                    events.add("open");
 
-                    return new TextEmbedder() {
-                        @Override
-                        public float[][] embed(List<String> texts) throws EmbeddingException {
-                            if (texts.getFirst().startsWith("handbook.txt")) {
-                                throw new EmbeddingException(
-                                        EmbeddingException.Reason.INFERENCE_FAILED, "injected", null);
-                            }
-
-                            return embedder.embed(texts);
-                        }
-
-                        @Override
-                        public void close() {
-                            events.add("close");
-                            embedder.close();
-                        }
-                    };
-                });
-
-        IndexException failure =
-                assertThrows(IndexException.class, () -> service.index(project, IndexOptions.semantic(true)));
+        IndexException failure = assertThrows(
+                IndexException.class,
+                () -> failingService(EmbeddingException.Reason.RUNTIME_UNAVAILABLE, events)
+                        .index(project, IndexOptions.semantic(true)));
 
         assertEquals(IndexResult.Status.EMBEDDING_FAILED, failure.result().status());
         assertEquals(List.of("open", "close"), events);
-        // Files before handbook.txt in path order are written with their embeddings; it and later ones are not.
+        // Files before handbook.txt in path order keep their embeddings, it is written without, later ones not at all.
         IndexDump after = dump(failure.result());
         assertEquals(
-                List.of("config.yaml", "docs/notes.txt", "docs/Ödeme rehberi.md", "empty.txt"),
+                List.of("config.yaml", "docs/notes.txt", "docs/Ödeme rehberi.md", "empty.txt", "handbook.txt"),
                 after.files().stream().map(IndexDump.FileEntry::sourcePath).toList());
-        assertEquals(after.chunks().size(), after.embeddings().size());
-        assertEquals(after.chunks().size(), failure.result().embeddedChunks());
+        assertEquals(1, failure.result().semanticIssues().size());
+        assertEquals(after.embeddings().size(), failure.result().embeddedChunks());
+    }
+
+    /** Returns a service whose embedder fails with the reason for handbook.txt, recording its lifecycle. */
+    private IndexService failingService(EmbeddingException.Reason reason, List<String> events) {
+        return new IndexService(loader, ConcurrentEmbeddingTest::openStorage, listener -> TINY, (model, threads) -> {
+            TextEmbedder embedder = TextEmbedder.open(model, threads);
+            events.add("open");
+
+            return new TextEmbedder() {
+                @Override
+                public float[][] embed(List<String> texts) throws EmbeddingException {
+                    if (texts.getFirst().startsWith("handbook.txt")) {
+                        throw new EmbeddingException(reason, "injected", null);
+                    }
+
+                    return embedder.embed(texts);
+                }
+
+                @Override
+                public void close() {
+                    events.add("close");
+                    embedder.close();
+                }
+            };
+        });
     }
 
     private Path project(String name, int workers) throws IOException {

@@ -4,6 +4,7 @@ import dev.eyuppastirmaci.pecia.content.ContentPath;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import java.nio.file.Path;
@@ -26,6 +27,8 @@ import java.util.Objects;
  * @param rechunkedFiles indexed files whose content was unchanged but whose chunks were rebuilt for other extraction,
  *     tokenizer, or chunking settings; a subset of {@code indexedFiles}
  * @param scanIssues paths discovery could not read; the run indexed the files it found and deleted none
+ * @param semanticIssues files whose chunks could not be embedded; their chunks are stored without embeddings, which
+ *     a later semantic run makes
  */
 public record IndexResult(
         ProjectContext context,
@@ -42,10 +45,11 @@ public record IndexResult(
         long discardedEmbeddings,
         EmbeddingCoverage embeddingCoverage,
         int rechunkedFiles,
-        List<WalkResult.Issue> scanIssues) {
+        List<WalkResult.Issue> scanIssues,
+        List<SemanticIssue> semanticIssues) {
 
     /**
-     * Copies issues and scan issues and rejects negative counters, more processed files than candidates, and embeddings beyond the
+     * Copies the issue lists and rejects negative counters, more processed files than candidates, and embeddings beyond the
      * written chunks or without a semantic model.
      */
     public IndexResult {
@@ -53,6 +57,7 @@ public record IndexResult(
         Objects.requireNonNull(status, "status");
         issues = List.copyOf(issues);
         scanIssues = List.copyOf(scanIssues);
+        semanticIssues = List.copyOf(semanticIssues);
 
         if (candidateCount < 0
                 || indexedFiles < 0
@@ -79,6 +84,42 @@ public record IndexResult(
         if (rechunkedFiles < 0 || rechunkedFiles > indexedFiles) {
             throw new IllegalArgumentException("rechunkedFiles must be between zero and indexedFiles");
         }
+    }
+
+    /** Creates an outcome of a run that embedded every chunk it meant to. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            int unchangedFiles,
+            int deletedFiles,
+            long writtenChunks,
+            List<FileIssue> issues,
+            ModelOutcome semanticModel,
+            long embeddedChunks,
+            long backfilledChunks,
+            long discardedEmbeddings,
+            EmbeddingCoverage embeddingCoverage,
+            int rechunkedFiles,
+            List<WalkResult.Issue> scanIssues) {
+        this(
+                context,
+                status,
+                candidateCount,
+                indexedFiles,
+                unchangedFiles,
+                deletedFiles,
+                writtenChunks,
+                issues,
+                semanticModel,
+                embeddedChunks,
+                backfilledChunks,
+                discardedEmbeddings,
+                embeddingCoverage,
+                rechunkedFiles,
+                scanIssues,
+                List.of());
     }
 
     /** Creates an outcome of a run whose discovery read every path. */
@@ -271,8 +312,9 @@ public record IndexResult(
         /** All admitted candidates were indexed or unchanged, and any cleanup completed. */
         COMPLETE,
         /**
-         * Some files could not be extracted, or discovery could not read some paths; every other file was indexed,
-         * and no file was deleted, since a file that could not be read is not known to be gone.
+         * Some files could not be extracted or embedded, or discovery could not read some paths; every other file was
+         * indexed. When files could not be read or discovered, no file was deleted, since such a file is not known to
+         * be gone.
          */
         PARTIAL,
         /** Semantic indexing was requested, but its model could not be made available; nothing was indexed. */
@@ -280,8 +322,8 @@ public record IndexResult(
         /** The semantic model was available, but its embedder could not be opened; nothing was indexed. */
         EMBEDDER_UNAVAILABLE,
         /**
-         * Embedding failed, either for a changed file, which is left as it was, or for stored chunks; everything
-         * committed earlier stays.
+         * Embedding stopped the run: the runtime or model failed, or several files or pages in a row could not be
+         * embedded. Everything committed earlier stays, including files written without embeddings.
          */
         EMBEDDING_FAILED,
         /** A storage operation failed after discovery completed. */
@@ -291,6 +333,21 @@ public record IndexResult(
          * and no deletions ran. The next run continues from there.
          */
         CANCELLED
+    }
+
+    /**
+     * A file whose chunks could not be embedded, identified by its normalized project-relative source path.
+     *
+     * @param reason why embedding failed
+     */
+    public record SemanticIssue(Path sourcePath, EmbeddingException.Reason reason, String message) {
+
+        /** Validates the source path and requires a reason and diagnostic message. */
+        public SemanticIssue {
+            ContentPath.requireProjectRelative(sourcePath);
+            Objects.requireNonNull(reason, "reason");
+            Objects.requireNonNull(message, "message");
+        }
     }
 
     /** A file extraction issue identified by its normalized project-relative source path. */

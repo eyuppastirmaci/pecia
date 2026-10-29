@@ -160,6 +160,11 @@ public final class IndexService {
      * their own, so an interrupted run leaves only the rest for the next one; the progress listener hears how far this
      * has come. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs the model.
      *
+     * <p>A file whose chunks cannot be embedded is written without embeddings and reported as a semantic issue, and a
+     * backfill page that cannot be embedded is skipped; the result is then PARTIAL, and a later semantic run embeds
+     * them. A broken runtime or model, or {@value EmbeddingFailures#CONSECUTIVE_LIMIT} failing files or pages in a row,
+     * stop the run as EMBEDDING_FAILED instead.
+     *
      * <p>A cancelled run stops before its next file, embedding batch, or backfill page, skips deletions, closes the
      * embedder and storage, and returns {@link IndexResult.Status#CANCELLED} with what it committed.
      *
@@ -198,6 +203,7 @@ public final class IndexService {
         TextEmbedder embedder =
                 semanticModel == null ? null : openEmbedder(context, candidates, semanticModel, workers);
         Tally tally = new Tally(context, candidates.size(), semanticModel, scanResult.issues());
+        EmbeddingFailures failures = new EmbeddingFailures();
 
         // Resources close in reverse order: the workers stop before the embedder they use closes.
         try (embedder;
@@ -224,7 +230,19 @@ public final class IndexService {
                             // The file is written once its chunks are embedded, after every earlier file.
                             pipeline.submit(
                                     changed.embeddingInputs(),
-                                    vectors -> tally.add(indexer.write(changed, storage, profile, vectors)));
+                                    vectors -> {
+                                        tally.add(indexer.write(changed, storage, profile, vectors));
+                                        failures.succeeded();
+                                    },
+                                    failure -> {
+                                        // Its new chunks keep lexical search current; a later run embeds them.
+                                        tally.add(indexer.write(changed, storage));
+                                        tally.semanticIssues.add(new IndexResult.SemanticIssue(
+                                                changed.document().sourcePath(),
+                                                failure.reason(),
+                                                failure.getMessage()));
+                                        failures.failed(failure);
+                                    });
                     }
                 } catch (ExtractionException failure) {
                     tally.issues.add(new IndexResult.FileIssue(
@@ -250,7 +268,8 @@ public final class IndexService {
 
             if (pipeline != null) {
                 // Unchanged files' chunks match their content and chunking, so they are embedded from storage.
-                tally.backfill = new EmbeddingBackfill(storage, pipeline, profile, options.progressListener());
+                tally.backfill = new EmbeddingBackfill(
+                        storage, pipeline, profile, options.progressListener(), failures, tally.semanticIssues::add);
                 tally.backfill.run(tally.unchanged);
                 tally.coverage = storage.embeddingCoverage(profile);
             }
@@ -259,8 +278,7 @@ public final class IndexService {
 
             throw new IndexException("Index storage or cleanup operation failed", failure, result);
         } catch (EmbeddingException failure) {
-            // A failing file is not written; a failure while embedding stored chunks keeps the committed pages and the
-            // cleanup that ran before it.
+            // Files and pages before the one that stopped the run stay, as does the cleanup that ran before it.
             IndexResult result = tally.result(IndexResult.Status.EMBEDDING_FAILED);
 
             throw new IndexException("Semantic indexing could not embed a file's chunks", failure, result);
@@ -269,7 +287,7 @@ public final class IndexService {
             return tally.result(IndexResult.Status.CANCELLED);
         }
 
-        boolean partial = !tally.issues.isEmpty() || !scanResult.complete();
+        boolean partial = !tally.issues.isEmpty() || !scanResult.complete() || !tally.semanticIssues.isEmpty();
 
         return tally.result(partial ? IndexResult.Status.PARTIAL : IndexResult.Status.COMPLETE);
     }
@@ -321,6 +339,7 @@ public final class IndexService {
         private final List<WalkResult.Issue> scanIssues;
         private final List<Long> unchanged = new ArrayList<>();
         private final List<IndexResult.FileIssue> issues = new ArrayList<>();
+        private final List<IndexResult.SemanticIssue> semanticIssues = new ArrayList<>();
         private int indexedFiles;
         private int rechunkedFiles;
         private int deletedFiles;
@@ -373,7 +392,8 @@ public final class IndexService {
                     discardedEmbeddings,
                     coverage,
                     rechunkedFiles,
-                    scanIssues);
+                    scanIssues,
+                    semanticIssues);
         }
     }
 

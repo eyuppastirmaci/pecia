@@ -16,8 +16,8 @@ import java.util.concurrent.Future;
 /**
  * Embeds texts on worker threads while the calling thread reads files and owns storage. Work arrives in units, such
  * as a changed file's chunks or a page of stored chunks, whose texts are split into batches for the workers. Each
- * unit's vectors go back to its writer on the calling thread in the order the units arrived, so what is written does
- * not depend on the number of workers. Once {@code bound} texts wait to be written, the calling thread writes the
+ * unit's vectors, or the failure that kept it from being embedded, go back to it on the calling thread in the order the
+ * units arrived, so what is written does not depend on the number of workers. Once {@code bound} texts wait to be written, the calling thread writes the
  * oldest units before it reads more, which bounds memory however large the project is.
  */
 final class EmbeddingPipeline implements AutoCloseable {
@@ -64,13 +64,15 @@ final class EmbeddingPipeline implements AutoCloseable {
     /**
      * Queues texts for embedding, then writes the oldest units while {@code bound} or more texts wait.
      *
-     * @param writer receives one vector per text, in order, after every earlier unit was written
-     * @throws EmbeddingException if embedding a unit that had to be written failed
-     * @throws Cancellation.CancelledException if the run was cancelled before a unit that had to be written finished
+     * @param writer receives one vector per text, in order, after every earlier unit was handled
+     * @param failure receives the unit's embedding failure instead, after every earlier unit was handled
+     * @throws EmbeddingException if a failure handler rethrew the failure of a unit that had to be handled
+     * @throws Cancellation.CancelledException if the run was cancelled before a unit that had to be handled finished
      */
-    void submit(List<String> texts, Writer writer)
+    void submit(List<String> texts, Writer writer, FailureHandler failure)
             throws SQLException, EmbeddingException, Cancellation.CancelledException {
         Objects.requireNonNull(writer, "writer");
+        Objects.requireNonNull(failure, "failure");
         List<Future<float[][]>> batches = new ArrayList<>();
 
         for (int start = 0; start < texts.size(); start += BATCH_SIZE) {
@@ -79,7 +81,7 @@ final class EmbeddingPipeline implements AutoCloseable {
             batches.add(workers.submit(() -> embed(batch)));
         }
 
-        units.addLast(new Unit(texts.size(), batches, writer));
+        units.addLast(new Unit(texts.size(), batches, writer, failure));
         queued += texts.size();
 
         while (queued >= bound) {
@@ -125,13 +127,24 @@ final class EmbeddingPipeline implements AutoCloseable {
     private void writeOldest() throws SQLException, EmbeddingException, Cancellation.CancelledException {
         Unit unit = units.removeFirst();
         List<float[]> vectors = new ArrayList<>(unit.size());
+        EmbeddingException failed = null;
 
-        for (Future<float[][]> batch : unit.batches()) {
-            vectors.addAll(Arrays.asList(await(batch)));
+        try {
+            for (Future<float[][]> batch : unit.batches()) {
+                vectors.addAll(Arrays.asList(await(batch)));
+            }
+        } catch (EmbeddingException failure) {
+            // The unit's other batches may still run; their vectors are not needed.
+            failed = failure;
         }
 
         queued -= unit.size();
-        unit.writer().write(vectors);
+
+        if (failed != null) {
+            unit.failure().failed(failed);
+        } else {
+            unit.writer().write(vectors);
+        }
     }
 
     private static float[][] await(Future<float[][]> batch) throws EmbeddingException, Cancellation.CancelledException {
@@ -171,5 +184,12 @@ final class EmbeddingPipeline implements AutoCloseable {
         void write(List<float[]> vectors) throws SQLException;
     }
 
-    private record Unit(int size, List<Future<float[][]>> batches, Writer writer) {}
+    /** Handles a unit that could not be embedded, on the calling thread; rethrowing the failure stops the run. */
+    @FunctionalInterface
+    interface FailureHandler {
+
+        void failed(EmbeddingException failure) throws SQLException, EmbeddingException;
+    }
+
+    private record Unit(int size, List<Future<float[][]>> batches, Writer writer, FailureHandler failure) {}
 }

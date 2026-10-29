@@ -9,11 +9,13 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * Embeds the stored chunks of unchanged files that have no embedding, in pages that each commit on their own, so an
  * interrupted run leaves only the remaining chunks for the next one. Pages are embedded by the run's workers and
- * committed in order.
+ * committed in order; a page that cannot be embedded is skipped, its chunks stay without embeddings, and its files
+ * are reported.
  */
 final class EmbeddingBackfill {
 
@@ -24,6 +26,8 @@ final class EmbeddingBackfill {
     private final EmbeddingPipeline pipeline;
     private final EmbeddingProfile profile;
     private final IndexProgressListener listener;
+    private final EmbeddingFailures failures;
+    private final Consumer<IndexResult.SemanticIssue> issues;
     private long stored;
     private long processed;
 
@@ -31,18 +35,23 @@ final class EmbeddingBackfill {
             SqliteStorage storage,
             EmbeddingPipeline pipeline,
             EmbeddingProfile profile,
-            IndexProgressListener listener) {
+            IndexProgressListener listener,
+            EmbeddingFailures failures,
+            Consumer<IndexResult.SemanticIssue> issues) {
         this.storage = Objects.requireNonNull(storage, "storage");
         this.pipeline = Objects.requireNonNull(pipeline, "pipeline");
         this.profile = Objects.requireNonNull(profile, "profile");
         this.listener = listener;
+        this.failures = Objects.requireNonNull(failures, "failures");
+        this.issues = Objects.requireNonNull(issues, "issues");
     }
 
     /**
      * Embeds the files' chunks that have no embedding, in file order.
      *
      * @param fileIds files whose stored chunks are known to match their current content and chunking
-     * @throws EmbeddingException if embedding fails; earlier pages stay committed and are counted by {@link #stored()}
+     * @throws EmbeddingException if embedding failures stop the run; earlier pages stay committed and are counted by
+     *     {@link #stored()}
      * @throws Cancellation.CancelledException if the run is cancelled; pages embedded before it stay committed
      */
     void run(List<Long> fileIds) throws SQLException, EmbeddingException, Cancellation.CancelledException {
@@ -95,11 +104,25 @@ final class EmbeddingBackfill {
                 .map(chunk -> EmbeddingInput.of(chunk.sourcePath(), chunk.headingPath(), chunk.content()))
                 .toList();
 
-        pipeline.submit(inputs, vectors -> {
-            stored += storage.storeEmbeddings(profile, page, vectors);
-            processed += page.size();
-            report(total);
-        });
+        pipeline.submit(
+                inputs,
+                vectors -> {
+                    stored += storage.storeEmbeddings(profile, page, vectors);
+                    processed += page.size();
+                    report(total);
+                    failures.succeeded();
+                },
+                failure -> {
+                    // Skipped chunks are still processed, so progress reaches its total.
+                    processed += page.size();
+                    report(total);
+                    page.stream()
+                            .map(UnembeddedChunk::sourcePath)
+                            .distinct()
+                            .forEach(path -> issues.accept(
+                                    new IndexResult.SemanticIssue(path, failure.reason(), failure.getMessage())));
+                    failures.failed(failure);
+                });
     }
 
     /** Reports progress, capped at the total because chunks added by another process after counting are embedded too. */

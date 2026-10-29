@@ -12,6 +12,7 @@ import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.semantic.Embedder;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.IndexWriteObserver;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -47,6 +49,8 @@ class EmbeddingBackfillTest {
     private final List<Integer> batchSizes = new ArrayList<>();
     private final List<IndexProgress> progress = new ArrayList<>();
     private int failOnCall = -1;
+    private boolean failEveryCall;
+    private Predicate<List<String>> failWhen = texts -> false;
     private Runnable duringFirstCall = () -> {};
     private int embedCalls;
     private Path root;
@@ -102,33 +106,74 @@ class EmbeddingBackfillTest {
     }
 
     @Test
-    void anInterruptedBackfillKeepsItsPagesAndTheNextRunFinishesIt() throws Exception {
-        Path interrupted = manyChunkProject("interrupted");
+    void aPageThatCannotBeEmbeddedIsSkippedAndTheNextRunFinishesIt() throws Exception {
+        Path skipped = manyChunkProject("skipped");
         Path uninterrupted = manyChunkProject("uninterrupted");
-        for (Path project : List.of(interrupted, uninterrupted)) {
+        for (Path project : List.of(skipped, uninterrupted)) {
             Files.writeString(project.resolve("removed.txt"), "removed before the semantic run\n");
             service().index(project);
             Files.delete(project.resolve("removed.txt"));
         }
-        // One worker embeds in order: the first page's four batches of eight succeed and the next page fails.
+        // One worker embeds in order: the first page's four batches of eight succeed and the second page fails.
         failOnCall = 5;
 
-        IndexException failure =
-                assertThrows(IndexException.class, () -> service().index(interrupted, semantic()));
+        IndexResult result = service().index(skipped, semantic());
 
-        assertEquals(IndexResult.Status.EMBEDDING_FAILED, failure.result().status());
-        // Cleanup runs before the backfill, so the failed run still reports and keeps the deletion.
-        assertEquals(1, failure.result().deletedFiles());
-        assertEquals(32, failure.result().backfilledChunks());
-        assertEquals(32, dump(failure.result()).embeddings().size());
+        assertEquals(IndexResult.Status.PARTIAL, result.status());
+        assertEquals(1, result.deletedFiles());
+        // The first and the last page are stored; the failed page's 32 chunks stay without embeddings.
+        assertEquals(38, result.backfilledChunks());
+        assertEquals(38, dump(result).embeddings().size());
+        assertEquals(new EmbeddingCoverage(38, 0, 32), result.embeddingCoverage());
+        assertEquals(
+                List.of(new IndexResult.SemanticIssue(
+                        Path.of("words.txt"), EmbeddingException.Reason.INFERENCE_FAILED, "injected")),
+                result.semanticIssues());
+        assertEquals(new IndexProgress(IndexProgress.Stage.BACKFILL, 70, 70), progress.getLast());
 
         failOnCall = -1;
-        IndexResult resumed = service().index(interrupted, semantic());
+        IndexResult resumed = service().index(skipped, semantic());
         IndexResult complete = service().index(uninterrupted, semantic());
 
-        assertEquals(38, resumed.backfilledChunks());
+        assertEquals(IndexResult.Status.COMPLETE, resumed.status());
+        assertEquals(32, resumed.backfilledChunks());
         assertEquals(70, complete.backfilledChunks());
         assertEquals(dump(complete), dump(resumed));
+    }
+
+    @Test
+    void aPageThatEmbedsBetweenFailuresStartsTheCountAgain() throws Exception {
+        Path project = Files.createDirectories(sandbox.resolve("alternating")).toRealPath();
+        Files.writeString(project.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n");
+        // Each file fills exactly one page of 32 chunks, so a page fails when its file's inputs do.
+        for (String name : List.of("w1", "w2", "w3", "w4")) {
+            Files.writeString(project.resolve(name + ".txt"), "alpha beta gamma delta ".repeat(32) + "\n");
+        }
+        service().index(project);
+        failWhen = texts -> !texts.getFirst().startsWith("w3.txt");
+
+        IndexResult result = service().index(project, semantic());
+
+        assertEquals(IndexResult.Status.PARTIAL, result.status());
+        assertEquals(32, result.backfilledChunks());
+        assertEquals(3, result.semanticIssues().size());
+    }
+
+    @Test
+    void threePagesInARowThatCannotBeEmbeddedStopTheRun() throws Exception {
+        Path project = manyChunkProject("stopped");
+        service().index(project);
+        failEveryCall = true;
+
+        IndexException failure =
+                assertThrows(IndexException.class, () -> service().index(project, semantic()));
+
+        assertEquals(IndexResult.Status.EMBEDDING_FAILED, failure.result().status());
+        assertEquals(0, failure.result().backfilledChunks());
+        assertEquals(
+                EmbeddingFailures.CONSECUTIVE_LIMIT,
+                failure.result().semanticIssues().size());
+        assertEquals(List.of(), dump(failure.result()).embeddings());
     }
 
     @Test
@@ -296,7 +341,7 @@ class EmbeddingBackfillTest {
                     duringFirstCall.run();
                 }
 
-                if (call == failOnCall) {
+                if (call == failOnCall || failEveryCall || failWhen.test(texts)) {
                     throw new EmbeddingException(EmbeddingException.Reason.INFERENCE_FAILED, "injected", null);
                 }
 

@@ -9,6 +9,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.nio.file.Path;
@@ -159,6 +160,50 @@ class IndexResultTest {
 
         assertEquals(List.of(issue), result.issues());
         assertThrows(UnsupportedOperationException.class, () -> result.issues().clear());
+    }
+
+    @Test
+    void defensivelyCopiesSemanticIssuesAndValidatesThem() {
+        IndexResult.SemanticIssue issue = new IndexResult.SemanticIssue(
+                Path.of("notes.txt"), EmbeddingException.Reason.INVALID_OUTPUT, "not a unit vector");
+        List<IndexResult.SemanticIssue> semanticIssues = new ArrayList<>(List.of(issue));
+        IndexResult result = new IndexResult(
+                CONTEXT,
+                IndexResult.Status.PARTIAL,
+                1,
+                1,
+                0,
+                0,
+                1,
+                List.of(),
+                null,
+                0,
+                0,
+                0,
+                null,
+                0,
+                List.of(),
+                semanticIssues);
+
+        semanticIssues.clear();
+
+        assertEquals(List.of(issue), result.semanticIssues());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> result.semanticIssues().clear());
+        assertEquals(
+                List.of(),
+                new IndexResult(CONTEXT, IndexResult.Status.COMPLETE, 0, 0, 0, 0, 0, List.of()).semanticIssues());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new IndexResult.SemanticIssue(
+                        Path.of("/absolute/notes.txt"), EmbeddingException.Reason.INVALID_OUTPUT, "message"));
+        assertThrows(
+                NullPointerException.class, () -> new IndexResult.SemanticIssue(Path.of("notes.txt"), null, "message"));
+        assertThrows(
+                NullPointerException.class,
+                () -> new IndexResult.SemanticIssue(
+                        Path.of("notes.txt"), EmbeddingException.Reason.INVALID_OUTPUT, null));
     }
 
     @Test

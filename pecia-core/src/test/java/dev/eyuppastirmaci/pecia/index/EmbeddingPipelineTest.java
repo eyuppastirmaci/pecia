@@ -31,6 +31,11 @@ class EmbeddingPipelineTest {
 
     private static final Duration PATIENCE = Duration.ofSeconds(10);
 
+    // Stops the run on any failure, as the pipeline's callers decide for themselves.
+    private static final EmbeddingPipeline.FailureHandler RETHROW = failure -> {
+        throw failure;
+    };
+
     private final Cancellation cancellation = new Cancellation();
     private final List<String> embedded = Collections.synchronizedList(new ArrayList<>());
     private final List<String> written = new ArrayList<>();
@@ -53,7 +58,7 @@ class EmbeddingPipelineTest {
 
         try (EmbeddingPipeline pipeline = new EmbeddingPipeline(echo(), cancellation, 3)) {
             for (List<String> unit : units) {
-                pipeline.submit(unit, vectors::add);
+                pipeline.submit(unit, vectors::add, RETHROW);
             }
 
             pipeline.finish();
@@ -75,8 +80,8 @@ class EmbeddingPipelineTest {
         TextEmbedder embedder = gated(texts -> texts.getFirst().equals("first") ? releaseFirst : null);
 
         try (EmbeddingPipeline pipeline = new EmbeddingPipeline(embedder, cancellation, 2)) {
-            pipeline.submit(List.of("first"), vectors -> written.add("first"));
-            pipeline.submit(List.of("second"), vectors -> written.add("second"));
+            pipeline.submit(List.of("first"), vectors -> written.add("first"), RETHROW);
+            pipeline.submit(List.of("second"), vectors -> written.add("second"), RETHROW);
             awaitTrue(() -> embedded.contains("second"));
 
             Thread finisher = Thread.ofPlatform().daemon().start(() -> releaseAfter(releaseFirst, 100));
@@ -100,10 +105,13 @@ class EmbeddingPipelineTest {
                 try {
                     for (int unit = 0; unit < 10; unit++) {
                         String text = "unit " + unit;
-                        pipeline.submit(List.of(text), vectors -> {
-                            queuedAtWrite.add(pipeline.queued());
-                            written.add(text);
-                        });
+                        pipeline.submit(
+                                List.of(text),
+                                vectors -> {
+                                    queuedAtWrite.add(pipeline.queued());
+                                    written.add(text);
+                                },
+                                RETHROW);
                         returned.incrementAndGet();
                     }
 
@@ -134,7 +142,7 @@ class EmbeddingPipelineTest {
         List<List<float[]>> vectors = new ArrayList<>();
 
         try (EmbeddingPipeline pipeline = new EmbeddingPipeline(echo(), cancellation, 2, 4)) {
-            pipeline.submit(texts("big", 10), vectors::add);
+            pipeline.submit(texts("big", 10), vectors::add, RETHROW);
 
             assertEquals(1, vectors.size(), "Written before submit returns");
             assertEquals(0, pipeline.queued());
@@ -160,14 +168,45 @@ class EmbeddingPipelineTest {
         };
 
         try (EmbeddingPipeline pipeline = new EmbeddingPipeline(embedder, cancellation, 2)) {
-            pipeline.submit(texts("a", 3), vectors -> written.add("a"));
-            pipeline.submit(texts("b", 12), vectors -> written.add("b"));
-            pipeline.submit(texts("c", 3), vectors -> written.add("c"));
+            pipeline.submit(texts("a", 3), vectors -> written.add("a"), RETHROW);
+            pipeline.submit(texts("b", 12), vectors -> written.add("b"), RETHROW);
+            pipeline.submit(texts("c", 3), vectors -> written.add("c"), RETHROW);
 
             assertSame(injected, assertThrows(EmbeddingException.class, pipeline::finish));
         }
 
         assertEquals(List.of("a"), written);
+    }
+
+    @Test
+    void aHandledFailureTakesItsUnitsTurnAndLaterUnitsAreStillWritten() throws Exception {
+        TextEmbedder embedder = new TextEmbedder() {
+            @Override
+            public float[][] embed(List<String> texts) throws EmbeddingException {
+                if (texts.contains("b 9")) {
+                    throw new EmbeddingException(EmbeddingException.Reason.INVALID_OUTPUT, "not a unit vector", null);
+                }
+
+                return encode(texts);
+            }
+
+            @Override
+            public void close() {}
+        };
+
+        try (EmbeddingPipeline pipeline = new EmbeddingPipeline(embedder, cancellation, 2)) {
+            for (String unit : List.of("a", "b", "c")) {
+                pipeline.submit(
+                        texts(unit, 12),
+                        vectors -> written.add(unit + " embedded"),
+                        failure -> written.add(unit + " failed: " + failure.reason()));
+            }
+
+            pipeline.finish();
+            assertEquals(0, pipeline.queued());
+        }
+
+        assertEquals(List.of("a embedded", "b failed: INVALID_OUTPUT", "c embedded"), written);
     }
 
     @Test
@@ -183,7 +222,7 @@ class EmbeddingPipelineTest {
         };
 
         try (EmbeddingPipeline pipeline = new EmbeddingPipeline(embedder, cancellation, 1)) {
-            pipeline.submit(List.of("one"), vectors -> written.add("one"));
+            pipeline.submit(List.of("one"), vectors -> written.add("one"), RETHROW);
 
             IllegalStateException failure = assertThrows(IllegalStateException.class, pipeline::finish);
             assertEquals("The embedder returned 2 embeddings for 1 texts", failure.getMessage());
@@ -198,9 +237,9 @@ class EmbeddingPipelineTest {
         TextEmbedder embedder = blocking(permits);
 
         try (EmbeddingPipeline pipeline = new EmbeddingPipeline(embedder, cancellation, 2)) {
-            pipeline.submit(List.of("a"), vectors -> written.add("a"));
-            pipeline.submit(List.of("b"), vectors -> written.add("b"));
-            pipeline.submit(texts("c", 16), vectors -> written.add("c"));
+            pipeline.submit(List.of("a"), vectors -> written.add("a"), RETHROW);
+            pipeline.submit(List.of("b"), vectors -> written.add("b"), RETHROW);
+            pipeline.submit(texts("c", 16), vectors -> written.add("c"), RETHROW);
             awaitTrue(() -> permits.hasQueuedThreads() && permits.getQueueLength() == 2);
 
             cancellation.cancel();
@@ -221,7 +260,7 @@ class EmbeddingPipelineTest {
         AtomicReference<Boolean> interrupted = new AtomicReference<>();
 
         try (EmbeddingPipeline pipeline = new EmbeddingPipeline(blocking(permits), cancellation, 1)) {
-            pipeline.submit(List.of("a"), vectors -> written.add("a"));
+            pipeline.submit(List.of("a"), vectors -> written.add("a"), RETHROW);
             Thread caller = Thread.ofPlatform().daemon().start(() -> {
                 try {
                     pipeline.finish();
@@ -258,7 +297,7 @@ class EmbeddingPipelineTest {
             public void close() {}
         };
         EmbeddingPipeline pipeline = new EmbeddingPipeline(embedder, cancellation, 3);
-        pipeline.submit(texts("a", 40), vectors -> written.add("a"));
+        pipeline.submit(texts("a", 40), vectors -> written.add("a"), RETHROW);
         awaitTrue(() -> permits.getQueueLength() == 3);
         assertEquals(3, workerThreads().size());
         assertTrue(workerThreads().stream().allMatch(Thread::isDaemon), "Workers never keep the JVM alive");

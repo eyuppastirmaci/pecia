@@ -227,6 +227,18 @@ public class IndexCommand implements Callable<Integer> {
             reportScanIssue(issue);
         }
 
+        for (IndexResult.SemanticIssue issue : result.semanticIssues()) {
+            spec.commandLine()
+                    .getErr()
+                    .println("warning: "
+                            + FileWalker.portablePath(issue.sourcePath())
+                            + ": "
+                            + issue.reason()
+                            + ": "
+                            + issue.message()
+                            + " (indexed without embeddings)");
+        }
+
         for (IndexResult.FileIssue issue : result.issues()) {
             spec.commandLine()
                     .getErr()
