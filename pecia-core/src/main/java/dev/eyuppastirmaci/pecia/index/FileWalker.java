@@ -92,7 +92,7 @@ public final class FileWalker {
             try {
                 gitignore.enter(dir);
             } catch (IOException failure) {
-                issues.add(new WalkResult.Issue(dir.resolve(".gitignore"), failure.getMessage()));
+                issues.add(WalkResult.Issue.of(dir.resolve(".gitignore"), failure));
 
                 return new WalkResult(files, issues);
             }
@@ -114,7 +114,8 @@ public final class FileWalker {
                 try {
                     gitignore.enter(dir);
                 } catch (IOException failure) {
-                    issues.add(new WalkResult.Issue(dir.resolve(".gitignore"), failure.getMessage()));
+                    // Without its ignore rules, the directory could expose files the user meant to leave out.
+                    issues.add(WalkResult.Issue.of(dir.resolve(".gitignore"), failure));
 
                     return FileVisitResult.SKIP_SUBTREE;
                 }
@@ -147,7 +148,7 @@ public final class FileWalker {
                     throw exc;
                 }
 
-                issues.add(new WalkResult.Issue(file, exc.getMessage()));
+                issues.add(WalkResult.Issue.of(file, exc));
 
                 return FileVisitResult.CONTINUE;
             }
@@ -157,7 +158,7 @@ public final class FileWalker {
                 gitignore.leave(dir);
 
                 if (exc != null) {
-                    issues.add(new WalkResult.Issue(dir, exc.getMessage()));
+                    issues.add(WalkResult.Issue.of(dir, exc));
                 }
 
                 return FileVisitResult.CONTINUE;

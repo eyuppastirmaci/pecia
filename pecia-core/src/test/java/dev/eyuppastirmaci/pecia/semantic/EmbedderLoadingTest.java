@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -49,14 +50,34 @@ class EmbedderLoadingTest {
     }
 
     @Test
-    void embeddingWritesNothingOutsideTheRuntimesExtractionDirectory() throws Exception {
+    void embeddingWritesNothingButTheRuntimesLibrariesInTheCache() throws Exception {
         // Telemetry builds of the runtime keep a device id and an event store under the user's home directory.
         OfflineEnvironment isolated = OfflineEnvironment.create(Files.createDirectory(sandbox.resolve("isolated")));
         Map<Path, String> before = isolated.snapshot();
 
         assertEquals("EMBEDDED 1", probe(sandbox.resolve("isolated.log"), isolated, "embed"));
 
-        isolated.assertOnlyRuntimeExtraction(before);
+        isolated.assertOnlyRuntimeLibraries(before);
+    }
+
+    @Test
+    void laterProcessesLoadTheCachedLibrariesAndExtractNothing() throws Exception {
+        OfflineEnvironment isolated = OfflineEnvironment.create(Files.createDirectory(sandbox.resolve("isolated")));
+        assertEquals("EMBEDDED 1", probe(sandbox.resolve("first.log"), isolated, "embed"));
+        Map<Path, String> placed = isolated.snapshot();
+
+        assertEquals("EMBEDDED 1", probe(sandbox.resolve("second.log"), isolated, "embed"));
+
+        // The runtime's empty extraction directory is removed when the process exits.
+        isolated.assertUnchanged(placed);
+
+        try (Stream<Path> temporary = Files.list(isolated.temporary())) {
+            assertEquals(
+                    List.of(),
+                    temporary
+                            .filter(path -> path.getFileName().toString().startsWith("onnxruntime-java"))
+                            .toList());
+        }
     }
 
     @Test

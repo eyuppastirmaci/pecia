@@ -11,11 +11,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -101,6 +104,70 @@ class FileContentLoaderTest {
 
         assertEquals(before, afterMetadataChange);
         assertEquals(before, afterRename);
+    }
+
+    @Test
+    void aFileThatChangesWhileReadIsReadAgainWithItsNewContent() throws Exception {
+        Path file = Files.writeString(root.resolve("saving.txt"), "draft");
+        AtomicInteger reads = new AtomicInteger();
+        FileContentLoader loader = new FileContentLoader(64, () -> {
+            if (reads.incrementAndGet() == 1) {
+                write(file, "draft, saved");
+            }
+        });
+
+        FileContent content = loader.load(file);
+
+        assertEquals("draft, saved", new String(content.bytes(), StandardCharsets.UTF_8));
+        assertEquals(2, reads.get());
+    }
+
+    @Test
+    void aFileThatKeepsChangingIsRejectedAfterItsSecondRead() throws Exception {
+        Path file = Files.writeString(root.resolve("log.txt"), "line");
+        AtomicInteger reads = new AtomicInteger();
+        FileContentLoader loader =
+                new FileContentLoader(1024, () -> write(file, "line ".repeat(reads.incrementAndGet() + 1)));
+
+        ExtractionException failure = assertThrows(ExtractionException.class, () -> loader.load(file));
+
+        assertEquals(ExtractionException.Reason.FILE_CHANGED, failure.reason());
+        assertEquals(2, reads.get());
+    }
+
+    @Test
+    void aFileDeletedWhileReadFailsWhenItIsReadAgain() throws Exception {
+        Path file = Files.writeString(root.resolve("gone.txt"), "text");
+        FileContentLoader loader = new FileContentLoader(64, () -> {
+            try {
+                Files.deleteIfExists(file);
+            } catch (IOException failure) {
+                throw new UncheckedIOException(failure);
+            }
+        });
+
+        ExtractionException failure = assertThrows(ExtractionException.class, () -> loader.load(file));
+
+        assertEquals(ExtractionException.Reason.READ_FAILED, failure.reason());
+    }
+
+    @Test
+    void aStableFileIsReadOnce() throws Exception {
+        Path file = Files.writeString(root.resolve("stable.txt"), "text");
+        AtomicInteger reads = new AtomicInteger();
+
+        new FileContentLoader(64, reads::incrementAndGet).load(file);
+
+        assertEquals(1, reads.get());
+        assertThrows(NullPointerException.class, () -> new FileContentLoader(64, null));
+    }
+
+    private static void write(Path file, String text) {
+        try {
+            Files.writeString(file, text);
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
     }
 
     @Test

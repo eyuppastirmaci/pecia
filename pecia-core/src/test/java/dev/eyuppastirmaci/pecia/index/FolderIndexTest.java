@@ -1,6 +1,5 @@
 package dev.eyuppastirmaci.pecia.index;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -191,32 +190,62 @@ class FolderIndexTest {
     }
 
     @Test
-    void incompleteScanDoesNotCreateOrChangeDatabase() throws Exception {
+    void aFirstRunWithAnUnreadablePathIndexesTheFilesItFound() throws Exception {
         Files.writeString(root.resolve("good.txt"), "good");
         Files.createDirectories(root.resolve("bad/.gitignore"));
-        IndexException failure = assertThrows(IndexException.class, () -> service.index(root));
+        Files.writeString(root.resolve("bad/hidden.txt"), "hidden");
 
-        assertEquals(IndexResult.Status.INCOMPLETE_SCAN, failure.result().status());
-        assertEquals(0, failure.result().indexedFiles());
-        assertEquals(0, failure.result().unchangedFiles());
-        assertEquals(0, failure.result().deletedFiles());
-        assertEquals(0, failure.result().writtenChunks());
-        assertEquals(1, failure.scanIssues().size());
+        IndexResult result = service.index(root);
+
+        assertEquals(IndexResult.Status.PARTIAL, result.status());
+        assertEquals(1, result.indexedFiles());
+        assertEquals(List.of(), result.issues());
+        assertEquals(1, result.scanIssues().size());
+        assertEquals(
+                root.resolve("bad/.gitignore"), result.scanIssues().getFirst().path());
+        assertEquals(WalkResult.Cause.IO_ERROR, result.scanIssues().getFirst().cause());
         assertThrows(
-                UnsupportedOperationException.class, () -> failure.scanIssues().clear());
-        assertFalse(Files.exists(root.resolve(".pecia")));
+                UnsupportedOperationException.class, () -> result.scanIssues().clear());
+        assertEquals(List.of("good.txt"), storedPaths(result));
+    }
 
-        Files.delete(root.resolve("bad/.gitignore"));
-        IndexResult initial = service.index(root);
-        byte[] before = Files.readAllBytes(initial.context().databasePath());
+    @Test
+    void aPartialScanDeletesNothingAndTheNextCompleteScanCatchesUp() throws Exception {
+        Files.writeString(root.resolve("good.txt"), "good");
+        Files.writeString(root.resolve("gone.txt"), "gone");
+        Files.createDirectories(root.resolve("bad"));
+        Files.writeString(root.resolve("bad/kept.txt"), "kept");
+        service.index(root);
+        Files.delete(root.resolve("gone.txt"));
+        Files.writeString(root.resolve("good.txt"), "better");
         Files.createDirectory(root.resolve("bad/.gitignore"));
 
-        IndexException repeated = assertThrows(IndexException.class, () -> service.index(root));
-        assertEquals(IndexResult.Status.INCOMPLETE_SCAN, repeated.result().status());
-        assertEquals(0, repeated.result().indexedFiles());
-        assertEquals(0, repeated.result().unchangedFiles());
-        assertEquals(0, repeated.result().deletedFiles());
-        assertArrayEquals(before, Files.readAllBytes(initial.context().databasePath()));
+        IndexResult partial = service.index(root);
+
+        // The unreadable directory's files and the deleted file are kept: neither is known to be gone.
+        assertEquals(IndexResult.Status.PARTIAL, partial.status());
+        assertEquals(1, partial.indexedFiles());
+        assertEquals(0, partial.deletedFiles());
+        assertEquals(List.of("bad/kept.txt", "gone.txt", "good.txt"), storedPaths(partial));
+
+        Files.delete(root.resolve("bad/.gitignore"));
+        IndexResult complete = service.index(root);
+
+        assertEquals(IndexResult.Status.COMPLETE, complete.status());
+        assertEquals(1, complete.deletedFiles());
+        assertEquals(2, complete.unchangedFiles());
+        assertEquals(List.of(), complete.scanIssues());
+        assertEquals(List.of("bad/kept.txt", "good.txt"), storedPaths(complete));
+    }
+
+    private static List<String> storedPaths(IndexResult result) throws Exception {
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(
+                result.context().databasePath(), result.context().projectRoot())) {
+            return storage.files().findAll().stream()
+                    .map(file -> FileWalker.portablePath(file.sourcePath()))
+                    .sorted()
+                    .toList();
+        }
     }
 
     @Test

@@ -45,6 +45,14 @@ class PeciaConfigFileTest {
     }
 
     @Test
+    void explainsTheEmbeddingWorkerSetting() {
+        assertTrue(configFile
+                .defaultToml()
+                .contains("concurrency = 2   # embedding workers in semantic runs; more workers are faster but use more"
+                        + " memory\n"));
+    }
+
+    @Test
     void neverOverwritesAnExistingConfig() throws IOException {
         Path file = dir.resolve(PeciaConfigFile.FILE_NAME);
         Files.writeString(file, "user edited this");

@@ -19,11 +19,12 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 - [x] Optional semantic indexing with all-MiniLM-L6-v2, downloaded once on first use, verified, and cached.
 - [x] Vector storage, resumable embedding backfill, and rebuilds when the embedding model changes.
 - [x] Semantic search with sqlite-vec, hybrid BM25 + vector ranking with reciprocal rank fusion, and an `auto` mode.
+- [x] Parallel embedding with bounded memory, and indexing runs that stop cleanly on Ctrl+C.
+- [x] Failure isolation: unreadable folders and files that cannot be read or embedded are reported while everything else is indexed, storage failures say what to do, and an interrupted or killed run recovers on the next run.
 - [x] Reusable Java core API and runnable JAR with `init`, `index`, and `query` commands.
 
 ### Planned for v0.1.0
 
-- [ ] Bounded parallel processing, cancellation, and semantic failure recovery.
 - [ ] Richer dry runs, progress reporting, and run summaries.
 - [ ] JSON output for indexing, queries, and dry runs.
 - [ ] Expanded end-to-end and retrieval-quality checks.
@@ -81,6 +82,27 @@ Run `index` before `query`. Every command accepts `--help`.
 
 Without either flag, `semantic.enabled` in `.pecia.toml` decides; it is `false` by default. The summary counts candidate, indexed, rechunked, unchanged, and deleted files, written chunks, and rejected and failed files; semantic runs add the model, discarded embeddings of an earlier model, and the chunks they embedded and backfilled.
 
+Ctrl+C stops a run before its next file or embedding batch, prints the summary of what it finished, and exits with `130`. Files indexed until then stay in the index, a file in progress keeps its previous version, and no deleted files are removed; the next run continues from there.
+
+#### When something goes wrong
+
+A problem with one file or folder never stops the others. Each problem is printed on stderr with its reason, followed by one line that sums up what was left out, and the command exits with `1`:
+
+```
+warning: private: PERMISSION_DENIED: /home/me/project/private (not scanned)
+warning: notes/draft.md: INVALID_UTF8: File is not valid UTF-8: /home/me/project/notes/draft.md
+pecia index: PARTIAL: 1 file could not be read or were rejected; 1 path could not be scanned; every other file was indexed, and no file was removed from the index
+```
+
+| Problem | What happens |
+| --- | --- |
+| A folder or `.gitignore` cannot be read | The folder is skipped (a folder whose `.gitignore` cannot be read is skipped whole, since its rules are unknown), every other file is indexed, and nothing is deleted, because files that could not be seen are not known to be gone. |
+| A file cannot be read or is rejected (too large, not UTF-8, binary) | It keeps its previous version in the index, and nothing is deleted in that run. A file that changes while it is read, as when an editor saves it, is read once more. |
+| A file's chunks cannot be embedded | The file is indexed with its new chunks and no embeddings, so lexical search stays current; the next semantic run embeds them. A broken runtime or model, or three failing files in a row, stop the run instead. |
+| The index cannot be written | The run stops, keeping every file it finished, and says why and what to do: free disk space (`DISK_FULL`), wait for another indexing process (`BUSY`), make the index writable (`READ_ONLY`), check the disk (`IO_ERROR`), or delete a damaged, foreign, or incompatible index and run again (`CORRUPT`, `WRONG_PROJECT`, `INCOMPATIBLE`). |
+
+If the process is killed outright, for example by a crash or a power loss, the index stays consistent: each file is written in one transaction, and the next run indexes the rest and ends with the same index as an uninterrupted run.
+
 ### `query` options
 
 | Option | Default | Effect |
@@ -126,9 +148,10 @@ Results go to stdout, so scripts can read them. Configuration warnings and `note
 | Code | Meaning |
 | --- | --- |
 | `0` | Success, including a query with no results. |
-| `1` | Invalid input or configuration, a missing, outdated, or unreadable index, or an indexing failure (for example, the model could not be downloaded). A missing index, or one that needs upgrading, prints the `index` command to run. |
+| `1` | Invalid input or configuration, a missing, outdated, or unreadable index, an indexing failure (for example, the model could not be downloaded), or an `index` run that left something out; see [When something goes wrong](#when-something-goes-wrong). A missing index, or one that needs upgrading, prints the `index` command to run. |
 | `2` | Usage error, such as an unknown option or mode. |
 | `3` | An explicit `semantic` or `hybrid` query whose semantic prerequisite is missing. The error names the reason and prints the next step: `index --semantic` for missing or outdated embeddings and an uncached model, or `--mode lexical` when vector search or the embedder cannot run here. |
+| `130` | `index` was stopped with Ctrl+C; see [`index` options](#index-options). |
 
 ### Configuration
 
@@ -140,6 +163,7 @@ Results go to stdout, so scripts can read them. Configuration warnings and `note
 | `index.max_file_bytes` | `5242880` (5 MiB) | Larger files are rejected. |
 | `chunk.max_tokens`, `chunk.overlap_tokens` | `256`, `32` | Token budget per chunk and the overlap between neighbouring chunks. |
 | `semantic.enabled` | `false` | Whether `index` builds embeddings. |
+| `embed.concurrency` | `2` | Embedding workers in a semantic run. Together they use about half the processor cores, at most four threads each; more workers embed faster but hold more memory. |
 | `search.mode` | `"auto"` | The default `query` mode. |
 | `store.path` | `".pecia/index.db"` | Where the index is stored, relative to the configuration file. |
 
@@ -153,7 +177,7 @@ The model is cached per user, so every project shares one copy. `PECIA_CACHE_DIR
 | Linux | `$XDG_CACHE_HOME/pecia`, or `~/.cache/pecia` |
 | Windows | `%LOCALAPPDATA%\pecia\cache` |
 
-The cache holds the model, downloaded from Hugging Face and checked against its pinned size and SHA-256 before use, and a verified copy of the sqlite-vec library, placed on the first semantic query. Semantic search runs on Linux (x64 and arm64), macOS on Apple silicon, and Windows (x64); lexical search runs wherever Java 21 does.
+The cache holds the model, downloaded from Hugging Face and checked against its pinned size and SHA-256 before use, a verified copy of the sqlite-vec library, placed on the first semantic query, and verified copies of ONNX Runtime's native libraries (about 40 MB), placed when the model is first used, so that later runs load them in place instead of unpacking them each time. Semantic search runs on Linux (x64 and arm64), macOS on Apple silicon, and Windows (x64); lexical search runs wherever Java 21 does.
 
 ## How it works
 
@@ -167,7 +191,7 @@ Supported text files are read with size and UTF-8 validation, then split into ch
 
 ### 🗃️ Local indexing
 
-File metadata and chunks are stored in SQLite, with FTS5 kept in sync for text search. Each file is replaced atomically, so a failed replacement preserves its previous data while earlier successful files remain indexed.
+File metadata and chunks are stored in SQLite, with FTS5 kept in sync for text search. Each file is replaced atomically, so a failed replacement preserves its previous data while earlier successful files remain indexed. Deleted files are removed only after a run that read every file and folder it found, so a file that could not be read is never mistaken for a deleted one.
 
 Indexing validates and hashes the current source before deciding whether to skip it. Matching content, document type, and complete chunking settings skip extraction and writes, including for empty files. Changes to extraction or chunking versions, tokenizer behavior, or token budgets require reprocessing; model names and revisions alone do not change chunking compatibility.
 
@@ -175,7 +199,7 @@ Each indexed chunk has a deterministic SHA-256 ID derived from its project-relat
 
 ### 🧠 Embeddings
 
-Semantic indexing embeds each chunk with [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) through ONNX Runtime on the CPU, producing one 384-dimensional unit vector per chunk. The embedded text starts with one context line, the chunk's path and heading path (for example `bridge/README.md > Intent`), then a blank line and the content, so a chunk is also found by what its file and section are about; search results and lexical search show only the content. Vectors are stored next to the chunk in the same SQLite file. Changed files are embedded as they are indexed; stored chunks without an embedding, for example after earlier lexical runs, are embedded from the index in pages that commit on their own, so an interrupted run resumes where it stopped. Each embedding records the model, revision, tokenizer, and input it was made with; when these change, the next semantic run replaces the old embeddings, and chunks are reused when only the model changed.
+Semantic indexing embeds each chunk with [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) through ONNX Runtime on the CPU, producing one 384-dimensional unit vector per chunk. The embedded text starts with one context line, the chunk's path and heading path (for example `bridge/README.md > Intent`), then a blank line and the content, so a chunk is also found by what its file and section are about; search results and lexical search show only the content. Vectors are stored next to the chunk in the same SQLite file. Changed files are embedded as they are indexed, by `embed.concurrency` workers that share one model while files are still being read; files are written in the same order whatever the number of workers, and at most 128 chunks wait to be written, so memory stays bounded however large the project is; stored chunks without an embedding, for example after earlier lexical runs, are embedded from the index in pages that commit on their own, so an interrupted run resumes where it stopped. Each embedding records the model, revision, tokenizer, and input it was made with; when these change, the next semantic run replaces the old embeddings, and chunks are reused when only the model changed.
 
 ### 🔎 Search
 

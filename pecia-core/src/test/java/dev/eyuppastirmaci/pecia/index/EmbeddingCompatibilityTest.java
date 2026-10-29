@@ -88,29 +88,30 @@ class EmbeddingCompatibilityTest {
     }
 
     @Test
-    void anInterruptedRebuildLeavesOnlyTheNewProfilesEmbeddings() throws Exception {
+    void aRebuildWithAFailingPageLeavesOnlyTheNewProfilesEmbeddings() throws Exception {
         Path project = Files.createDirectories(sandbox.resolve("many")).toRealPath();
-        Files.writeString(project.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n");
+        Files.writeString(
+                project.resolve(".pecia.toml"),
+                "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n\n[embed]\nconcurrency = 1\n");
         Files.writeString(project.resolve("words.txt"), "alpha beta gamma delta ".repeat(70) + "\n");
         IndexResult first = service().index(project, IndexOptions.semantic(true));
         profile = NEXT;
-        failOnCall = embedCalls + 2;
+        // One worker embeds in order: the first page's four batches of eight succeed and the second page fails.
+        failOnCall = embedCalls + 5;
 
-        IndexException failure =
-                assertThrows(IndexException.class, () -> service().index(project, IndexOptions.semantic(true)));
+        IndexResult partial = service().index(project, IndexOptions.semantic(true));
 
-        assertEquals(IndexResult.Status.EMBEDDING_FAILED, failure.result().status());
-        assertEquals(70, failure.result().discardedEmbeddings());
-        assertEquals(32, failure.result().backfilledChunks());
-        assertNull(failure.result().embeddingCoverage());
+        assertEquals(IndexResult.Status.PARTIAL, partial.status());
+        assertEquals(70, partial.discardedEmbeddings());
+        assertEquals(38, partial.backfilledChunks());
+        assertEquals(new EmbeddingCoverage(38, 0, 32), partial.embeddingCoverage());
         assertEquals(Set.of(NEXT.fingerprint()), profilesOf(dump(first)));
-        assertEquals(new EmbeddingCoverage(32, 0, 38), coverage(first, NEXT));
 
         failOnCall = -1;
         IndexResult resumed = service().index(project, IndexOptions.semantic(true));
 
         assertEquals(0, resumed.discardedEmbeddings());
-        assertEquals(38, resumed.backfilledChunks());
+        assertEquals(32, resumed.backfilledChunks());
         assertEquals(new EmbeddingCoverage(70, 0, 0), resumed.embeddingCoverage());
     }
 
@@ -190,15 +191,20 @@ class EmbeddingCompatibilityTest {
         return SqliteStorage.open(context.databasePath(), context.projectRoot());
     }
 
-    private TextEmbedder open(ModelOutcome model) throws EmbeddingException {
-        TextEmbedder embedder = TextEmbedder.open(model);
+    private TextEmbedder open(ModelOutcome model, int threads) throws EmbeddingException {
+        TextEmbedder embedder = TextEmbedder.open(model, threads);
 
         return new TextEmbedder() {
             @Override
             public float[][] embed(List<String> texts) throws EmbeddingException {
-                embedCalls++;
+                int call;
 
-                if (embedCalls == failOnCall) {
+                // Workers call concurrently; the lock numbers the calls.
+                synchronized (this) {
+                    call = ++embedCalls;
+                }
+
+                if (call == failOnCall) {
                     throw new EmbeddingException(EmbeddingException.Reason.INFERENCE_FAILED, "injected", null);
                 }
 

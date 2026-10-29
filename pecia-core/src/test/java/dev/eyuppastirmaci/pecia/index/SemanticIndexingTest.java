@@ -3,7 +3,6 @@ package dev.eyuppastirmaci.pecia.index;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,6 +31,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -48,6 +50,7 @@ class SemanticIndexingTest {
     private final List<String> events = new ArrayList<>();
     private final List<Integer> batchSizes = new ArrayList<>();
     private int failOnCall = -1;
+    private Predicate<List<String>> failWhen = texts -> false;
     private int embedCalls;
     private Path root;
 
@@ -159,7 +162,7 @@ class SemanticIndexingTest {
     }
 
     @Test
-    void largeFilesAreEmbeddedInBatchesOfThirtyTwo() throws Exception {
+    void largeFilesAreEmbeddedInBatchesOfEight() throws Exception {
         Path project = Files.createDirectories(sandbox.resolve("batches")).toRealPath();
         // Six tokens leave four for content, so each repetition of the four words becomes one chunk.
         Files.writeString(project.resolve(".pecia.toml"), "[chunk]\nmax_tokens = 6\noverlap_tokens = 0\n");
@@ -168,7 +171,9 @@ class SemanticIndexingTest {
         IndexResult result = service(TINY).index(project, IndexOptions.semantic(true));
 
         assertEquals(70, result.embeddedChunks());
-        assertEquals(List.of(32, 32, 6), batchSizes);
+        // Workers may finish batches in any order.
+        assertEquals(
+                List.of(6, 8, 8, 8, 8, 8, 8, 8, 8), batchSizes.stream().sorted().toList());
     }
 
     @Test
@@ -199,52 +204,103 @@ class SemanticIndexingTest {
     }
 
     @Test
-    void anEmbeddingFailureKeepsEarlierFilesAndLeavesTheFailingFileAsItWas() throws Exception {
-        IndexResult lexical = service(TINY).index(root);
-        IndexDump before = dump(lexical);
+    void aFileWhoseEmbeddingFailsIsWrittenWithoutEmbeddingsAndTheRunContinues() throws Exception {
+        service(TINY).index(root);
         for (Path file : List.of(LexicalTestCorpus.CONFIG, LexicalTestCorpus.NOTES, LexicalTestCorpus.HANDBOOK)) {
             Files.writeString(root.resolve(file), Files.readString(root.resolve(file)) + "\nchanged\n");
         }
         Files.delete(root.resolve(LexicalTestCorpus.EMPTY));
-        // Candidates run in path order, so config.yaml is embedded first and the next changed file fails.
-        failOnCall = 2;
+        failWhen = texts -> texts.getFirst().startsWith("docs/notes.txt");
 
-        IndexException failure =
-                assertThrows(IndexException.class, () -> service(TINY).index(root, IndexOptions.semantic(true)));
-        IndexDump after = dump(lexical);
+        IndexResult result = service(TINY).index(root, IndexOptions.semantic(true));
 
-        assertEquals(IndexResult.Status.EMBEDDING_FAILED, failure.result().status());
-        assertInstanceOf(EmbeddingException.class, failure.getCause());
-        assertEquals(1, failure.result().indexedFiles());
-        assertEquals(failure.result().writtenChunks(), failure.result().embeddedChunks());
-        assertEquals(0, failure.result().deletedFiles());
+        assertEquals(IndexResult.Status.PARTIAL, result.status());
+        assertEquals(3, result.indexedFiles());
+        assertEquals(
+                List.of(new IndexResult.SemanticIssue(
+                        LexicalTestCorpus.NOTES, EmbeddingException.Reason.INFERENCE_FAILED, "injected")),
+                result.semanticIssues());
+        // Semantic issues do not make the scan stale, so the deleted file is removed.
+        assertEquals(1, result.deletedFiles());
         assertEquals(List.of("open", "close"), events);
 
-        // Only config.yaml changed; the failing file and the deleted file keep their previous records.
-        assertTrue(embeddingsByChunk(after).keySet().stream().allMatch(key -> key.startsWith("config.yaml#")));
-        assertEquals(withoutFile(before, "config.yaml"), withoutFile(after.withoutEmbeddings(), "config.yaml"));
+        // The failing file's new chunks are searchable and have no embeddings; every other chunk has one.
+        IndexDump after = dump(result);
+        Set<String> withoutEmbeddings = new TreeSet<>();
+        after.chunks().forEach(chunk -> withoutEmbeddings.add(chunk.sourcePath() + "#" + chunk.chunkIndex()));
+        withoutEmbeddings.removeAll(embeddingsByChunk(after).keySet());
+        Set<String> notesChunks = new TreeSet<>();
+        after.chunks().stream()
+                .filter(chunk -> chunk.sourcePath().equals("docs/notes.txt"))
+                .forEach(chunk -> notesChunks.add(chunk.sourcePath() + "#" + chunk.chunkIndex()));
+        assertFalse(notesChunks.isEmpty());
+        assertEquals(notesChunks, withoutEmbeddings);
+        assertTrue(new QueryService(loader)
+                .query(root, new SearchRequest("changed")).hits().stream()
+                        .anyMatch(hit -> hit.sourcePath().equals(LexicalTestCorpus.NOTES)));
+
+        // The next semantic run embeds what was missing and matches a clean index.
+        failWhen = texts -> false;
+        IndexResult next = service(TINY).index(root, IndexOptions.semantic(true));
+        Path clean = Files.createDirectories(sandbox.resolve("clean")).toRealPath();
+        LexicalTestCorpus.write(clean);
+        for (Path file : List.of(LexicalTestCorpus.CONFIG, LexicalTestCorpus.NOTES, LexicalTestCorpus.HANDBOOK)) {
+            Files.writeString(clean.resolve(file), Files.readString(clean.resolve(file)) + "\nchanged\n");
+        }
+        Files.delete(clean.resolve(LexicalTestCorpus.EMPTY));
+
+        assertEquals(IndexResult.Status.COMPLETE, next.status());
+        assertEquals(withoutEmbeddings.size(), next.backfilledChunks());
+        assertEquals(dump(service(TINY).index(clean, IndexOptions.semantic(true))), dump(next));
     }
 
     @Test
-    void anOutputTheEmbedderRejectsFailsTheRunBeforeTheFileIsWritten() throws Exception {
+    void aFileThatEmbedsBetweenFailuresStartsTheCountAgain() throws Exception {
+        Path project = Files.createDirectories(sandbox.resolve("alternating")).toRealPath();
+        for (String name : List.of("a", "b", "c", "d")) {
+            Files.writeString(project.resolve(name + ".txt"), "File " + name + " about refunds.\n");
+        }
+        // Files are handled in path order: two failures, a success, and a third failure that is not in a row.
+        failWhen = texts -> !texts.getFirst().startsWith("c.txt");
+
+        IndexResult result = service(TINY).index(project, IndexOptions.semantic(true));
+
+        assertEquals(IndexResult.Status.PARTIAL, result.status());
+        assertEquals(4, result.indexedFiles());
+        assertEquals(3, result.semanticIssues().size());
+        assertEquals(1, result.embeddedChunks());
+    }
+
+    @Test
+    void anEmbedderThatRejectsEveryOutputStopsAfterThreeFilesInARow() throws Exception {
         IndexException failure = assertThrows(
                 IndexException.class,
                 () -> service(TinyModel.cached("non-finite")).index(root, IndexOptions.semantic(true)));
 
         assertEquals(IndexResult.Status.EMBEDDING_FAILED, failure.result().status());
         assertEquals(EmbeddingException.Reason.INVALID_OUTPUT, ((EmbeddingException) failure.getCause()).reason());
-        assertEquals(0, failure.result().indexedFiles());
+        // The three failing files are written without embeddings before the run stops.
+        assertEquals(EmbeddingFailures.CONSECUTIVE_LIMIT, failure.result().indexedFiles());
+        assertEquals(
+                EmbeddingFailures.CONSECUTIVE_LIMIT,
+                failure.result().semanticIssues().size());
+        assertEquals(0, failure.result().embeddedChunks());
 
         try (SqliteStorage storage = SqliteStorage.openReadOnly(root.resolve(".pecia/index.db"), root)) {
-            assertTrue(storage.files().findAll().isEmpty());
+            assertEquals(
+                    EmbeddingFailures.CONSECUTIVE_LIMIT,
+                    storage.files().findAll().size());
         }
+
+        assertEquals(List.of(), dump(failure.result()).embeddings());
     }
 
     @Test
     void lexicalRunsAndPreviewsNeverOpenAnEmbedder() throws Exception {
-        IndexService service = new IndexService(loader, context -> openStorage(context), listener -> TINY, model -> {
-            throw new AssertionError("No embedder may open");
-        });
+        IndexService service =
+                new IndexService(loader, context -> openStorage(context), listener -> TINY, (model, threads) -> {
+                    throw new AssertionError("No embedder may open");
+                });
 
         IndexResult result = service.index(root);
         service.preview(root, IndexOptions.semantic(true));
@@ -263,17 +319,22 @@ class SemanticIndexingTest {
     }
 
     /** Opens the real embedder, recording its lifecycle and batches and failing on a chosen call. */
-    private TextEmbedder open(ModelOutcome model) throws EmbeddingException {
-        TextEmbedder embedder = TextEmbedder.open(model);
+    private TextEmbedder open(ModelOutcome model, int threads) throws EmbeddingException {
+        TextEmbedder embedder = TextEmbedder.open(model, threads);
         events.add("open");
 
         return new TextEmbedder() {
             @Override
             public float[][] embed(List<String> texts) throws EmbeddingException {
-                embedCalls++;
-                batchSizes.add(texts.size());
+                int call;
 
-                if (embedCalls == failOnCall) {
+                // Workers call concurrently; the lock numbers the calls and records their sizes.
+                synchronized (this) {
+                    call = ++embedCalls;
+                    batchSizes.add(texts.size());
+                }
+
+                if (call == failOnCall || failWhen.test(texts)) {
                     throw new EmbeddingException(EmbeddingException.Reason.INFERENCE_FAILED, "injected", null);
                 }
 

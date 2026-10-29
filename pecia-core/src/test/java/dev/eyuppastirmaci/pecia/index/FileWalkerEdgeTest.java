@@ -65,7 +65,35 @@ class FileWalkerEdgeTest {
         assertFalse(result.complete());
         assertEquals(List.of(Path.of("good/keep.md")), result.files());
         assertEquals(root.resolve("bad/.gitignore"), result.issues().getFirst().path());
+        assertEquals(WalkResult.Cause.IO_ERROR, result.issues().getFirst().cause());
         assertThrows(IOException.class, () -> walker.walk(root));
+    }
+
+    @Test
+    void anUnreadableIgnoreFileSkipsItsDirectoryWhenPermissionsAreEnforced() throws IOException {
+        assumeTrue(Files.getFileStore(root).supportsFileAttributeView("posix"), "POSIX permissions unavailable");
+        Path ignore = write("private/.gitignore", "secrets.md\n");
+        write("private/secrets.md", "text");
+        write("private/notes.md", "text");
+        write("keep.md", "text");
+        Set<PosixFilePermission> original = Files.getPosixFilePermissions(ignore);
+
+        try {
+            Files.setPosixFilePermissions(ignore, Set.of());
+            assumeTrue(!Files.isReadable(ignore), "Current account bypasses permissions");
+            WalkResult result = walker.scan(root, root);
+
+            // Without its rules, nothing in the directory is admitted, not even files the rules would allow.
+            assertEquals(List.of(Path.of("keep.md")), result.files());
+            assertEquals(
+                    List.of(new WalkResult.Issue(
+                            ignore,
+                            WalkResult.Cause.PERMISSION_DENIED,
+                            result.issues().getFirst().reason())),
+                    result.issues());
+        } finally {
+            Files.setPosixFilePermissions(ignore, original);
+        }
     }
 
     @Test
@@ -121,7 +149,9 @@ class FileWalkerEdgeTest {
             WalkResult result = walker.scan(root, root);
             assertFalse(result.complete());
             assertEquals(List.of(Path.of("keep.md")), result.files());
-            assertTrue(result.issues().stream().anyMatch(issue -> issue.path().equals(blocked)));
+            assertTrue(result.issues().stream()
+                    .anyMatch(issue ->
+                            issue.path().equals(blocked) && issue.cause() == WalkResult.Cause.PERMISSION_DENIED));
         } finally {
             Files.setPosixFilePermissions(blocked, original);
         }

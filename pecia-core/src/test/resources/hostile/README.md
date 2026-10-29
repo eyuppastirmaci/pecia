@@ -110,12 +110,12 @@ Pecia searches query text as literal words that must all match, so FTS5 syntax n
 | An extensionless file named `NUL` | not a candidate | on Windows |
 | A directory link to the project root, a self-referencing link, and a link to a file outside the project | not followed; only the real file is indexed | symbolic links cannot be created |
 | An unreadable file | `PARTIAL` with `READ_FAILED`; other files are indexed | POSIX permissions are unavailable, or the account bypasses them |
-| An unreadable directory | `INCOMPLETE_SCAN` naming the directory; storage is not created | POSIX permissions are unavailable, or the account bypasses them |
+| An unreadable directory | `PARTIAL` with a `PERMISSION_DENIED` scan issue naming the directory; other files are indexed and nothing is deleted | POSIX permissions are unavailable, or the account bypasses them |
 | A file deleted after discovery | `PARTIAL` with `READ_FAILED`; its records are retained and cleanup is skipped | never |
 | A file replaced by a directory after discovery | `PARTIAL` with `NOT_REGULAR_FILE` | never |
 | A file changed after discovery | indexed with its new content | never |
 
-The after-discovery cases change the file when indexing opens storage, after discovery and before any file is read. The scan issue for an unreadable directory currently names only the path; that case changes when scan issues carry a typed cause. A file that changes while it is being read is rejected with `FILE_CHANGED`; that race cannot be timed reliably end to end, so `FileContentLoaderTest` covers its snapshot comparison directly. `FileWalkerEdgeTest`, `FileIndexerTest`, and `FileIndexerIncrementalTest` cover the same states at the unit level.
+The after-discovery cases change the file when indexing opens storage, after discovery and before any file is read. A file that changes while it is being read is rejected with `FILE_CHANGED`; that race cannot be timed reliably end to end, so `FileContentLoaderTest` covers its snapshot comparison directly. `FileWalkerEdgeTest`, `FileIndexerTest`, and `FileIndexerIncrementalTest` cover the same states at the unit level.
 
 ## Index storage
 

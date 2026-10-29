@@ -50,7 +50,7 @@ class PackagedCliDiscoveryIT {
         assertTrue(defaults.contains("max_file_bytes = 5242880\n"));
         assertTrue(defaults.contains("[chunk]\nmax_tokens = 256\noverlap_tokens = 32\n"));
         assertTrue(defaults.contains("[semantic]\nenabled = false"));
-        assertTrue(defaults.contains("[embed]\nconcurrency = 2\n"));
+        assertTrue(defaults.contains("[embed]\nconcurrency = 2   # embedding workers in semantic runs"));
         assertTrue(defaults.contains("[search]\nmode = \"auto\""));
         assertTrue(defaults.contains("[store]\npath = \".pecia/index.db\"\n"));
         byte[] customized = "# Preserve my settings and line endings.\r\n[index]\r\ninclude = [\"**/*.md\"]\r\n"
@@ -167,7 +167,9 @@ class PackagedCliDiscoveryIT {
         assertEquals(
                 "config: defaults (no .pecia.toml found)\nsemantic: disabled\n1 file(s) would be indexed:\n  good.md\n",
                 result.out());
-        assertTrue(result.err().startsWith("warning: " + invalidIgnore + ": "), result.err());
+        assertTrue(invalidIgnore.endsWith(".gitignore"));
+        assertTrue(result.err().startsWith("warning: bad/.gitignore: IO_ERROR: "), result.err());
+        assertTrue(result.err().contains(" (its folder was skipped)\n"), result.err());
         assertTrue(
                 result.err().endsWith("pecia index: incomplete scan; listed files are only partial results\n"),
                 result.err());

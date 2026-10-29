@@ -12,11 +12,21 @@ import java.util.Objects;
  *     semantic.enabled}
  * @param downloadListener told before the semantic model is downloaded; null when nobody listens
  * @param progressListener told how far long-running work has come; null when nobody listens
+ * @param cancellation lets another thread stop the run; null when the run cannot be cancelled
  */
 public record IndexOptions(
-        Boolean semanticEnabled, DownloadListener downloadListener, IndexProgressListener progressListener) {
+        Boolean semanticEnabled,
+        DownloadListener downloadListener,
+        IndexProgressListener progressListener,
+        Cancellation cancellation) {
 
-    /** Creates options without a progress listener. */
+    /** Creates options that cannot be cancelled. */
+    public IndexOptions(
+            Boolean semanticEnabled, DownloadListener downloadListener, IndexProgressListener progressListener) {
+        this(semanticEnabled, downloadListener, progressListener, null);
+    }
+
+    /** Creates options without a progress listener that cannot be cancelled. */
     public IndexOptions(Boolean semanticEnabled, DownloadListener downloadListener) {
         this(semanticEnabled, downloadListener, null);
     }
@@ -41,7 +51,8 @@ public record IndexOptions(
      * @throws NullPointerException if listener is null
      */
     public IndexOptions withDownloadListener(DownloadListener listener) {
-        return new IndexOptions(semanticEnabled, Objects.requireNonNull(listener, "listener"), progressListener);
+        return new IndexOptions(
+                semanticEnabled, Objects.requireNonNull(listener, "listener"), progressListener, cancellation);
     }
 
     /**
@@ -51,7 +62,21 @@ public record IndexOptions(
      * @throws NullPointerException if listener is null
      */
     public IndexOptions withProgressListener(IndexProgressListener listener) {
-        return new IndexOptions(semanticEnabled, downloadListener, Objects.requireNonNull(listener, "listener"));
+        return new IndexOptions(
+                semanticEnabled, downloadListener, Objects.requireNonNull(listener, "listener"), cancellation);
+    }
+
+    /**
+     * Returns these options with a handle that stops the run when cancelled.
+     *
+     * @throws NullPointerException if cancellation is null
+     */
+    public IndexOptions withCancellation(Cancellation cancellation) {
+        return new IndexOptions(
+                semanticEnabled,
+                downloadListener,
+                progressListener,
+                Objects.requireNonNull(cancellation, "cancellation"));
     }
 
     /**

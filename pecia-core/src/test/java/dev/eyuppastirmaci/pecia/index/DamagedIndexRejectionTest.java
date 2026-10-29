@@ -16,6 +16,7 @@ import dev.eyuppastirmaci.pecia.testing.LegacyIndexFixture;
 import dev.eyuppastirmaci.pecia.testing.LegacyIndexFixture.Damage;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -33,13 +34,16 @@ class DamagedIndexRejectionTest {
 
     @ParameterizedTest(name = "{0}")
     @CsvSource({
-        "TRUNCATED, CORRUPT_INDEX, CORRUPT_INDEX",
-        "FOREIGN_PROJECT, WRONG_PROJECT, WRONG_PROJECT",
-        "FUTURE_SCHEMA, INCOMPATIBLE, INCOMPATIBLE_INDEX",
-        "FORMAT_MISMATCH, INCOMPATIBLE, INCOMPATIBLE_INDEX"
+        "TRUNCATED, CORRUPT_INDEX, CORRUPT_INDEX, CORRUPT",
+        "FOREIGN_PROJECT, WRONG_PROJECT, WRONG_PROJECT, WRONG_PROJECT",
+        "FUTURE_SCHEMA, INCOMPATIBLE, INCOMPATIBLE_INDEX, INCOMPATIBLE",
+        "FORMAT_MISMATCH, INCOMPATIBLE, INCOMPATIBLE_INDEX, INCOMPATIBLE"
     })
     void everyEntryPointRejectsTheIndexWithoutChangingIt(
-            Damage damage, IndexAccessException.Reason storageReason, QueryException.Reason queryReason)
+            Damage damage,
+            IndexAccessException.Reason storageReason,
+            QueryException.Reason queryReason,
+            StorageFailure indexingReason)
             throws Exception {
         Path root = Files.createDirectory(sandbox.resolve("project")).toRealPath();
         Path database = LegacyIndexFixture.installDamaged(damage, root);
@@ -60,6 +64,7 @@ class DamagedIndexRejectionTest {
         assertEquals(0, indexing.result().indexedFiles());
         IndexAccessException cause = assertInstanceOf(IndexAccessException.class, indexing.getCause());
         assertEquals(storageReason, cause.reason(), cause.getMessage());
+        assertEquals(Optional.of(indexingReason), indexing.storageFailure());
 
         QueryException query = assertThrows(
                 QueryException.class, () -> new QueryService(loader).search(root, new SearchRequest("payment")));

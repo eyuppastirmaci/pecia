@@ -18,6 +18,7 @@ import java.util.Objects;
 public final class FileContentLoader {
 
     private final int maxFileBytes;
+    private final Runnable afterRead;
 
     /**
      * Creates a loader with a positive per-file byte limit.
@@ -25,25 +26,46 @@ public final class FileContentLoader {
      * @throws IllegalArgumentException if the byte limit is not positive
      */
     public FileContentLoader(int maxFileBytes) {
+        this(maxFileBytes, () -> {});
+    }
+
+    // Failure-injection seam: runs after the bytes are read and before the file is checked again.
+    FileContentLoader(int maxFileBytes, Runnable afterRead) {
         if (maxFileBytes <= 0) {
             throw new IllegalArgumentException("maxFileBytes must be positive: " + maxFileBytes);
         }
 
         this.maxFileBytes = maxFileBytes;
+        this.afterRead = Objects.requireNonNull(afterRead, "afterRead");
     }
 
     /**
-     * Reads one stable regular file without exceeding the configured byte limit.
+     * Reads one stable regular file without exceeding the configured byte limit. A file that changes while it is
+     * read, as when an editor saves it, is read once more.
      *
      * @param file absolute normalized path to read
      * @return the immutable loaded file bytes and their content hash
      * @throws NullPointerException if file is null
      * @throws IllegalArgumentException if file is not absolute and normalized
      * @throws ExtractionException if the file is unsuitable, too large, unreadable, or changes during
-     *     reading
+     *     both reads
      */
     public FileContent load(Path file) throws ExtractionException {
         requireAbsoluteNormalized(file);
+
+        try {
+            return read(file);
+        } catch (ExtractionException failure) {
+            if (failure.reason() != FILE_CHANGED) {
+                throw failure;
+            }
+
+            // A save usually settles at once, so one more read catches the file as written.
+            return read(file);
+        }
+    }
+
+    private FileContent read(Path file) throws ExtractionException {
         rejectSymbolicLinks(file);
 
         BasicFileAttributes beforeAttributes;
@@ -77,6 +99,7 @@ public final class FileContentLoader {
             throw new ExtractionException(READ_FAILED, file, "Could not read file: " + file, failure);
         }
 
+        afterRead.run();
         BasicFileAttributes afterAttributes;
 
         try {

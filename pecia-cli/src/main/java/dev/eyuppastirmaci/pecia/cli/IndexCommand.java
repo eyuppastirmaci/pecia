@@ -2,12 +2,14 @@ package dev.eyuppastirmaci.pecia.cli;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
+import dev.eyuppastirmaci.pecia.index.Cancellation;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.index.IndexException;
 import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.index.StorageFailure;
 import dev.eyuppastirmaci.pecia.index.WalkResult;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
@@ -16,10 +18,14 @@ import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -46,14 +52,26 @@ public class IndexCommand implements Callable<Integer> {
                     "Enable or disable semantic indexing for this run, overriding semantic.enabled in .pecia.toml.")
     Boolean semantic;
 
+    // The shell's exit status for a process stopped by SIGINT: 128 plus the signal number.
+    static final int INTERRUPTED = 130;
+
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
+    // How long Ctrl+C waits for the run to stop and print its summary before the JVM exits anyway.
+    private static final Duration STOP_TIMEOUT = Duration.ofSeconds(10);
+
     private final IndexService indexService;
+    private final InterruptHandlers interrupts;
 
     /** Creates a command using the supplied non-null indexing service. */
     public IndexCommand(IndexService indexService) {
+        this(indexService, InterruptHandlers.shutdownHooks());
+    }
+
+    IndexCommand(IndexService indexService, InterruptHandlers interrupts) {
         this.indexService = Objects.requireNonNull(indexService, "indexService");
+        this.interrupts = Objects.requireNonNull(interrupts, "interrupts");
     }
 
     /**
@@ -62,21 +80,66 @@ public class IndexCommand implements Callable<Integer> {
      * this run, and the preview reports the resolved choice. A semantic run announces a model download on stderr when
      * one starts and reports the model, the embeddings of an earlier profile it discarded, the chunks embedded with
      * changed files, and the stored chunks whose missing embeddings it made in its summary. Every summary also counts
-     * the indexed files whose unchanged content was chunked again for new settings.
+     * the indexed files whose unchanged content was chunked again for new settings. Ctrl+C stops the run before its
+     * next file, batch, or page and prints what it finished; the files it indexed stay, and the next run continues.
      *
-     * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan, an unavailable model or
-     *     embedder, an embedding failure, or storage failure
+     * @return 0 on complete indexing/preview, 1 on invalid input, file or scan issues, an unavailable model or
+     *     embedder, an embedding failure, or storage failure, 130 when Ctrl+C stopped the run
      */
     @Override
     public Integer call() {
+        if (dryRun) {
+            return execute(null);
+        }
+
+        Cancellation cancellation = new Cancellation();
+        CountDownLatch reported = new CountDownLatch(1);
+
+        InterruptHandlers.Registration hook = interrupts.register(() -> stop(cancellation, reported));
+
+        try {
+            return execute(cancellation);
+        } finally {
+            hook.close();
+            // Picocli's writers flush every line, so the summary is out once the hook is released.
+            reported.countDown();
+        }
+    }
+
+    /** Cancels the run and waits until its summary is printed, since the JVM exits as soon as this returns. */
+    private static void stop(Cancellation cancellation, CountDownLatch reported) {
+        cancellation.cancel();
+
+        try {
+            reported.await(STOP_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Indexes or previews; {@code cancellation} is null for a preview. */
+    private Integer execute(Cancellation cancellation) {
         try {
             IndexOptions options = semantic == null ? IndexOptions.configured() : IndexOptions.semantic(semantic);
             options = options.withDownloadListener(this::announceDownload);
 
             if (!dryRun) {
-                IndexResult result = indexService.index(path, options);
+                IndexResult result = indexService.index(path, options.withCancellation(cancellation));
                 WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
                 reportIndex(result);
+
+                if (result.status() == IndexResult.Status.CANCELLED) {
+                    spec.commandLine()
+                            .getErr()
+                            .println("pecia index: cancelled; the files indexed so far are kept, and the next run"
+                                    + " continues from there");
+
+                    return INTERRUPTED;
+                }
+
+                if (result.status() == IndexResult.Status.PARTIAL) {
+                    reportPartial(result);
+                }
 
                 return result.status() == IndexResult.Status.COMPLETE ? 0 : 1;
             }
@@ -87,7 +150,7 @@ public class IndexCommand implements Callable<Integer> {
             report(preview);
 
             for (WalkResult.Issue issue : result.issues()) {
-                spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.reason());
+                reportScanIssue(preview.target(), issue);
             }
 
             if (!result.complete()) {
@@ -128,8 +191,19 @@ public class IndexCommand implements Callable<Integer> {
 
             reportIndex(failure.result());
 
-            for (WalkResult.Issue issue : failure.scanIssues()) {
-                spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.reason());
+            if (failure.storageFailure().isPresent() && failure.getCause() != null) {
+                StorageFailure reason = failure.storageFailure().orElseThrow();
+
+                spec.commandLine()
+                        .getErr()
+                        .println("pecia index: " + status + ": " + reason + ": "
+                                + failure.getCause().getMessage());
+                spec.commandLine()
+                        .getErr()
+                        .println(
+                                storageAdvice(reason, failure.result().context().databasePath()));
+
+                return 1;
             }
 
             String detail =
@@ -170,6 +244,22 @@ public class IndexCommand implements Callable<Integer> {
             out.println("backfilled: " + result.backfilledChunks());
         }
 
+        for (WalkResult.Issue issue : result.scanIssues()) {
+            reportScanIssue(result.context().projectRoot(), issue);
+        }
+
+        for (IndexResult.SemanticIssue issue : result.semanticIssues()) {
+            spec.commandLine()
+                    .getErr()
+                    .println("warning: "
+                            + FileWalker.portablePath(issue.sourcePath())
+                            + ": "
+                            + issue.reason()
+                            + ": "
+                            + issue.message()
+                            + " (indexed without embeddings)");
+        }
+
         for (IndexResult.FileIssue issue : result.issues()) {
             spec.commandLine()
                     .getErr()
@@ -180,6 +270,72 @@ public class IndexCommand implements Callable<Integer> {
                             + ": "
                             + issue.message());
         }
+    }
+
+    /** Prints a path discovery could not read, relative to {@code base} when it lies below it. */
+    private void reportScanIssue(Path base, WalkResult.Issue issue) {
+        Path path = issue.path();
+        String shown = path.startsWith(base) ? FileWalker.portablePath(base.relativize(path)) : path.toString();
+        // Without its ignore rules, a folder's files could include some the user meant to leave out.
+        String effect = path.getFileName().toString().equals(".gitignore") ? "its folder was skipped" : "not scanned";
+
+        spec.commandLine()
+                .getErr()
+                .println("warning: " + shown + ": " + issue.cause() + ": " + issue.reason() + " (" + effect + ")");
+    }
+
+    /** Summarizes what a partial run left out, after the issues themselves. */
+    private void reportPartial(IndexResult result) {
+        List<String> parts = new ArrayList<>();
+
+        if (!result.issues().isEmpty()) {
+            parts.add(count(result.issues().size(), "file") + " could not be read or were rejected");
+        }
+
+        if (!result.semanticIssues().isEmpty()) {
+            parts.add(count(result.semanticIssues().size(), "file") + " could not be embedded");
+        }
+
+        if (!result.scanIssues().isEmpty()) {
+            parts.add(count(result.scanIssues().size(), "path") + " could not be scanned");
+        }
+
+        boolean keptDeletions =
+                !result.issues().isEmpty() || !result.scanIssues().isEmpty();
+
+        spec.commandLine()
+                .getErr()
+                .println("pecia index: PARTIAL: "
+                        + String.join("; ", parts)
+                        + "; every other file was indexed"
+                        + (keptDeletions ? ", and no file was removed from the index" : ""));
+    }
+
+    private static String count(int count, String noun) {
+        return count + " " + noun + (count == 1 ? "" : "s");
+    }
+
+    /** Says what to do about a storage failure; files committed before it stay in the index. */
+    static String storageAdvice(StorageFailure reason, Path database) {
+        return switch (reason) {
+            case DISK_FULL -> "Free some disk space and run the command again; the files indexed so far are kept.";
+            case BUSY ->
+                "Another process is using the index, such as another 'pecia index'; run the command again when it"
+                        + " has finished.";
+            case READ_ONLY -> "Make " + database + " and its folder writable, then run the command again.";
+            case IO_ERROR ->
+                "Check that the disk is available and " + database.getParent() + " is writable, then run the"
+                        + " command again.";
+            case CORRUPT ->
+                "The index is damaged; delete " + database + " and run the command again to rebuild it from your"
+                        + " files.";
+            case WRONG_PROJECT ->
+                "The index belongs to another project folder; delete " + database + " to index this one.";
+            case INCOMPATIBLE ->
+                "The index was written by another version of Pecia; delete " + database
+                        + " and run the command again to rebuild it.";
+            case OTHER -> "Run the command again; the files indexed so far are kept.";
+        };
     }
 
     private void announceDownload(SemanticModel model, Path file) {

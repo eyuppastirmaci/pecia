@@ -1,8 +1,6 @@
 package dev.eyuppastirmaci.pecia.index;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -124,19 +122,22 @@ class HostileFilesystemTest {
     }
 
     @Test
-    void unreadableDirectoryStopsIndexingBeforeStorageIsOpened() throws Exception {
+    void anUnreadableDirectoryIsReportedWhileTheOtherFilesAreIndexed() throws Exception {
         Path blocked = Files.createDirectory(root.resolve("blocked"));
         Files.writeString(blocked.resolve("private.txt"), TEXT);
         Files.writeString(root.resolve("keep.txt"), TEXT);
 
         withoutPermissions(blocked, () -> {
-            IndexException failure = assertThrows(IndexException.class, this::index);
+            IndexResult result = index();
 
-            assertEquals(IndexResult.Status.INCOMPLETE_SCAN, failure.result().status());
-            assertEquals(1, failure.scanIssues().size());
-            // The issue currently names only the path; a typed cause is expected to replace this detail.
-            assertEquals(blocked, failure.scanIssues().get(0).path());
-            assertFalse(Files.exists(root.resolve(".pecia")), "An incomplete scan must not create storage");
+            assertEquals(IndexResult.Status.PARTIAL, result.status());
+            assertEquals(1, result.indexedFiles());
+            assertEquals(List.of(), result.issues());
+            assertEquals(1, result.scanIssues().size());
+            assertEquals(blocked, result.scanIssues().get(0).path());
+            assertEquals(
+                    WalkResult.Cause.PERMISSION_DENIED,
+                    result.scanIssues().get(0).cause());
         });
     }
 

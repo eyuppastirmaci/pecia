@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.semantic.DownloadListener;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
@@ -89,6 +91,33 @@ class IndexOptionsTest {
         assertEquals(List.of(), withoutSemantic.embeddings());
         assertEquals(withSemantic.chunks().size(), withSemantic.embeddings().size());
         assertEquals(withoutSemantic, withSemantic.withoutEmbeddings());
+    }
+
+    @Test
+    void eachWitherKeepsTheOtherChoices() {
+        Cancellation cancellation = new Cancellation();
+        DownloadListener downloads = (model, file) -> {};
+        IndexProgressListener progress = update -> {};
+
+        IndexOptions options = IndexOptions.semantic(true)
+                .withCancellation(cancellation)
+                .withDownloadListener(downloads)
+                .withProgressListener(progress);
+
+        assertEquals(new IndexOptions(true, downloads, progress, cancellation), options);
+        assertEquals(options, options.withCancellation(cancellation));
+        assertNull(IndexOptions.configured().cancellation());
+        assertThrows(NullPointerException.class, () -> options.withCancellation(null));
+    }
+
+    @Test
+    void cancellingIsPermanent() {
+        Cancellation cancellation = new Cancellation();
+
+        assertFalse(cancellation.isCancelled());
+        cancellation.cancel();
+        cancellation.cancel();
+        assertTrue(cancellation.isCancelled());
     }
 
     @Test

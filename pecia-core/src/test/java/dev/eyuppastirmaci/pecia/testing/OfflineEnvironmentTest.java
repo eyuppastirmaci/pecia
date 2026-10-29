@@ -197,31 +197,45 @@ class OfflineEnvironmentTest {
     }
 
     @Test
-    void allowsOnlyTheRuntimesExtractionDirectoriesAndTheirContents() throws Exception {
+    void allowsOnlyTheCachedRuntimeLibrariesAndEmptyExtractionDirectories() throws Exception {
         OfflineEnvironment isolated = OfflineEnvironment.create(sandbox);
         Path existing = Files.writeString(isolated.home().resolve("notes.txt"), "keep");
         Map<Path, String> before = isolated.snapshot();
-        Path extraction = Files.createDirectory(isolated.temporary().resolve("onnxruntime-java123"));
-        Files.writeString(extraction.resolve("onnxruntime.dll"), "still loaded");
+        Path libraries = Files.createDirectories(isolated.peciaCache().resolve("native/onnxruntime/1.28.0/linux-x64"));
+        Files.writeString(libraries.resolve("libonnxruntime.so"), "native code");
         Files.createDirectory(isolated.temporary().resolve("onnxruntime-java456"));
 
-        isolated.assertOnlyRuntimeExtraction(before);
+        isolated.assertOnlyRuntimeLibraries(before);
 
         for (Path unexpected : List.of(
                 isolated.temporary().resolve(".ses"),
                 isolated.temporary().resolve("onnxruntime-javaX"),
+                isolated.temporary().resolve("onnxruntime-java456/onnxruntime.dll"),
                 isolated.home().resolve("onnxruntime-java789"),
+                isolated.peciaCache().resolve("native/other.so"),
                 isolated.cache().resolve("deviceid"))) {
             Files.writeString(unexpected, "unexpected");
             assertThrows(
-                    AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before), unexpected.toString());
+                    AssertionError.class, () -> isolated.assertOnlyRuntimeLibraries(before), unexpected.toString());
             Files.delete(unexpected);
         }
 
         Files.writeString(existing, "edit");
-        assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before));
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeLibraries(before));
         Files.delete(existing);
-        assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before));
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeLibraries(before));
+    }
+
+    @Test
+    void requiresTheRuntimeLibrariesInTheCache() throws Exception {
+        OfflineEnvironment isolated = OfflineEnvironment.create(sandbox);
+        Map<Path, String> before = isolated.snapshot();
+        Files.createDirectories(isolated.peciaCache().resolve("native/onnxruntime/1.28.0/linux-x64"));
+        Files.createDirectory(isolated.temporary().resolve("onnxruntime-java123"));
+
+        AssertionError failure = assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeLibraries(before));
+
+        assertTrue(failure.getMessage().contains("libraries are not in"), failure.getMessage());
     }
 
     @Test

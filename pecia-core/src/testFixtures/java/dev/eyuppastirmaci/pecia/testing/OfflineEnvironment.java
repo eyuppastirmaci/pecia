@@ -201,23 +201,26 @@ public final class OfflineEnvironment {
     }
 
     /**
-     * Fails unless the only differences since {@code before} are ONNX Runtime's native extraction directories in the
-     * temporary root, with whatever they still hold: each process extracts the libraries into its own directory, and
-     * Windows cannot delete libraries that are still loaded at exit.
+     * Fails unless the only differences since {@code before} are ONNX Runtime's native libraries in Pecia's cache,
+     * with the directories leading to them, and empty extraction directories in the temporary root, which the runtime
+     * creates even when it loads its libraries from elsewhere. A library extracted to the temporary root fails, and so
+     * does a run after which the cache holds no runtime library.
      */
-    public void assertOnlyRuntimeExtraction(Map<Path, String> before) throws IOException {
-        assertOnlyRuntimeExtraction(before, Set.of());
+    public void assertOnlyRuntimeLibraries(Map<Path, String> before) throws IOException {
+        assertOnlyRuntimeLibraries(before, Set.of());
     }
 
     /**
-     * Fails like {@link #assertOnlyRuntimeExtraction(Map)}, except that the given new entries must also have appeared.
+     * Fails like {@link #assertOnlyRuntimeLibraries(Map)}, except that the given new entries must also have appeared.
      *
-     * @param additions absolute paths that must have appeared besides the runtime extraction
+     * @param additions absolute paths that must have appeared besides the runtime libraries
      */
-    public void assertOnlyRuntimeExtraction(Map<Path, String> before, Set<Path> additions) throws IOException {
+    public void assertOnlyRuntimeLibraries(Map<Path, String> before, Set<Path> additions) throws IOException {
         Objects.requireNonNull(before, "before");
         Map<Path, String> after = snapshot();
         Path temporaryRoot = sandbox.relativize(temporary);
+        Path cacheRoot = sandbox.relativize(peciaCache());
+        Path runtimeLibraries = cacheRoot.resolve("native").resolve("onnxruntime");
         Set<Path> unexpected = new TreeSet<>();
         Set<Path> expected = new TreeSet<>();
 
@@ -232,13 +235,18 @@ public final class OfflineEnvironment {
 
         for (Map.Entry<Path, String> entry : after.entrySet()) {
             Path path = entry.getKey();
-            boolean extraction = path.startsWith(temporaryRoot)
-                    && path.getNameCount() > temporaryRoot.getNameCount()
-                    && RUNTIME_EXTRACTION
-                            .matcher(path.getName(temporaryRoot.getNameCount()).toString())
-                            .matches();
+            boolean emptyExtraction = path.getParent() != null
+                    && path.getParent().equals(temporaryRoot)
+                    && RUNTIME_EXTRACTION.matcher(path.getFileName().toString()).matches()
+                    && entry.getValue().equals("directory");
+            boolean cachedRuntime = path.startsWith(runtimeLibraries)
+                    || path.equals(cacheRoot)
+                    || path.equals(cacheRoot.resolve("native"));
 
-            if (!extraction && !expected.contains(path) && !entry.getValue().equals(before.get(path))) {
+            if (!emptyExtraction
+                    && !cachedRuntime
+                    && !expected.contains(path)
+                    && !entry.getValue().equals(before.get(path))) {
                 unexpected.add(path);
             }
         }
@@ -250,7 +258,13 @@ public final class OfflineEnvironment {
         }
 
         if (!unexpected.isEmpty()) {
-            throw new AssertionError("Offline home/cache/tmp changed outside the runtime extraction: " + unexpected);
+            throw new AssertionError("Offline home/cache/tmp changed outside the runtime libraries: " + unexpected);
+        }
+
+        if (after.entrySet().stream()
+                .noneMatch(entry -> entry.getKey().startsWith(runtimeLibraries)
+                        && entry.getValue().startsWith("sha256:"))) {
+            throw new AssertionError("ONNX Runtime's libraries are not in " + runtimeLibraries);
         }
     }
 

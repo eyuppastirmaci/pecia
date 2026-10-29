@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 
 /** Runs the packaged CLI JAR against a temporary project and observes the project's entries and bytes. */
 final class PackagedCli {
+
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
     private final Path sandbox;
     private final Path project;
@@ -67,7 +70,12 @@ final class PackagedCli {
     }
 
     Result run(Path directory, List<String> jvmArguments, String... arguments) throws Exception {
-        return run(directory, jvmArguments, null, arguments);
+        return run(directory, jvmArguments, null, DEFAULT_TIMEOUT, arguments);
+    }
+
+    /** Runs like {@link #run(Path, String...)} with a longer limit, for commands that index large projects. */
+    Result runWithin(Duration timeout, Path directory, String... arguments) throws Exception {
+        return run(directory, List.of(), null, timeout, arguments);
     }
 
     /**
@@ -79,12 +87,37 @@ final class PackagedCli {
             throw new IllegalStateException("A denied download needs the offline guard");
         }
 
-        return run(directory, List.of(), evidence -> evidence.verifyDeniedDownload(host, lockFile), arguments);
+        return run(
+                directory,
+                List.of(),
+                evidence -> evidence.verifyDeniedDownload(host, lockFile),
+                DEFAULT_TIMEOUT,
+                arguments);
     }
 
-    /** Runs the distribution; {@code check} replaces the lexical checks of offline runs when it is not null. */
-    private Result run(Path directory, List<String> jvmArguments, EvidenceCheck check, String... arguments)
-            throws Exception {
+    /**
+     * Starts the distribution without the offline guard and returns at once, for tests that act on the process while
+     * it runs; both streams go to files.
+     */
+    Started start(Path directory, String... arguments) throws IOException {
+        List<String> command = command(List.of(), null, arguments);
+        Path output = Files.createTempDirectory(sandbox, "process-");
+        Path stdout = output.resolve("stdout.txt");
+        Path stderr = output.resolve("stderr.txt");
+        ProcessBuilder builder = new ProcessBuilder(command)
+                .directory(directory.toFile())
+                .redirectOutput(stdout.toFile())
+                .redirectError(stderr.toFile());
+        builder.environment().keySet().removeAll(List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"));
+        Process process = builder.start();
+        process.getOutputStream().close();
+
+        return new Started(process, stdout, stderr);
+    }
+
+    /** Builds the command that runs the distribution with the shared JVM options. */
+    private List<String> command(List<String> jvmArguments, OfflineSandbox.Run evidence, String... arguments)
+            throws IOException {
         Path javaBin = Path.of(System.getProperty("java.home"), "bin");
         Path java = Files.isRegularFile(javaBin.resolve("java.exe"))
                 ? javaBin.resolve("java.exe")
@@ -100,13 +133,21 @@ final class PackagedCli {
                 "-Dpicocli.usage.width=80"));
 
         command.addAll(jvmArguments);
-        OfflineSandbox.Run evidence = offline == null ? null : offline.newRun();
         if (evidence != null) {
             command.addAll(evidence.jvmArguments());
         }
         command.addAll(List.of("-jar", executableJar.toString()));
         command.addAll(List.of(arguments));
 
+        return command;
+    }
+
+    /** Runs the distribution; {@code check} replaces the lexical checks of offline runs when it is not null. */
+    private Result run(
+            Path directory, List<String> jvmArguments, EvidenceCheck check, Duration timeout, String... arguments)
+            throws Exception {
+        OfflineSandbox.Run evidence = offline == null ? null : offline.newRun();
+        List<String> command = command(jvmArguments, evidence, arguments);
         Path output = Files.createTempDirectory(sandbox, "process-");
         Path stdout = output.resolve("stdout.txt");
         Path stderr = output.resolve("stderr.txt");
@@ -122,7 +163,7 @@ final class PackagedCli {
 
         try {
             process.getOutputStream().close();
-            boolean completed = process.waitFor(30, TimeUnit.SECONDS);
+            boolean completed = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
 
             if (!completed) {
                 process.destroyForcibly();
@@ -189,6 +230,9 @@ final class PackagedCli {
 
     /** A completed CLI process with CRLF-normalized output streams. */
     record Result(int exitCode, String out, String err) {}
+
+    /** A running CLI process and the files that receive its output. */
+    record Started(Process process, Path stdout, Path stderr) {}
 
     @FunctionalInterface
     private interface EvidenceCheck {

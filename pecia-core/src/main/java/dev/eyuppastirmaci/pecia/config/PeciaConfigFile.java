@@ -37,7 +37,7 @@ public final class PeciaConfigFile {
             enabled = %b   # build all-MiniLM-L6-v2 embeddings while indexing
 
             [embed]
-            concurrency = %d
+            concurrency = %d   # embedding workers in semantic runs; more workers are faster but use more memory
 
             [search]
             mode = %s   # lexical, semantic, hybrid, or auto

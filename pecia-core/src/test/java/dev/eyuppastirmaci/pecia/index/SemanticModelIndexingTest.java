@@ -91,15 +91,18 @@ class SemanticModelIndexingTest {
     }
 
     @Test
-    void anIncompleteScanFailsBeforeTheModelIsRequested() throws Exception {
-        // A directory where a .gitignore file is expected makes discovery incomplete.
-        Files.createDirectory(root.resolve(".gitignore"));
+    void aPartialScanStillIndexesTheFilesItFoundSemantically() throws Exception {
+        // A directory where a .gitignore file is expected makes discovery incomplete below it.
+        Files.createDirectories(root.resolve("drafts/.gitignore"));
 
-        IndexException incomplete =
-                assertThrows(IndexException.class, () -> service().index(root, IndexOptions.semantic(true)));
+        IndexResult partial = service().index(root, IndexOptions.semantic(true));
 
-        assertEquals(IndexResult.Status.INCOMPLETE_SCAN, incomplete.result().status());
-        assertEquals(List.of(), requests);
+        assertEquals(IndexResult.Status.PARTIAL, partial.status());
+        assertEquals(1, partial.indexedFiles());
+        assertEquals(partial.writtenChunks(), partial.embeddedChunks());
+        assertSame(CACHED, partial.semanticModel());
+        assertEquals(1, partial.scanIssues().size());
+        assertEquals(1, requests.size());
     }
 
     @Test
