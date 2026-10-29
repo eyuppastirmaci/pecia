@@ -173,9 +173,12 @@ class IndexCancellationTest {
         return project;
     }
 
-    /** Writes three one-chunk files over a lexical index that still holds a file deleted since. */
+    /** Writes three one-chunk files, embedded by one worker, over a lexical index that holds a file deleted since. */
     private Path threeFileProject(String name) throws Exception {
         Path project = Files.createDirectories(sandbox.resolve(name)).toRealPath();
+        // One worker embeds in order: with more, a later file's batch may start before the cancelling batch ends,
+        // and finished work is written.
+        Files.writeString(project.resolve(".pecia.toml"), "[embed]\nconcurrency = 1\n");
         Files.writeString(project.resolve("removed.txt"), "removed before the semantic run\n");
         service().index(project);
         Files.delete(project.resolve("removed.txt"));
