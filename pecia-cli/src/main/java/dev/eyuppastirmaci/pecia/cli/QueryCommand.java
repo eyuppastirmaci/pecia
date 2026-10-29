@@ -9,6 +9,7 @@ import dev.eyuppastirmaci.pecia.search.QueryNotice;
 import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryResult;
 import dev.eyuppastirmaci.pecia.search.QueryService;
+import dev.eyuppastirmaci.pecia.search.QueryShape;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.search.SearchScore;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -87,7 +89,7 @@ public class QueryCommand implements Callable<Integer> {
                 out.println("No results.");
             } else {
                 for (SearchHit hit : hits) {
-                    printHit(out, hit);
+                    printHit(out, hit, result.queryShape());
                 }
             }
 
@@ -153,7 +155,7 @@ public class QueryCommand implements Callable<Integer> {
         }
     }
 
-    private static void printHit(PrintWriter out, SearchHit hit) {
+    private static void printHit(PrintWriter out, SearchHit hit, Optional<QueryShape> shape) {
         String location = FileWalker.portablePath(hit.sourcePath());
 
         if (hit.sourceLocation() instanceof LineRange lines) {
@@ -161,7 +163,7 @@ public class QueryCommand implements Callable<Integer> {
         }
 
         out.println(location);
-        out.println("  " + scoreLabel(hit.score().kind()) + ": " + hit.score().value() + fusedRanks(hit));
+        out.println("  " + scoreLabel(hit.score().kind()) + ": " + hit.score().value() + fusedRanks(hit, shape));
 
         if (!hit.metadata().headingPath().isEmpty()) {
             out.println("  heading: " + String.join(" > ", hit.metadata().headingPath()));
@@ -180,8 +182,11 @@ public class QueryCommand implements Callable<Integer> {
         };
     }
 
-    /** Shows which sides ranked a hybrid hit, for example {@code " (lexical #1, semantic #4)"}; empty otherwise. */
-    private static String fusedRanks(SearchHit hit) {
+    /**
+     * Shows which sides ranked a hybrid hit, for example {@code " (lexical #1, semantic #4)"}, and names identifier
+     * queries, whose lexical order decides; empty for other hits.
+     */
+    private static String fusedRanks(SearchHit hit, Optional<QueryShape> shape) {
         if (hit.fusedRanks().isEmpty()) {
             return "";
         }
@@ -190,8 +195,10 @@ public class QueryCommand implements Callable<Integer> {
         List<String> sides = new ArrayList<>();
         ranks.lexical().ifPresent(rank -> sides.add("lexical #" + rank));
         ranks.semantic().ifPresent(rank -> sides.add("semantic #" + rank));
+        // Natural language is the common case, so only the lexical-first ordering of identifiers is named.
+        String note = shape.filter(QueryShape.IDENTIFIER::equals).isPresent() ? "; identifier query" : "";
 
-        return " (" + String.join(", ", sides) + ")";
+        return " (" + String.join(", ", sides) + note + ")";
     }
 
     private static String launcherJar() {

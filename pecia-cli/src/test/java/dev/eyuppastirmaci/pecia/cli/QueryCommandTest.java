@@ -152,6 +152,25 @@ class QueryCommandTest {
     }
 
     @Test
+    void hybridIdentifierQueriesSayTheLexicalOrderDecided() throws Exception {
+        Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card within five days.\n");
+        Files.writeString(root.resolve("shipping.txt"), "Parcels leave the warehouse every weekday morning.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+        QueryService hybrid = QueryService.withModelLookup(loader, () -> Optional.of(TinyModel.cached()));
+
+        assertEquals(0, run(hybrid, "refunds.txt", "--root", root.toString(), "--mode", "hybrid"));
+
+        assertEquals("", err.toString());
+        List<String> scores = out.toString()
+                .lines()
+                .filter(line -> line.startsWith("  RRF: "))
+                .toList();
+        assertEquals(2, scores.size());
+        assertTrue(scores.get(0).endsWith(" (lexical #1, semantic #1; identifier query)"), scores.get(0));
+        assertTrue(scores.get(1).endsWith(" (semantic #2; identifier query)"), scores.get(1));
+    }
+
+    @Test
     void aSemanticQueryWithoutTheCachedModelSaysSoAndNeverDownloadsIt() throws Exception {
         Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");
         IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
