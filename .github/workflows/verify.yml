@@ -69,8 +69,11 @@ jobs:
           project="$RUNNER_TEMP/semantic-index"
           mkdir -p "$project"
           echo "Indexes one chunk with the semantic model." > "$project/readme.md"
+          # A lexical index first, so the semantic run embeds the stored chunk instead of a changed file.
+          java -jar pecia-cli/build/libs/pecia.jar index --no-semantic "$project"
           java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-index.txt"
-          grep -qx 'embedded: 1' "$RUNNER_TEMP/semantic-index.txt"
+          grep -qx 'embedded: 0' "$RUNNER_TEMP/semantic-index.txt"
+          grep -qx 'backfilled: 1' "$RUNNER_TEMP/semantic-index.txt"
 
       - name: Compare embeddings with the references
         env:

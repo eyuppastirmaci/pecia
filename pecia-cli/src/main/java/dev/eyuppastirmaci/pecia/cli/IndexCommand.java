@@ -60,7 +60,8 @@ public class IndexCommand implements Callable<Integer> {
      * Indexes a folder or previews discovery without processing content. Configuration warnings are printed to stderr
      * before any other output and do not change the exit code. The semantic flags override {@code semantic.enabled} for
      * this run, and the preview reports the resolved choice. A semantic run announces a model download on stderr when
-     * one starts and reports the model and the number of embedded chunks in its summary.
+     * one starts and reports the model, the chunks embedded with changed files, and the stored chunks whose missing
+     * embeddings it made in its summary.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan, an unavailable model or
      *     embedder, an embedding failure, or storage failure
@@ -163,6 +164,7 @@ public class IndexCommand implements Callable<Integer> {
                             ? " downloaded (" + megabytes(model.model().size()) + ")"
                             : " cached"));
             out.println("embedded: " + result.embeddedChunks());
+            out.println("backfilled: " + result.backfilledChunks());
         }
 
         for (IndexResult.FileIssue issue : result.issues()) {

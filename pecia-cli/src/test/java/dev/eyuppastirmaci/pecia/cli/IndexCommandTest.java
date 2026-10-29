@@ -198,21 +198,21 @@ class IndexCommandTest {
         assertEquals(0, run(root.toString(), "--semantic"));
         List<String> summary = out.toString().lines().toList();
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 1"),
-                summary.subList(summary.size() - 2, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 1", "backfilled: 0"),
+                summary.subList(summary.size() - 3, summary.size()));
         assertEquals("", err.toString());
 
         // The same project indexed from scratch without semantic indexing prints the rest of the summary unchanged.
         deleteIndex();
         assertSuccessfulIndex(1, 1, 0, 0, 1);
         assertEquals(
-                summary.subList(0, summary.size() - 2), out.toString().lines().toList());
+                summary.subList(0, summary.size() - 3), out.toString().lines().toList());
 
         deleteIndex();
         out.getBuffer().setLength(0);
         assertEquals(0, run(root.toString(), "--no-semantic"));
         assertEquals(
-                summary.subList(0, summary.size() - 2), out.toString().lines().toList());
+                summary.subList(0, summary.size() - 3), out.toString().lines().toList());
     }
 
     @Test
@@ -223,7 +223,47 @@ class IndexCommandTest {
 
         assertEquals(0, run(root.toString(), "--semantic"));
 
-        assertEquals("embedded: 0", out.toString().lines().toList().getLast());
+        List<String> summary = out.toString().lines().toList();
+        assertEquals(List.of("embedded: 0", "backfilled: 0"), summary.subList(summary.size() - 2, summary.size()));
+    }
+
+    @Test
+    void aSemanticRunAfterALexicalOneBackfillsTheStoredChunks() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        Files.writeString(root.resolve("b.txt"), "haystack");
+        assertEquals(0, run(root.toString(), "--no-semantic"));
+        out.getBuffer().setLength(0);
+
+        assertEquals(0, run(root.toString(), "--semantic"));
+
+        List<String> summary = out.toString().lines().toList();
+        assertEquals(List.of("indexed: 0", "unchanged: 2"), summary.subList(2, 4));
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0", "backfilled: 2"),
+                summary.subList(summary.size() - 3, summary.size()));
+        assertEquals("", err.toString());
+    }
+
+    @Test
+    void aBackfillFailurePrintsTheSummarySoFarTheReasonAndTheLexicalWayOut() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        assertEquals(0, run(root.toString(), "--no-semantic"));
+        out.getBuffer().setLength(0);
+        models = listener -> TinyModel.cached("non-finite");
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        List<String> summary = out.toString().lines().toList();
+        assertEquals("unchanged: 1", summary.get(3));
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0", "backfilled: 0"),
+                summary.subList(summary.size() - 3, summary.size()));
+        assertEquals(
+                List.of(
+                        "pecia index: EMBEDDING_FAILED: INVALID_OUTPUT: The model returned token embeddings whose"
+                                + " average is not a finite, non-zero vector",
+                        "Run with --no-semantic to build only the lexical index."),
+                err.toString().lines().toList());
     }
 
     @Test
@@ -251,8 +291,8 @@ class IndexCommandTest {
         List<String> summary = out.toString().lines().toList();
         assertEquals("indexed: 0", summary.get(2));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0"),
-                summary.subList(summary.size() - 2, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0", "backfilled: 0"),
+                summary.subList(summary.size() - 3, summary.size()));
         assertEquals(
                 List.of(
                         "pecia index: EMBEDDING_FAILED: INVALID_OUTPUT: The model returned token embeddings whose"
@@ -278,8 +318,8 @@ class IndexCommandTest {
                 err.toString());
         List<String> summary = out.toString().lines().toList();
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 downloaded (90.4 MB)", "embedded: 1"),
-                summary.subList(summary.size() - 2, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 downloaded (90.4 MB)", "embedded: 1", "backfilled: 0"),
+                summary.subList(summary.size() - 3, summary.size()));
     }
 
     @ParameterizedTest
