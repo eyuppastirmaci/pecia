@@ -113,6 +113,24 @@ class SqliteHybridSearchTest {
     }
 
     @Test
+    void textWithMorePartsThanLexicalSearchAcceptsLeavesTheSemanticOrder() throws Exception {
+        try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
+            write(storage, "a.md", "alpha", new float[] {0, 1, 0, 0});
+            write(storage, "b.md", "alpha", EAST);
+            storage.loadVectorExtension(library);
+
+            List<SearchHit> hits = storage.hybridSearch(PROFILE).search(new SearchRequest("alpha ".repeat(65)), EAST);
+
+            assertEquals(List.of("b.md", "a.md"), paths(hits));
+            assertTrue(hits.stream()
+                    .allMatch(hit -> hit.fusedRanks().orElseThrow().lexical().isEmpty()));
+            // Within the limit both sides rank both chunks.
+            assertTrue(storage.hybridSearch(PROFILE).search(new SearchRequest("alpha ".repeat(64)), EAST).stream()
+                    .allMatch(hit -> hit.fusedRanks().orElseThrow().lexical().isPresent()));
+        }
+    }
+
+    @Test
     void chunksWithoutAnEmbeddingComeOnlyFromTheLexicalSide() throws Exception {
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             write(storage, "embedded.md", "needle embedded", EAST);
@@ -212,10 +230,6 @@ class SqliteHybridSearchTest {
             assertThrows(IllegalArgumentException.class, () -> search.search(request, new float[] {1, 0, 0}));
             assertThrows(
                     IllegalArgumentException.class, () -> search.search(request, new float[] {Float.NaN, 0, 0, 0}));
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> search.search(new SearchRequest("w ".repeat(65)), EAST),
-                    "The lexical compiler's part limit");
             assertThrows(NullPointerException.class, () -> search.search(null, EAST));
             assertThrows(NullPointerException.class, () -> search.search(request, null));
         }

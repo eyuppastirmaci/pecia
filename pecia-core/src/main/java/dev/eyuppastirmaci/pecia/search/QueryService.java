@@ -17,9 +17,11 @@ import dev.eyuppastirmaci.pecia.semantic.VectorExtensionException;
 import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.sqlite.IndexAccessException;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -152,8 +154,7 @@ public final class QueryService {
      * @throws NullPointerException if a required argument is null, before any filesystem access
      */
     public QueryResult query(Path startDirectory, SearchRequest request, QueryOptions options) throws QueryException {
-        // Apply the existing compiler's limits before any filesystem or database access.
-        new LexicalQueryCompiler().compile(request);
+        Objects.requireNonNull(request, "request");
         Objects.requireNonNull(options, "options");
         List<Warning> warnings = List.of();
 
@@ -161,6 +162,11 @@ public final class QueryService {
             ProjectContext context = contextResolver.resolve(startDirectory);
             warnings = context.loadedConfig().warnings();
             SearchMode requested = options.resolveMode(context.loadedConfig().config());
+
+            if (requested == SearchMode.LEXICAL) {
+                // Lexical search alone refuses text with too many parts, so refuse it before the index opens.
+                new LexicalQueryCompiler().compile(request);
+            }
 
             try (SqliteStorage storage = storageOpener.open(context)) {
                 return switch (requested) {
@@ -194,7 +200,13 @@ public final class QueryService {
             Optional<ModeFallback> fallback)
             throws SearchException {
         return new QueryResult(
-                storage.lexicalSearch().search(request), warnings, null, requested, SearchMode.LEXICAL, fallback);
+                storage.lexicalSearch().search(request),
+                warnings,
+                null,
+                requested,
+                SearchMode.LEXICAL,
+                fallback,
+                List.of());
     }
 
     /**
@@ -233,7 +245,7 @@ public final class QueryService {
 
         if (coverage.chunks() == 0) {
             // Nothing is stored to compare, like a lexical query that matches nothing.
-            return new QueryResult(List.of(), warnings, coverage, requested, effective, Optional.empty());
+            return new QueryResult(List.of(), warnings, coverage, requested, effective, Optional.empty(), List.of());
         }
 
         if (coverage.embedded() == 0) {
@@ -249,7 +261,32 @@ public final class QueryService {
                 ? storage.hybridSearch(profile).search(request, queryEmbedding)
                 : storage.semanticSearch(profile).search(queryEmbedding, request.limit());
 
-        return new QueryResult(hits, warnings, coverage, requested, effective, Optional.empty());
+        return new QueryResult(
+                hits, warnings, coverage, requested, effective, Optional.empty(), notices(request, effective));
+    }
+
+    /** Tells the caller when the embedded text was cut or a hybrid query could not search lexically. */
+    private static List<QueryNotice> notices(SearchRequest request, SearchMode effective) {
+        List<QueryNotice> notices = new ArrayList<>();
+        MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
+        int limit = tokenizer.identity().maxInputTokens() - tokenizer.identity().specialTokenCount();
+        int tokens = tokenizer.count(request.query());
+
+        if (tokens > limit) {
+            notices.add(new QueryNotice(
+                    QueryNotice.Code.QUERY_CUT_TO_MODEL_INPUT,
+                    "Only the first " + limit + " of the query's " + tokens
+                            + " tokens were embedded; the rest did not affect semantic ranking"));
+        }
+
+        if (effective == SearchMode.HYBRID && new LexicalQueryCompiler().exceedsPartLimit(request)) {
+            notices.add(new QueryNotice(
+                    QueryNotice.Code.LEXICAL_SIDE_SKIPPED,
+                    "The query has more than " + LexicalQueryCompiler.MAX_QUERY_PARTS
+                            + " words, too many for lexical search; only semantic ranking was used"));
+        }
+
+        return List.copyOf(notices);
     }
 
     private ModelOutcome findModel(EmbeddingProfile profile, List<Warning> warnings) throws QueryException {

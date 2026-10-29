@@ -77,6 +77,28 @@ class QueryResultTest {
     }
 
     @Test
+    void noticesFitTheModeThatProducedTheHits() {
+        assertEquals(
+                QueryNotice.Code.QUERY_CUT_TO_MODEL_INPUT,
+                withNotice(SearchMode.SEMANTIC, QueryNotice.Code.QUERY_CUT_TO_MODEL_INPUT)
+                        .notices()
+                        .getFirst()
+                        .code());
+        withNotice(SearchMode.HYBRID, QueryNotice.Code.QUERY_CUT_TO_MODEL_INPUT);
+        withNotice(SearchMode.HYBRID, QueryNotice.Code.LEXICAL_SIDE_SKIPPED);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> withNotice(SearchMode.LEXICAL, QueryNotice.Code.QUERY_CUT_TO_MODEL_INPUT));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> withNotice(SearchMode.SEMANTIC, QueryNotice.Code.LEXICAL_SIDE_SKIPPED));
+        assertThrows(IllegalArgumentException.class, () -> new QueryNotice(QueryNotice.Code.LEXICAL_SIDE_SKIPPED, " "));
+        assertThrows(NullPointerException.class, () -> new QueryNotice(null, "notice"));
+        assertEquals(List.of(), new QueryResult(List.of(), List.of()).notices());
+    }
+
+    @Test
     void aFallbackNamesAMissingSemanticPrerequisite() {
         for (QueryException.Reason reason : QueryException.Reason.values()) {
             if (ModeFallback.REASONS.contains(reason)) {
@@ -95,7 +117,21 @@ class QueryResultTest {
 
     private static QueryResult result(
             EmbeddingCoverage coverage, SearchMode requested, SearchMode effective, Optional<ModeFallback> fallback) {
-        return new QueryResult(List.of(), List.of(), coverage, requested, effective, fallback);
+        return new QueryResult(List.of(), List.of(), coverage, requested, effective, fallback, List.of());
+    }
+
+    private static QueryResult withNotice(SearchMode effective, QueryNotice.Code code) {
+        EmbeddingCoverage coverage = effective == SearchMode.LEXICAL ? null : new EmbeddingCoverage(1, 0, 0);
+        Optional<ModeFallback> fallback = Optional.empty();
+
+        return new QueryResult(
+                List.of(),
+                List.of(),
+                coverage,
+                effective,
+                effective,
+                fallback,
+                List.of(new QueryNotice(code, "notice")));
     }
 
     @Test
