@@ -161,6 +161,24 @@ class IndexResultTest {
         assertThrows(UnsupportedOperationException.class, () -> result.issues().clear());
     }
 
+    @Test
+    void defensivelyCopiesScanIssuesAndDefaultsThemToNone() {
+        WalkResult.Issue issue =
+                new WalkResult.Issue(Path.of("/project/private"), WalkResult.Cause.PERMISSION_DENIED, null);
+        List<WalkResult.Issue> scanIssues = new ArrayList<>(List.of(issue));
+        IndexResult result = new IndexResult(
+                CONTEXT, IndexResult.Status.PARTIAL, 1, 1, 0, 0, 1, List.of(), null, 0, 0, 0, null, 0, scanIssues);
+
+        scanIssues.clear();
+
+        assertEquals(List.of(issue), result.scanIssues());
+        assertThrows(
+                UnsupportedOperationException.class, () -> result.scanIssues().clear());
+        assertEquals(
+                List.of(),
+                new IndexResult(CONTEXT, IndexResult.Status.COMPLETE, 0, 0, 0, 0, 0, List.of()).scanIssues());
+    }
+
     @ParameterizedTest
     @EnumSource(
             value = ExtractionException.Reason.class,

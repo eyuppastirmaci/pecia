@@ -130,7 +130,9 @@ public final class IndexService {
      * Indexes admitted files in deterministic order, atomically replacing each file independently.
      * Unchanged content with a matching profile is skipped. After a successful run, confirmed missing
      * files in the target scope are deleted as one atomic batch; excluded records are retained.
-     * Content rejection/read errors retain old data, skip cleanup and produce a PARTIAL result. Storage
+     * Content rejection/read errors retain old data, skip cleanup and produce a PARTIAL result. Paths that discovery
+     * cannot read, such as a directory without permission, are reported as scan issues: the files that were found are
+     * indexed, cleanup is skipped, and the result is PARTIAL. Storage
      * or cleanup failures abort while preserving earlier per-file commits. A
      * valid empty directory creates a queryable empty index. This service owns and closes storage.
      *
@@ -139,7 +141,7 @@ public final class IndexService {
      * @throws IllegalArgumentException if configuration, paths, globs or tokenizer budgets are
      *     invalid
      * @throws NullPointerException if target is null
-     * @throws IndexException if discovery is incomplete or storage fails; includes completed work and
+     * @throws IndexException if storage fails; includes completed work and
      *     the cause
      */
     public IndexResult index(Path target) throws IOException, IndexException {
@@ -167,31 +169,17 @@ public final class IndexService {
      * @throws IOException if target/configuration resolution or initial discovery fails, before storage is opened
      * @throws IllegalArgumentException if configuration, paths, globs, tokenizer budgets, or the model cache or proxy
      *     settings are invalid
-     * @throws IndexException if discovery is incomplete, the semantic model or its embedder is unavailable, embedding
+     * @throws IndexException if the semantic model or its embedder is unavailable, embedding
      *     fails, or storage fails; includes completed work and the cause
      */
     public IndexResult index(Path target, IndexOptions options) throws IOException, IndexException {
         Objects.requireNonNull(options, "options");
         ProjectContext context = contextResolver.resolve(target);
         WalkResult scanResult = scan(context);
-
-        requireCompleteScan(context, scanResult);
-
         boolean semanticEnabled =
                 options.resolveSemanticEnabled(context.loadedConfig().config());
 
         return indexFiles(context, scanResult, options, semanticEnabled);
-    }
-
-    private void requireCompleteScan(ProjectContext context, WalkResult scanResult) throws IndexException {
-        if (scanResult.complete()) {
-            return;
-        }
-
-        IndexResult result = new IndexResult(
-                context, IndexResult.Status.INCOMPLETE_SCAN, scanResult.files().size(), 0, 0, List.of());
-
-        throw new IndexException("Indexing requires a complete scan", null, result, scanResult.issues());
     }
 
     /** Indexes the scanned files, making the semantic model available only when {@code semanticEnabled}. */
@@ -209,7 +197,7 @@ public final class IndexService {
         EmbeddingProfile profile = semanticModel == null ? null : profiles.get();
         TextEmbedder embedder =
                 semanticModel == null ? null : openEmbedder(context, candidates, semanticModel, workers);
-        Tally tally = new Tally(context, candidates.size(), semanticModel);
+        Tally tally = new Tally(context, candidates.size(), semanticModel, scanResult.issues());
 
         // Resources close in reverse order: the workers stop before the embedder they use closes.
         try (embedder;
@@ -251,7 +239,8 @@ public final class IndexService {
             // A cancelled run's scan may be stale by the time it stops, so it deletes nothing.
             cancellation.check();
 
-            if (tally.issues.isEmpty()) {
+            // A path that could not be read or discovered is not known to be gone.
+            if (tally.issues.isEmpty() && scanResult.complete()) {
                 IndexDeletionPlanner planner = new IndexDeletionPlanner(context);
                 var missing = planner.plan(scanResult, storage.files().findAll());
 
@@ -268,19 +257,21 @@ public final class IndexService {
         } catch (IOException | SQLException failure) {
             IndexResult result = tally.result(IndexResult.Status.FAILED);
 
-            throw new IndexException("Index storage or cleanup operation failed", failure, result, List.of());
+            throw new IndexException("Index storage or cleanup operation failed", failure, result);
         } catch (EmbeddingException failure) {
             // A failing file is not written; a failure while embedding stored chunks keeps the committed pages and the
             // cleanup that ran before it.
             IndexResult result = tally.result(IndexResult.Status.EMBEDDING_FAILED);
 
-            throw new IndexException("Semantic indexing could not embed a file's chunks", failure, result, List.of());
+            throw new IndexException("Semantic indexing could not embed a file's chunks", failure, result);
         } catch (Cancellation.CancelledException cancelled) {
             // Storage, the workers, and the embedder are already closed; no file in progress was written.
             return tally.result(IndexResult.Status.CANCELLED);
         }
 
-        return tally.result(tally.issues.isEmpty() ? IndexResult.Status.COMPLETE : IndexResult.Status.PARTIAL);
+        boolean partial = !tally.issues.isEmpty() || !scanResult.complete();
+
+        return tally.result(partial ? IndexResult.Status.PARTIAL : IndexResult.Status.COMPLETE);
     }
 
     private TextEmbedder openEmbedder(ProjectContext context, List<Path> candidates, ModelOutcome model, int workers)
@@ -293,7 +284,7 @@ public final class IndexService {
             IndexResult result = new IndexResult(
                     context, IndexResult.Status.EMBEDDER_UNAVAILABLE, candidates.size(), 0, 0, 0, 0, List.of(), model);
 
-            throw new IndexException("Semantic indexing could not open its embedder", failure, result, List.of());
+            throw new IndexException("Semantic indexing could not open its embedder", failure, result);
         }
     }
 
@@ -309,7 +300,7 @@ public final class IndexService {
             IndexResult result =
                     new IndexResult(context, IndexResult.Status.MODEL_UNAVAILABLE, candidates.size(), 0, 0, List.of());
 
-            throw new IndexException("Semantic indexing needs its model", failure, result, List.of());
+            throw new IndexException("Semantic indexing needs its model", failure, result);
         }
     }
 
@@ -327,6 +318,7 @@ public final class IndexService {
         private final ProjectContext context;
         private final int candidateCount;
         private final ModelOutcome semanticModel;
+        private final List<WalkResult.Issue> scanIssues;
         private final List<Long> unchanged = new ArrayList<>();
         private final List<IndexResult.FileIssue> issues = new ArrayList<>();
         private int indexedFiles;
@@ -338,10 +330,15 @@ public final class IndexService {
         private EmbeddingBackfill backfill;
         private EmbeddingCoverage coverage;
 
-        Tally(ProjectContext context, int candidateCount, ModelOutcome semanticModel) {
+        Tally(
+                ProjectContext context,
+                int candidateCount,
+                ModelOutcome semanticModel,
+                List<WalkResult.Issue> scanIssues) {
             this.context = context;
             this.candidateCount = candidateCount;
             this.semanticModel = semanticModel;
+            this.scanIssues = scanIssues;
         }
 
         void add(FileIndexer.Result result) {
@@ -375,7 +372,8 @@ public final class IndexService {
                     backfill == null ? 0 : backfill.stored(),
                     discardedEmbeddings,
                     coverage,
-                    rechunkedFiles);
+                    rechunkedFiles,
+                    scanIssues);
         }
     }
 

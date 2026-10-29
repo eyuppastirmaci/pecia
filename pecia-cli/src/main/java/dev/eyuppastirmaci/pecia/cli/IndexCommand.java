@@ -81,7 +81,7 @@ public class IndexCommand implements Callable<Integer> {
      * the indexed files whose unchanged content was chunked again for new settings. Ctrl+C stops the run before its
      * next file, batch, or page and prints what it finished; the files it indexed stay, and the next run continues.
      *
-     * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan, an unavailable model or
+     * @return 0 on complete indexing/preview, 1 on invalid input, file or scan issues, an unavailable model or
      *     embedder, an embedding failure, or storage failure, 130 when Ctrl+C stopped the run
      */
     @Override
@@ -144,7 +144,7 @@ public class IndexCommand implements Callable<Integer> {
             report(preview);
 
             for (WalkResult.Issue issue : result.issues()) {
-                spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.reason());
+                reportScanIssue(issue);
             }
 
             if (!result.complete()) {
@@ -185,10 +185,6 @@ public class IndexCommand implements Callable<Integer> {
 
             reportIndex(failure.result());
 
-            for (WalkResult.Issue issue : failure.scanIssues()) {
-                spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.reason());
-            }
-
             String detail =
                     failure.getCause() == null ? "" : ": " + failure.getCause().getMessage();
             spec.commandLine().getErr().println("pecia index: " + failure.getMessage() + detail);
@@ -227,6 +223,10 @@ public class IndexCommand implements Callable<Integer> {
             out.println("backfilled: " + result.backfilledChunks());
         }
 
+        for (WalkResult.Issue issue : result.scanIssues()) {
+            reportScanIssue(issue);
+        }
+
         for (IndexResult.FileIssue issue : result.issues()) {
             spec.commandLine()
                     .getErr()
@@ -237,6 +237,10 @@ public class IndexCommand implements Callable<Integer> {
                             + ": "
                             + issue.message());
         }
+    }
+
+    private void reportScanIssue(WalkResult.Issue issue) {
+        spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.cause() + ": " + issue.reason());
     }
 
     private void announceDownload(SemanticModel model, Path file) {

@@ -571,16 +571,16 @@ class IndexCommandTest {
     }
 
     @Test
-    void incompleteRealScanReportsIssuesWithoutCreatingStorage() throws IOException {
+    void aPartialScanIndexesTheFoundFilesAndReportsTheUnreadablePath() throws IOException {
         Path bad = Files.createDirectories(root.resolve("bad/.gitignore"));
         Files.writeString(root.resolve("good.txt"), "good");
 
         assertEquals(1, run(root.toString()));
-        assertTrue(out.toString().contains("indexed: 0"));
-        assertTrue(err.toString().contains("warning: " + bad));
-        assertTrue(err.toString().contains("pecia index: Indexing requires a complete scan"));
+        assertTrue(out.toString().contains("indexed: 1"));
+        assertTrue(err.toString().contains("warning: " + bad + ": IO_ERROR: "), err.toString());
+        assertFalse(err.toString().contains("pecia index:"), err.toString());
         assertFalse(err.toString().contains("\tat "));
-        assertFalse(Files.exists(root.resolve(".pecia")));
+        assertTrue(Files.exists(root.resolve(".pecia/index.db")));
     }
 
     @Test

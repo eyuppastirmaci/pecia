@@ -25,6 +25,7 @@ import java.util.Objects;
  *     when the run did not embed or stopped before
  * @param rechunkedFiles indexed files whose content was unchanged but whose chunks were rebuilt for other extraction,
  *     tokenizer, or chunking settings; a subset of {@code indexedFiles}
+ * @param scanIssues paths discovery could not read; the run indexed the files it found and deleted none
  */
 public record IndexResult(
         ProjectContext context,
@@ -40,16 +41,18 @@ public record IndexResult(
         long backfilledChunks,
         long discardedEmbeddings,
         EmbeddingCoverage embeddingCoverage,
-        int rechunkedFiles) {
+        int rechunkedFiles,
+        List<WalkResult.Issue> scanIssues) {
 
     /**
-     * Copies issues and rejects negative counters, more processed files than candidates, and embeddings beyond the
+     * Copies issues and scan issues and rejects negative counters, more processed files than candidates, and embeddings beyond the
      * written chunks or without a semantic model.
      */
     public IndexResult {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(status, "status");
         issues = List.copyOf(issues);
+        scanIssues = List.copyOf(scanIssues);
 
         if (candidateCount < 0
                 || indexedFiles < 0
@@ -76,6 +79,40 @@ public record IndexResult(
         if (rechunkedFiles < 0 || rechunkedFiles > indexedFiles) {
             throw new IllegalArgumentException("rechunkedFiles must be between zero and indexedFiles");
         }
+    }
+
+    /** Creates an outcome of a run whose discovery read every path. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            int unchangedFiles,
+            int deletedFiles,
+            long writtenChunks,
+            List<FileIssue> issues,
+            ModelOutcome semanticModel,
+            long embeddedChunks,
+            long backfilledChunks,
+            long discardedEmbeddings,
+            EmbeddingCoverage embeddingCoverage,
+            int rechunkedFiles) {
+        this(
+                context,
+                status,
+                candidateCount,
+                indexedFiles,
+                unchangedFiles,
+                deletedFiles,
+                writtenChunks,
+                issues,
+                semanticModel,
+                embeddedChunks,
+                backfilledChunks,
+                discardedEmbeddings,
+                embeddingCoverage,
+                rechunkedFiles,
+                List.of());
     }
 
     /** Creates an outcome that rebuilt no file's chunks for new settings. */
@@ -233,10 +270,11 @@ public record IndexResult(
 
         /** All admitted candidates were indexed or unchanged, and any cleanup completed. */
         COMPLETE,
-        /** Discovery completed, but one or more files could not be extracted. */
+        /**
+         * Some files could not be extracted, or discovery could not read some paths; every other file was indexed,
+         * and no file was deleted, since a file that could not be read is not known to be gone.
+         */
         PARTIAL,
-        /** Discovery was incomplete, so no indexing was attempted. */
-        INCOMPLETE_SCAN,
         /** Semantic indexing was requested, but its model could not be made available; nothing was indexed. */
         MODEL_UNAVAILABLE,
         /** The semantic model was available, but its embedder could not be opened; nothing was indexed. */

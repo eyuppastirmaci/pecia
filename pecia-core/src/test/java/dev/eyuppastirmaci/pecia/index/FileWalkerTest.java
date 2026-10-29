@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -22,13 +25,32 @@ class FileWalkerTest {
     }
 
     @Test
-    void scanIssueRequiresAPathButAllowsAnExceptionWithoutAMessage() {
-        assertThrows(NullPointerException.class, () -> new WalkResult.Issue(null, "read failed"));
+    void scanIssueRequiresAPathAndCauseButAllowsAnExceptionWithoutAMessage() {
+        assertThrows(
+                NullPointerException.class, () -> new WalkResult.Issue(null, WalkResult.Cause.IO_ERROR, "read failed"));
+        assertThrows(NullPointerException.class, () -> new WalkResult.Issue(root, null, "read failed"));
 
-        var issue = new WalkResult.Issue(root, new IOException().getMessage());
+        var issue = WalkResult.Issue.of(root, new IOException());
 
         assertEquals(root, issue.path());
+        assertEquals(WalkResult.Cause.IO_ERROR, issue.cause());
         assertNull(issue.reason());
+    }
+
+    @Test
+    void scanIssuesAreClassifiedByTheirFailure() {
+        assertEquals(
+                WalkResult.Cause.PERMISSION_DENIED,
+                WalkResult.Issue.of(root, new AccessDeniedException("docs")).cause());
+        assertEquals(
+                WalkResult.Cause.NOT_FOUND,
+                WalkResult.Issue.of(root, new NoSuchFileException("docs")).cause());
+        assertEquals(
+                WalkResult.Cause.IO_ERROR,
+                WalkResult.Issue.of(root, new FileSystemException("docs")).cause());
+        assertEquals(
+                "docs",
+                WalkResult.Issue.of(root, new AccessDeniedException("docs")).reason());
     }
 
     @Test
