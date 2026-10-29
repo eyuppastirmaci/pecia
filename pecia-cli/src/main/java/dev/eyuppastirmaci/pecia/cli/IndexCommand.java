@@ -9,10 +9,14 @@ import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.index.WalkResult;
+import dev.eyuppastirmaci.pecia.semantic.ModelException;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
@@ -54,15 +58,17 @@ public class IndexCommand implements Callable<Integer> {
     /**
      * Indexes a folder or previews discovery without processing content. Configuration warnings are printed to stderr
      * before any other output and do not change the exit code. The semantic flags override {@code semantic.enabled} for
-     * this run, and the preview reports the resolved choice.
+     * this run, and the preview reports the resolved choice. A semantic run announces a model download on stderr when
+     * one starts and reports the model in its summary.
      *
-     * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan or
-     *     storage failure
+     * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan, an unavailable model,
+     *     or storage failure
      */
     @Override
     public Integer call() {
         try {
             IndexOptions options = semantic == null ? IndexOptions.configured() : IndexOptions.semantic(semantic);
+            options = options.withDownloadListener(this::announceDownload);
 
             if (!dryRun) {
                 IndexResult result = indexService.index(path, options);
@@ -92,6 +98,14 @@ public class IndexCommand implements Callable<Integer> {
             return 0;
         } catch (IndexException failure) {
             WarningPrinter.print(spec.commandLine().getErr(), failure.result().warnings());
+
+            if (failure.result().status() == IndexResult.Status.MODEL_UNAVAILABLE
+                    && failure.getCause() instanceof ModelException model) {
+                reportUnavailableModel(model);
+
+                return 1;
+            }
+
             reportIndex(failure.result());
 
             for (WalkResult.Issue issue : failure.scanIssues()) {
@@ -122,6 +136,16 @@ public class IndexCommand implements Callable<Integer> {
         out.println("rejected: " + result.rejectedFiles());
         out.println("failed: " + result.failedFiles());
 
+        ModelOutcome model = result.semanticModel();
+
+        if (model != null) {
+            out.println("model: "
+                    + model.model().name()
+                    + (model.status() == ModelOutcome.Status.DOWNLOADED
+                            ? " downloaded (" + megabytes(model.model().size()) + ")"
+                            : " cached"));
+        }
+
         for (IndexResult.FileIssue issue : result.issues()) {
             spec.commandLine()
                     .getErr()
@@ -132,6 +156,31 @@ public class IndexCommand implements Callable<Integer> {
                             + ": "
                             + issue.message());
         }
+    }
+
+    private void announceDownload(SemanticModel model, Path file) {
+        spec.commandLine()
+                .getErr()
+                .println("Downloading "
+                        + model.name()
+                        + " ("
+                        + megabytes(model.size())
+                        + ") from "
+                        + model.downloadUri().getHost()
+                        + " into "
+                        + file.getParent());
+    }
+
+    private void reportUnavailableModel(ModelException failure) {
+        PrintWriter err = spec.commandLine().getErr();
+
+        err.println("pecia index: " + IndexResult.Status.MODEL_UNAVAILABLE + ": " + failure.reason() + ": "
+                + failure.getMessage());
+        err.println("Run with --no-semantic to build only the lexical index.");
+    }
+
+    private static String megabytes(long bytes) {
+        return String.format(Locale.ROOT, "%.1f MB", bytes / 1_000_000.0);
     }
 
     private void report(IndexPreview preview) {

@@ -4,8 +4,10 @@ import static dev.eyuppastirmaci.pecia.cli.packaging.PackagedCliAssertions.asser
 import static dev.eyuppastirmaci.pecia.cli.packaging.PackagedCliAssertions.hitLocations;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import dev.eyuppastirmaci.pecia.cli.packaging.PackagedCli.Result;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -71,6 +73,42 @@ class PackagedCliSemanticSettingsIT {
         Result lexical = cli.runReadOnly(project, "query", "modeneedle", "--mode", "lexical");
 
         assertEquals(List.of("guide.md:1-3"), hitLocations(lexical));
+    }
+
+    @Test
+    void offlineSemanticIndexingFailsWithTheLexicalWayOutAndLexicalCommandsStayOffline() throws Exception {
+        cli.enableOffline();
+        SemanticModel model = SemanticModel.MINILM;
+        Path lockFile = Path.of("models", model.name(), model.revision(), ".lock");
+
+        Result semantic =
+                cli.runDeniedDownload(project, model.downloadUri().getHost(), lockFile, "index", "--semantic");
+
+        assertEquals(1, semantic.exitCode());
+        assertEquals("", semantic.out());
+        // The notice comes first: the download is announced before its connection is denied.
+        assertEquals(
+                List.of(
+                        "Downloading all-MiniLM-L6-v2 (90.4 MB) from huggingface.co into "
+                                + cacheDirectory().resolve(lockFile).getParent(),
+                        "pecia index: MODEL_UNAVAILABLE: OFFLINE: Could not reach huggingface.co to download"
+                                + " all-MiniLM-L6-v2",
+                        "Run with --no-semantic to build only the lexical index."),
+                semantic.err().lines().toList());
+        assertFalse(Files.exists(project.resolve(".pecia")));
+
+        // The lexical way out works offline, and nothing below may reach for the network or the model.
+        Result lexical = cli.run(project, "index", "--no-semantic");
+        assertSuccess(lexical);
+        assertFalse(lexical.out().contains("model:"), lexical.out());
+        Files.writeString(config, "[semantic]\nenabled = true\n");
+        assertEquals("semantic: enabled", semanticLine(cli.runReadOnly(project, "index", "--dry-run")));
+        assertEquals(List.of("guide.md:1-3"), hitLocations(cli.runReadOnly(project, "query", "modeneedle")));
+    }
+
+    /** Returns the cache directory the offline guard gives the CLI as {@code PECIA_CACHE_DIR}. */
+    private Path cacheDirectory() {
+        return sandbox.resolve("offline/cache/pecia");
     }
 
     private static String semanticLine(Result result) {

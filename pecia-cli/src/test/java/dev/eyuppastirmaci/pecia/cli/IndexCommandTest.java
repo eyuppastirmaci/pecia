@@ -9,7 +9,9 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.semantic.ModelException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.ModelProvider;
 import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
@@ -25,7 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import picocli.CommandLine;
 
 class IndexCommandTest {
@@ -127,6 +129,7 @@ class IndexCommandTest {
 
     private final StringWriter out = new StringWriter();
     private final StringWriter err = new StringWriter();
+    private ModelProvider models;
 
     @BeforeEach
     void useCanonicalRoot() throws IOException {
@@ -187,19 +190,81 @@ class IndexCommandTest {
         assertEquals("", err.toString());
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"--semantic", "--no-semantic"})
-    void semanticFlagsLeaveTheRealIndexSummaryUnchanged(String flag) throws IOException {
+    @Test
+    void semanticRunsAddTheModelToTheSummaryAndLexicalRunsDoNot() throws IOException {
         Files.writeString(root.resolve("a.txt"), "needle");
 
-        assertEquals(0, run(root.toString(), flag));
-        String withFlag = out.toString();
+        assertEquals(0, run(root.toString(), "--semantic"));
+        List<String> summary = out.toString().lines().toList();
+        assertEquals("model: all-MiniLM-L6-v2 cached", summary.getLast());
         assertEquals("", err.toString());
 
-        // Indexing from scratch without the flag prints the same summary, because embeddings do not exist yet.
+        // The same project indexed from scratch without semantic indexing prints the rest of the summary unchanged.
         deleteIndex();
         assertSuccessfulIndex(1, 1, 0, 0, 1);
-        assertEquals(withFlag, out.toString());
+        assertEquals(
+                summary.subList(0, summary.size() - 1), out.toString().lines().toList());
+
+        deleteIndex();
+        out.getBuffer().setLength(0);
+        assertEquals(0, run(root.toString(), "--no-semantic"));
+        assertEquals(
+                summary.subList(0, summary.size() - 1), out.toString().lines().toList());
+    }
+
+    @Test
+    void aDownloadIsAnnouncedOnStderrAndReportedInTheSummary() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        Path file = root.resolve("cache/models/all-MiniLM-L6-v2/rev/model.onnx");
+        models = listener -> {
+            listener.downloading(SemanticModel.MINILM, file);
+            return new ModelOutcome(ModelOutcome.Status.DOWNLOADED, SemanticModel.MINILM, file);
+        };
+
+        assertEquals(0, run(root.toString(), "--semantic"));
+
+        assertEquals(
+                "Downloading all-MiniLM-L6-v2 (90.4 MB) from huggingface.co into " + file.getParent()
+                        + System.lineSeparator(),
+                err.toString());
+        assertEquals(
+                "model: all-MiniLM-L6-v2 downloaded (90.4 MB)",
+                out.toString().lines().toList().getLast());
+    }
+
+    @ParameterizedTest
+    @EnumSource(ModelException.Reason.class)
+    void anUnavailableModelPrintsTheReasonAndTheLexicalWayOutWithoutASummary(ModelException.Reason reason)
+            throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        models = listener -> {
+            throw new ModelException(reason, "explained failure", null);
+        };
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        assertEquals("", out.toString());
+        assertEquals(
+                List.of(
+                        "pecia index: MODEL_UNAVAILABLE: " + reason + ": explained failure",
+                        "Run with --no-semantic to build only the lexical index."),
+                err.toString().lines().toList());
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void configurationWarningsStillComeBeforeAnUnavailableModel() throws IOException {
+        Path config = Files.writeString(root.resolve(".pecia.toml"), TYPO_CONFIG);
+        Files.writeString(root.resolve("a.txt"), "needle");
+        models = listener -> {
+            throw new ModelException(ModelException.Reason.OFFLINE, "Could not reach huggingface.co", null);
+        };
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(typoWarning(config), lines.get(0));
+        assertTrue(lines.get(1).startsWith("pecia index: MODEL_UNAVAILABLE: OFFLINE:"), lines.get(1));
     }
 
     @Test
@@ -534,8 +599,8 @@ class IndexCommandTest {
         // Semantic runs get the model from a stub, so these tests never download it.
         ModelOutcome cached =
                 new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, root.resolve("model.onnx"));
-        CommandLine commandLine =
-                new CommandLine(new IndexCommand(IndexService.withModelProvider(loader, listener -> cached)));
+        ModelProvider provider = models != null ? models : listener -> cached;
+        CommandLine commandLine = new CommandLine(new IndexCommand(IndexService.withModelProvider(loader, provider)));
         commandLine.setOut(new PrintWriter(out));
         commandLine.setErr(new PrintWriter(err));
 
