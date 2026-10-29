@@ -49,6 +49,7 @@ class IndexServiceTest {
                 List.of(),
                 List.of(),
                 null,
+                null,
                 null);
 
         assertThrows(NullPointerException.class, () -> new IndexPreview(null, loaded, walked, false, changes));

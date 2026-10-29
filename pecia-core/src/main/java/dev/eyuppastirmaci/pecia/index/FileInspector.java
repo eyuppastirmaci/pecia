@@ -114,7 +114,7 @@ final class FileInspector {
             throw new IllegalArgumentException("Extracted document must preserve the loaded source identity and hash");
         }
 
-        return new Readable(document, kind);
+        return new Readable(document, kind, content.size());
     }
 
     /** What a run would do with a candidate. */
@@ -123,8 +123,12 @@ final class FileInspector {
     /** A candidate whose stored file matches its content and chunking; a run skips it. */
     record Unchanged(StoredFile file) implements Inspection {}
 
-    /** A candidate a run would extract, chunk, and write. */
-    record Readable(Document document, Kind kind) implements Inspection {
+    /**
+     * A candidate a run would extract, chunk, and write.
+     *
+     * @param size the file's size in bytes
+     */
+    record Readable(Document document, Kind kind, long size) implements Inspection {
 
         /** Requires a document and a kind. */
         Readable {

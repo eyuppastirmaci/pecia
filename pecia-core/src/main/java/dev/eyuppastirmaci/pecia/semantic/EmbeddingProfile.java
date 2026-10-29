@@ -1,6 +1,5 @@
 package dev.eyuppastirmaci.pecia.semantic;
 
-import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerIdentity;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -56,12 +55,11 @@ public record EmbeddingProfile(
     /**
      * Describes the embeddings Pecia makes: each chunk's stored content run through the pinned all-MiniLM-L6-v2 with
      * its bundled tokenizer, mean-pooled over the attention mask and scaled to unit length.
-     *
-     * @throws IllegalStateException if the bundled tokenizer vocabulary cannot be loaded
      */
     public static EmbeddingProfile minilm() {
         SemanticModel model = SemanticModel.MINILM;
-        TokenizerIdentity tokenizer = MiniLmTokenizer.bundled().identity();
+        // The identity is a constant, so building the profile never loads the tokenizer's vocabulary.
+        TokenizerIdentity tokenizer = TokenizerIdentity.MINILM;
 
         return new EmbeddingProfile(
                 model.repository(),

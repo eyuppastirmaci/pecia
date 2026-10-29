@@ -48,12 +48,12 @@ class IndexPreviewChangesTest {
         IndexPreview.Changes changes = assertAgreesWithTheRun(project);
 
         assertEquals(IndexPreview.IndexState.CURRENT, changes.index());
-        assertEquals(List.of(Path.of("added.md")), changes.newFiles());
-        assertEquals(List.of(LexicalTestCorpus.NOTES), changes.changedFiles());
+        assertEquals(List.of(Path.of("added.md")), paths(changes.newFiles()));
+        assertEquals(List.of(LexicalTestCorpus.NOTES), paths(changes.changedFiles()));
         assertEquals(List.of(), changes.rechunkedFiles());
         assertEquals(5, changes.unchangedFiles().size());
         assertEquals(List.of(), changes.rejectedFiles());
-        assertEquals(List.of(LexicalTestCorpus.CONFIG), changes.removedFiles());
+        assertEquals(List.of(LexicalTestCorpus.CONFIG), paths(changes.removedFiles()));
         assertNull(changes.storageFailure());
     }
 
@@ -137,7 +137,7 @@ class IndexPreviewChangesTest {
         IndexPreview.Changes changes = assertAgreesWithTheRun(project);
 
         assertEquals(IndexPreview.IndexState.UPGRADE, changes.index());
-        assertTrue(changes.changedFiles().contains(LexicalTestCorpus.NOTES), changes.toString());
+        assertTrue(paths(changes.changedFiles()).contains(LexicalTestCorpus.NOTES), changes.toString());
         assertEquals(before, previewDirectories(), "The upgraded copy is removed");
     }
 
@@ -176,6 +176,7 @@ class IndexPreviewChangesTest {
                         List.of(),
                         List.of(),
                         null,
+                        null,
                         null));
         assertThrows(
                 IllegalArgumentException.class,
@@ -187,13 +188,24 @@ class IndexPreviewChangesTest {
                         List.of(),
                         List.of(),
                         List.of(),
+                        null,
                         StorageFailure.CORRUPT,
                         "damaged"));
-        List<Path> added = new ArrayList<>(List.of(Path.of("a.md")));
+        IndexPreview.PlannedFile file = new IndexPreview.PlannedFile(Path.of("a.md"), IndexPreview.Count.estimate(2));
+        List<IndexPreview.PlannedFile> added = new ArrayList<>(List.of(file));
         IndexPreview.Changes changes = new IndexPreview.Changes(
-                IndexPreview.IndexState.NONE, added, List.of(), List.of(), List.of(), List.of(), List.of(), null, null);
+                IndexPreview.IndexState.NONE,
+                added,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null);
         added.clear();
-        assertEquals(List.of(Path.of("a.md")), changes.newFiles());
+        assertEquals(List.of(file), changes.newFiles());
     }
 
     /**
@@ -226,6 +238,10 @@ class IndexPreviewChangesTest {
         assertEquals(changes.rejectedFiles(), result.issues());
 
         return changes;
+    }
+
+    private static List<Path> paths(List<IndexPreview.PlannedFile> files) {
+        return files.stream().map(IndexPreview.PlannedFile::sourcePath).toList();
     }
 
     /** Applies one seeded edit of the kinds a project sees between runs. */

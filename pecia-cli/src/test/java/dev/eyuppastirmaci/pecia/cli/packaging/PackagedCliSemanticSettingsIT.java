@@ -46,17 +46,20 @@ class PackagedCliSemanticSettingsIT {
 
     @Test
     void dryRunsReportTheSemanticChoiceWithFlagsOverridingTheFile() throws Exception {
-        // Dry runs must stay offline whatever semantic indexing resolves to.
+        // Dry runs stay offline and write nothing whatever semantic indexing resolves to; a semantic one may look at
+        // the
+        // model cache but never loads the runtime.
         cli.enableOffline();
         Files.writeString(config, "[semantic]\nenabled = true\n");
 
-        assertEquals("semantic: enabled", semanticLine(cli.runReadOnly(project, "index", "--dry-run")));
+        assertEquals("semantic: enabled", semanticLine(cli.runSemanticPreview(project, "index", "--dry-run")));
         assertEquals(
                 "semantic: disabled", semanticLine(cli.runReadOnly(project, "index", "--dry-run", "--no-semantic")));
 
         Files.writeString(config, "[semantic]\nenabled = false\n");
 
-        assertEquals("semantic: enabled", semanticLine(cli.runReadOnly(project, "index", "--dry-run", "--semantic")));
+        assertEquals(
+                "semantic: enabled", semanticLine(cli.runSemanticPreview(project, "index", "--dry-run", "--semantic")));
     }
 
     @Test
@@ -111,7 +114,7 @@ class PackagedCliSemanticSettingsIT {
         assertSuccess(lexical);
         assertFalse(lexical.out().contains("model:"), lexical.out());
         Files.writeString(config, "[semantic]\nenabled = true\n");
-        assertEquals("semantic: enabled", semanticLine(cli.runReadOnly(project, "index", "--dry-run")));
+        assertEquals("semantic: enabled", semanticLine(cli.runSemanticPreview(project, "index", "--dry-run")));
         assertEquals(List.of("guide.md:1-3"), hitLocations(cli.runReadOnly(project, "query", "modeneedle")));
     }
 

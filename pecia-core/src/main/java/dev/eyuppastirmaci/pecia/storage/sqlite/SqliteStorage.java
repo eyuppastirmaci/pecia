@@ -26,7 +26,9 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.sqlite.JDBC;
@@ -531,6 +533,60 @@ public final class SqliteStorage implements AutoCloseable {
      */
     public boolean hasEmbeddings() throws SQLException {
         return new SqliteEmbeddingRepository(connection).any();
+    }
+
+    /**
+     * Returns how many chunks each stored file has, by file ID; files without chunks are absent. This method never
+     * writes data.
+     *
+     * @throws SQLException if reading fails
+     */
+    public Map<Long, Long> chunkCounts() throws SQLException {
+        Map<Long, Long> counts = new HashMap<>();
+
+        try (var statement = connection.createStatement();
+                var rows = statement.executeQuery("SELECT file_id, count(*) FROM chunks GROUP BY file_id")) {
+            while (rows.next()) {
+                counts.put(rows.getLong(1), rows.getLong(2));
+            }
+        }
+
+        return Map.copyOf(counts);
+    }
+
+    /**
+     * Counts each stored file's chunks like {@link #embeddingCoverage(EmbeddingProfile)}, by file ID; files without
+     * chunks are absent. This method never writes data.
+     *
+     * @throws SQLException if reading fails
+     * @throws NullPointerException if profile is null
+     */
+    public Map<Long, EmbeddingCoverage> embeddingCoverageByFile(EmbeddingProfile profile) throws SQLException {
+        Map<Long, EmbeddingCoverage> coverage = new HashMap<>();
+
+        try (var query = connection.prepareStatement("""
+                SELECT
+                    c.file_id,
+                    count(*) FILTER (WHERE p.fingerprint = ?),
+                    count(*) FILTER (WHERE p.fingerprint != ?),
+                    count(*) FILTER (WHERE e.chunk_id IS NULL)
+                FROM chunks c
+                LEFT JOIN chunk_embeddings e ON e.chunk_id = c.id
+                LEFT JOIN embedding_profiles p ON p.id = e.profile_id
+                GROUP BY c.file_id
+                """)) {
+            query.setString(1, profile.fingerprint());
+            query.setString(2, profile.fingerprint());
+
+            try (var rows = query.executeQuery()) {
+                while (rows.next()) {
+                    coverage.put(
+                            rows.getLong(1), new EmbeddingCoverage(rows.getLong(2), rows.getLong(3), rows.getLong(4)));
+                }
+            }
+        }
+
+        return Map.copyOf(coverage);
     }
 
     /**
