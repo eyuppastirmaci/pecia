@@ -524,6 +524,16 @@ public final class SqliteStorage implements AutoCloseable {
     }
 
     /**
+     * Returns whether any chunk has an embedding, of any profile. Needs no embedding profile, so callers can decide
+     * whether semantic search is worth preparing without touching the semantic model's classes.
+     *
+     * @throws SQLException if reading fails
+     */
+    public boolean hasEmbeddings() throws SQLException {
+        return new SqliteEmbeddingRepository(connection).any();
+    }
+
+    /**
      * Counts stored chunks by whether they have an embedding of the given profile, of another profile, or none, in one
      * read. This method never writes data.
      *

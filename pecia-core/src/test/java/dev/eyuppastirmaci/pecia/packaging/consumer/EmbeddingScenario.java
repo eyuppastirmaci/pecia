@@ -111,19 +111,23 @@ final class EmbeddingScenario {
         expected.keySet().removeIf(chunk -> chunk.startsWith("docs/notes.txt#") || chunk.startsWith("config.yaml#"));
         check(!expected.isEmpty() && vectors(database).equals(expected), "Only changed and deleted files lose vectors");
 
+        // Explicitly lexical: in auto mode an index with vectors would reach for the model.
         QueryService queries = new QueryService(loader);
+        QueryOptions lexical = QueryOptions.mode(SearchMode.LEXICAL);
         check(
-                !queries.query(root, new SearchRequest("refunds")).hits().isEmpty()
-                        && !queries.query(root, new SearchRequest("payment"))
+                !queries.query(root, new SearchRequest("refunds"), lexical)
+                                .hits()
+                                .isEmpty()
+                        && !queries.query(root, new SearchRequest("payment"), lexical)
                                 .hits()
                                 .isEmpty(),
-                "Packaged queries must search an index that holds vectors");
+                "Packaged lexical queries must search an index that holds vectors");
     }
 
     /**
      * Queries the semantically indexed corpus with its shortest chunk's text and the tiny model beside the project,
-     * semantically and then in hybrid mode: that chunk comes first, with similarity 1 and then ranked first by both
-     * sides, and every chunk could be compared.
+     * semantically, in hybrid mode, and in the default auto mode: that chunk comes first, with similarity 1 and then
+     * ranked first by both sides, auto chooses hybrid search, and every chunk could be compared.
      */
     static void querySemantically(Path root) throws Exception {
         ModelOutcome tiny =
@@ -163,6 +167,17 @@ final class EmbeddingScenario {
                         && fused.fusedRanks().orElseThrow().semantic().orElse(0) == 1
                         && fused.fusedRanks().orElseThrow().lexical().isPresent(),
                 "A packaged hybrid query with a chunk's text must find that chunk first on both sides");
+
+        QueryResult automatic = QueryService.withModelLookup(
+                        new PeciaConfigLoader(new PeciaConfigParser()), () -> Optional.of(tiny))
+                .query(root, new SearchRequest(chunks.get(key)));
+
+        check(
+                automatic.requestedMode() == SearchMode.AUTO
+                        && automatic.effectiveMode() == SearchMode.HYBRID
+                        && automatic.fallback().isEmpty()
+                        && automatic.hits().equals(hybrid.hits()),
+                "A packaged auto query of a semantic index must search in hybrid mode");
     }
 
     /** Queries semantically with the user's empty model cache, which must fail without downloading anything. */

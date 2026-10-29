@@ -155,7 +155,7 @@ class SemanticQueryTest {
 
         QueryException failure = assertFailsWithoutChanges(service, "refunds", mode);
 
-        assertEquals(QueryException.Reason.EMBEDDINGS_MISSING, failure.reason());
+        assertEquals(QueryException.Reason.EMBEDDINGS_OUTDATED, failure.reason());
         assertTrue(failure.getMessage().contains("only embeddings of an earlier semantic model"), failure.getMessage());
         assertEquals(0, modelLookups.get());
     }
@@ -282,19 +282,17 @@ class SemanticQueryTest {
     }
 
     @Test
-    void lexicalAndAutoQueriesOfASemanticIndexNeverLookForTheModelOrExtension() throws Exception {
+    void lexicalQueriesOfASemanticIndexNeverLookForTheModelOrExtension() throws Exception {
         indexSemantically();
-        QueryService service = service(TinyModel.cached());
 
-        for (SearchMode mode : List.of(SearchMode.LEXICAL, SearchMode.AUTO)) {
-            QueryResult result = service.query(root, new SearchRequest("refunds"), QueryOptions.mode(mode));
+        QueryResult result = service(TinyModel.cached())
+                .query(root, new SearchRequest("refunds"), QueryOptions.mode(SearchMode.LEXICAL));
 
-            assertEquals(List.of("refunds.md#0"), keys(result.hits()));
-            assertEquals(
-                    SearchScore.Kind.SQLITE_BM25,
-                    result.hits().getFirst().score().kind());
-            assertNull(result.embeddingCoverage());
-        }
+        assertEquals(List.of("refunds.md#0"), keys(result.hits()));
+        assertEquals(
+                SearchScore.Kind.SQLITE_BM25, result.hits().getFirst().score().kind());
+        assertNull(result.embeddingCoverage());
+        assertEquals(SearchMode.LEXICAL, result.effectiveMode());
 
         assertEquals(0, modelLookups.get());
         assertEquals(0, libraryLookups.get());

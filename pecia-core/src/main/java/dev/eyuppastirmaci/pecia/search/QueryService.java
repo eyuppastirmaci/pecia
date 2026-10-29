@@ -28,6 +28,12 @@ import java.util.function.Supplier;
 /** Resolves project configuration and queries an existing index without scanning source files. */
 public final class QueryService {
 
+    private static final String NO_EMBEDDINGS =
+            "The index has no embeddings for semantic search; index the project semantically first";
+    private static final String OUTDATED_EMBEDDINGS =
+            "The index holds only embeddings of an earlier semantic model; index the project semantically to rebuild"
+                    + " them";
+
     private final ProjectContextResolver contextResolver;
     private final StorageOpener storageOpener;
     private final ModelLookup models;
@@ -116,18 +122,25 @@ public final class QueryService {
 
     /**
      * Searches like {@link #query(Path, SearchRequest)} in the mode the caller chooses, which overrides {@code
-     * search.mode}. {@link SearchMode#LEXICAL} and {@link SearchMode#AUTO} search lexically.
+     * search.mode}, and reports the requested and effective modes in the result. {@link SearchMode#LEXICAL} searches
+     * lexically.
      *
      * <p>{@link SearchMode#SEMANTIC} ranks the chunks that have an embedding of the current model by their similarity
      * to the embedded query text. {@link SearchMode#HYBRID} fuses that ranking with the lexical one by reciprocal rank
      * fusion, as {@link HybridSearch} describes, so chunks without an embedding can still come from the lexical side.
      * Both report the embedding coverage in the result and check the same prerequisites in order, each failing with its
      * own reason and without writing anything: stored embeddings of the current model ({@link
-     * QueryException.Reason#EMBEDDINGS_MISSING}), the cached model, which is never downloaded ({@link
+     * QueryException.Reason#EMBEDDINGS_MISSING}, or {@link QueryException.Reason#EMBEDDINGS_OUTDATED} when only an
+     * earlier model's exist), the cached model, which is never downloaded ({@link
      * QueryException.Reason#MODEL_NOT_CACHED}), the vector search extension ({@link
      * QueryException.Reason#VECTOR_SEARCH_UNAVAILABLE}), and the embedder ({@link
      * QueryException.Reason#EMBEDDER_UNAVAILABLE}, then {@link QueryException.Reason#EMBEDDING_FAILED}). Only the
      * extension's verified copy in the user's cache is written, once. An index without chunks returns no hits.
+     *
+     * <p>{@link SearchMode#AUTO} searches in hybrid mode when the index has embeddings and every semantic prerequisite
+     * holds, whatever the coverage, and lexically otherwise, with the missing prerequisite as the result's {@link
+     * ModeFallback}. An index without any embedding is searched lexically without reaching the semantic model's
+     * classes. Index access and read failures stay failures.
      *
      * @param startDirectory project context starting directory, usually the caller's working directory
      * @param request the same validated plain-text request accepted by LexicalSearch
@@ -147,14 +160,13 @@ public final class QueryService {
         try {
             ProjectContext context = contextResolver.resolve(startDirectory);
             warnings = context.loadedConfig().warnings();
-            SearchMode mode = options.resolveMode(context.loadedConfig().config());
+            SearchMode requested = options.resolveMode(context.loadedConfig().config());
 
             try (SqliteStorage storage = storageOpener.open(context)) {
-                return switch (mode) {
-                    // Auto stays lexical until it can choose by what the index holds.
-                    case LEXICAL, AUTO ->
-                        new QueryResult(storage.lexicalSearch().search(request), warnings);
-                    case SEMANTIC, HYBRID -> embeddingQuery(storage, request, mode, warnings);
+                return switch (requested) {
+                    case LEXICAL -> lexicalQuery(storage, request, warnings, SearchMode.LEXICAL, Optional.empty());
+                    case SEMANTIC, HYBRID -> embeddingQuery(storage, request, requested, requested, warnings);
+                    case AUTO -> autoQuery(storage, request, warnings);
                 };
             }
         } catch (IndexAccessException failure) {
@@ -174,35 +186,70 @@ public final class QueryService {
         }
     }
 
+    private static QueryResult lexicalQuery(
+            SqliteStorage storage,
+            SearchRequest request,
+            List<Warning> warnings,
+            SearchMode requested,
+            Optional<ModeFallback> fallback)
+            throws SearchException {
+        return new QueryResult(
+                storage.lexicalSearch().search(request), warnings, null, requested, SearchMode.LEXICAL, fallback);
+    }
+
+    /**
+     * Searches in hybrid mode when the index has embeddings and every semantic prerequisite holds, and lexically
+     * otherwise, reporting the missing prerequisite. Index failures stay failures.
+     */
+    private QueryResult autoQuery(SqliteStorage storage, SearchRequest request, List<Warning> warnings)
+            throws QueryException, SQLException, SearchException {
+        // Asked without an embedding profile, so an index without embeddings never reaches the semantic classes.
+        if (!storage.hasEmbeddings()) {
+            ModeFallback fallback = new ModeFallback(QueryException.Reason.EMBEDDINGS_MISSING, NO_EMBEDDINGS);
+
+            return lexicalQuery(storage, request, warnings, SearchMode.AUTO, Optional.of(fallback));
+        }
+
+        try {
+            return embeddingQuery(storage, request, SearchMode.AUTO, SearchMode.HYBRID, warnings);
+        } catch (QueryException failure) {
+            // Every QueryException here is a missing semantic prerequisite; index failures arrive as other exceptions.
+            ModeFallback fallback = new ModeFallback(failure.reason(), failure.getMessage());
+
+            return lexicalQuery(storage, request, warnings, SearchMode.AUTO, Optional.of(fallback));
+        }
+    }
+
     /** Answers a semantic or hybrid query once the prerequisites both modes share are in place. */
     private QueryResult embeddingQuery(
-            SqliteStorage storage, SearchRequest request, SearchMode mode, List<Warning> warnings)
+            SqliteStorage storage,
+            SearchRequest request,
+            SearchMode requested,
+            SearchMode effective,
+            List<Warning> warnings)
             throws QueryException, SQLException, SearchException {
         EmbeddingProfile profile = profiles.get();
         EmbeddingCoverage coverage = storage.embeddingCoverage(profile);
 
         if (coverage.chunks() == 0) {
             // Nothing is stored to compare, like a lexical query that matches nothing.
-            return new QueryResult(List.of(), warnings, coverage);
+            return new QueryResult(List.of(), warnings, coverage, requested, effective, Optional.empty());
         }
 
         if (coverage.embedded() == 0) {
-            String message = coverage.stale() > 0
-                    ? "The index holds only embeddings of an earlier semantic model; index the project semantically to"
-                            + " rebuild them"
-                    : "The index has no embeddings for semantic search; index the project semantically first";
-
-            throw new QueryException(QueryException.Reason.EMBEDDINGS_MISSING, message, null, warnings);
+            throw coverage.stale() > 0
+                    ? new QueryException(QueryException.Reason.EMBEDDINGS_OUTDATED, OUTDATED_EMBEDDINGS, null, warnings)
+                    : new QueryException(QueryException.Reason.EMBEDDINGS_MISSING, NO_EMBEDDINGS, null, warnings);
         }
 
         ModelOutcome model = findModel(profile, warnings);
         loadVectorExtension(storage, warnings);
         float[] queryEmbedding = embedQuery(model, request.query(), warnings);
-        List<SearchHit> hits = mode == SearchMode.HYBRID
+        List<SearchHit> hits = effective == SearchMode.HYBRID
                 ? storage.hybridSearch(profile).search(request, queryEmbedding)
                 : storage.semanticSearch(profile).search(queryEmbedding, request.limit());
 
-        return new QueryResult(hits, warnings, coverage);
+        return new QueryResult(hits, warnings, coverage, requested, effective, Optional.empty());
     }
 
     private ModelOutcome findModel(EmbeddingProfile profile, List<Warning> warnings) throws QueryException {

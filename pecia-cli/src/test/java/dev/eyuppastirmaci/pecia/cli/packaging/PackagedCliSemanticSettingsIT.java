@@ -132,8 +132,13 @@ class PackagedCliSemanticSettingsIT {
         assertTrue(index.out().contains("deleted: 1\n"), index.out());
         assertFalse(index.out().contains("embedded:"), index.out());
         assertEquals(List.of("guide.md"), filesWithVectors(database));
-        assertEquals(List.of("notes.txt:1-1"), hitLocations(cli.runReadOnly(project, "query", "changednotes")));
-        assertEquals(List.of("guide.md:1-3"), hitLocations(cli.runReadOnly(project, "query", "modeneedle")));
+        // Explicitly lexical: in auto mode an index with vectors would reach for the model.
+        assertEquals(
+                List.of("notes.txt:1-1"),
+                hitLocations(cli.runReadOnly(project, "query", "changednotes", "--mode", "lexical")));
+        assertEquals(
+                List.of("guide.md:1-3"),
+                hitLocations(cli.runReadOnly(project, "query", "modeneedle", "--mode", "lexical")));
     }
 
     /** Gives every stored chunk a four-dimensional vector, as a semantic run would with a four-dimensional model. */

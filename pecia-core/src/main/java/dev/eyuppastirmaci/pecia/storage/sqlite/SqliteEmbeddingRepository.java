@@ -121,6 +121,16 @@ final class SqliteEmbeddingRepository {
     }
 
     /** Counts stored chunks by whether they have an embedding of this profile, of another, or none. */
+    /** Returns whether any chunk has an embedding, of any profile. */
+    boolean any() throws SQLException {
+        try (var query = connection.prepareStatement("SELECT EXISTS (SELECT 1 FROM chunk_embeddings)");
+                var result = query.executeQuery()) {
+            result.next();
+
+            return result.getBoolean(1);
+        }
+    }
+
     EmbeddingCoverage coverage(String fingerprint) throws SQLException {
         try (var query = connection.prepareStatement("""
                 SELECT
