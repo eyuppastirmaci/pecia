@@ -64,8 +64,8 @@ class SqliteLexicalRetrieverTest {
                         .map(SqliteLexicalRetriever.Candidate::sourcePath)
                         .toList());
         // All rows have equal total token counts and one occurrence in different columns.
-        assertEquals(results.get(0).bm25Score(), results.get(1).bm25Score());
-        assertEquals(results.get(0).bm25Score(), results.get(2).bm25Score());
+        assertEquals(results.get(0).score(), results.get(1).score());
+        assertEquals(results.get(0).score(), results.get(2).score());
     }
 
     @Test
@@ -77,8 +77,8 @@ class SqliteLexicalRetrieverTest {
         var results = retriever.retrieve("\"needle\"", 10);
 
         assertEquals(List.of(strong.id(), weak.id()), ids(results));
-        assertTrue(results.get(0).bm25Score() < results.get(1).bm25Score());
-        assertTrue(results.stream().allMatch(hit -> Double.isFinite(hit.bm25Score()) && hit.bm25Score() < 0));
+        assertTrue(results.get(0).score() < results.get(1).score());
+        assertTrue(results.stream().allMatch(hit -> Double.isFinite(hit.score()) && hit.score() < 0));
         assertEquals(List.of(strong.id()), ids(retriever.retrieve("\"needle\"", 1)));
     }
 
@@ -90,7 +90,7 @@ class SqliteLexicalRetrieverTest {
         var results = retriever.retrieve("\"needle\"", 10);
 
         assertEquals(List.of(shortChunk.id(), longChunk.id()), ids(results));
-        assertTrue(results.get(0).bm25Score() < results.get(1).bm25Score());
+        assertTrue(results.get(0).score() < results.get(1).score());
     }
 
     @ParameterizedTest
@@ -118,7 +118,7 @@ class SqliteLexicalRetrieverTest {
                         .map(hit -> hit.sourcePath() + ":" + hit.chunkIndex())
                         .toList());
         assertTrue(results.stream()
-                .allMatch(hit -> hit.bm25Score() == results.getFirst().bm25Score()));
+                .allMatch(hit -> hit.score() == results.getFirst().score()));
         assertEquals(results.subList(0, 4), retriever.retrieve("\"needle\"", 4));
         assertEquals(results, retriever.retrieve("\"needle\"", 100));
     }

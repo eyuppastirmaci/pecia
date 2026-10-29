@@ -58,28 +58,36 @@ final class SqliteLexicalRetriever {
     List<SearchHit> search(String matchExpression, int limit) throws SQLException {
         validateRequest(matchExpression, limit);
 
-        return storage.inScope(() -> {
-            List<Candidate> candidates = readCandidates(matchExpression, limit);
+        return storage.inScope(() ->
+                hits(connection, metadataReader, readCandidates(matchExpression, limit), SearchScore.Kind.SQLITE_BM25));
+    }
 
-            if (candidates.isEmpty()) {
-                return List.of();
-            }
+    /**
+     * Turns candidates into hits with their metadata and validated deterministic IDs; the caller reads candidates and
+     * calls this in one snapshot.
+     */
+    static List<SearchHit> hits(
+            Connection connection, MetadataReader metadataReader, List<Candidate> candidates, SearchScore.Kind kind)
+            throws SQLException {
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
 
-            Map<Long, ChunkMetadata> metadata = metadataReader.read(
-                    candidates.stream().map(Candidate::chunkId).toList());
-            List<Long> fileIds = candidates.stream().map(Candidate::fileId).toList();
-            var identities = new SqliteChunkIdentityReader(connection).readForFiles(fileIds);
-            List<SearchHit> hits = new ArrayList<>(candidates.size());
+        Map<Long, ChunkMetadata> metadata =
+                metadataReader.read(candidates.stream().map(Candidate::chunkId).toList());
+        List<Long> fileIds = candidates.stream().map(Candidate::fileId).toList();
+        var identities = new SqliteChunkIdentityReader(connection).readForFiles(fileIds);
+        List<SearchHit> hits = new ArrayList<>(candidates.size());
 
-            for (Candidate candidate : candidates) {
-                var fileIdentity = identities.get(candidate.fileId());
-                Optional<ChunkId> stableId =
-                        Optional.ofNullable(fileIdentity.chunkIds().get(candidate.chunkId()));
-                hits.add(toHit(candidate, metadata.getOrDefault(candidate.chunkId(), ChunkMetadata.empty()), stableId));
-            }
+        for (Candidate candidate : candidates) {
+            var fileIdentity = identities.get(candidate.fileId());
+            Optional<ChunkId> stableId =
+                    Optional.ofNullable(fileIdentity.chunkIds().get(candidate.chunkId()));
+            hits.add(toHit(
+                    candidate, metadata.getOrDefault(candidate.chunkId(), ChunkMetadata.empty()), stableId, kind));
+        }
 
-            return List.copyOf(hits);
-        });
+        return List.copyOf(hits);
     }
 
     private static void validateRequest(String matchExpression, int limit) {
@@ -136,7 +144,8 @@ final class SqliteLexicalRetriever {
         return List.copyOf(candidates);
     }
 
-    private static SearchHit toHit(Candidate candidate, ChunkMetadata metadata, Optional<ChunkId> stableId)
+    private static SearchHit toHit(
+            Candidate candidate, ChunkMetadata metadata, Optional<ChunkId> stableId, SearchScore.Kind kind)
             throws SQLException {
         try {
             Chunk chunk = new Chunk(
@@ -155,14 +164,15 @@ final class SqliteLexicalRetriever {
                     chunk.documentType(),
                     chunk.sourceLocation(),
                     chunk.metadata(),
-                    new SearchScore(candidate.bm25Score(), SearchScore.Kind.SQLITE_BM25),
+                    new SearchScore(candidate.score(), kind),
                     boundedSnippet(candidate.snippet()),
                     stored.stableId());
         } catch (IllegalArgumentException | NullPointerException invalid) {
-            throw new SQLException("Invalid stored lexical result", invalid);
+            throw new SQLException("Invalid stored search result", invalid);
         }
     }
 
+    /** Caps a preview at {@link SearchHit#MAX_SNIPPET_CODE_POINTS}, marking a cut with an ellipsis. */
     private static String boundedSnippet(String snippet) {
         if (snippet.codePointCount(0, snippet.length()) <= SearchHit.MAX_SNIPPET_CODE_POINTS) {
             return snippet;
@@ -177,12 +187,17 @@ final class SqliteLexicalRetriever {
         Map<Long, ChunkMetadata> read(List<Long> chunkIds) throws SQLException;
     }
 
+    /**
+     * A ranked chunk read from one search query.
+     *
+     * @param score the raw BM25 score of a lexical match, or the cosine similarity of a vector match
+     */
     record Candidate(
             long chunkId,
             long fileId,
             int chunkIndex,
             String sourcePath,
-            double bm25Score,
+            double score,
             String documentType,
             String content,
             int startLine,

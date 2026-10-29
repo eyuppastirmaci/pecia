@@ -11,6 +11,7 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.IndexDecision;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
+import dev.eyuppastirmaci.pecia.search.SemanticSearch;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
@@ -35,6 +36,7 @@ import org.sqlite.SQLiteConnection;
 public final class SqliteStorage implements AutoCloseable {
 
     private final Connection connection;
+    private boolean vectorExtensionLoaded;
 
     private SqliteStorage(Connection connection) {
         this.connection = connection;
@@ -178,6 +180,25 @@ public final class SqliteStorage implements AutoCloseable {
         } finally {
             database.enable_load_extension(false);
         }
+
+        vectorExtensionLoaded = true;
+    }
+
+    /**
+     * Returns nearest-neighbor search over this storage's embeddings of the given profile, borrowing the existing
+     * connection. Only that profile's embeddings are compared with a query.
+     *
+     * @throws IllegalStateException if the vector extension has not been loaded with {@link #loadVectorExtension}
+     * @throws NullPointerException if profile is null
+     */
+    public SemanticSearch semanticSearch(EmbeddingProfile profile) {
+        Objects.requireNonNull(profile, "profile");
+
+        if (!vectorExtensionLoaded) {
+            throw new IllegalStateException("Semantic search needs the vector extension; load it first");
+        }
+
+        return new SqliteSemanticSearch(new SqliteVectorRetriever(this), profile);
     }
 
     /**
