@@ -1,0 +1,18 @@
+sqlite-vec 0.1.9 loadable extension
+Source: https://github.com/asg017/sqlite-vec/releases/tag/v0.1.9
+License: MIT or Apache-2.0, at your option (META-INF/licenses/sqlite-vec-LICENSE-MIT.txt and
+META-INF/licenses/sqlite-vec-LICENSE-APACHE.txt)
+
+Each library is extracted unchanged from the release archive named beside it; the archives' SHA-256 values match the
+release's checksums.txt.
+
+linux-x64/vec0.so      sha256 5923730861b86c707cca5602b5f91092f9e52a46706dbc6e269fd4bb9c4498e8
+  from sqlite-vec-0.1.9-loadable-linux-x86_64.tar.gz (b959baa1d8dc88861b1edb337b8587178cdcb12d60b4998f9d10b6a82052d5d7)
+linux-aarch64/vec0.so  sha256 0b84cbd06418ca3040827deddd650539be05be0f657952426b926c8606217437
+  from sqlite-vec-0.1.9-loadable-linux-aarch64.tar.gz (ea03d39541e478fab5974253c461e1cb5d77742f69e40cf96e3fad5bc309a37c)
+osx-aarch64/vec0.dylib sha256 193e480c50b59a55977d166f4aaf0e1bc8832d6963516e5950f39e4d2ce0b793
+  from sqlite-vec-0.1.9-loadable-macos-aarch64.tar.gz (8282126333399ddfe98bbbcc7a1936e7252625aac49df056a98be602e46bfd29)
+win-x64/vec0.dll       sha256 fcf98662a7ad9dce394b96a88f91032047823831b951c76636787c312a6476e6
+  from sqlite-vec-0.1.9-loadable-windows-x86_64.tar.gz (51581189d52066b4dfc6631f6d7a3eab7dedc2260656ab09ca97ab3fb8165983)
+
+Intel macOS and Windows on ARM are not bundled, because the ONNX Runtime that embeds queries has no library for them.

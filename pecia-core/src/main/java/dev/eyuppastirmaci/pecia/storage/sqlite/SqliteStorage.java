@@ -29,6 +29,7 @@ import java.util.Objects;
 import java.util.Optional;
 import org.sqlite.JDBC;
 import org.sqlite.SQLiteConfig;
+import org.sqlite.SQLiteConnection;
 
 /** Owns a SQLite index connection and exposes repositories and lexical search for its lifetime. */
 public final class SqliteStorage implements AutoCloseable {
@@ -155,6 +156,28 @@ public final class SqliteStorage implements AutoCloseable {
 
     Connection connection() {
         return connection;
+    }
+
+    /**
+     * Loads the sqlite-vec extension from a verified library file into this storage's connection, so its vector
+     * functions can be used, and turns extension loading off again so no SQL can load another one. Lexical storage
+     * never calls this.
+     *
+     * @param library the platform's library, as {@code VectorExtension.library()} returns it
+     * @throws SQLException if SQLite cannot load the library
+     * @throws NullPointerException if library is null
+     */
+    public void loadVectorExtension(Path library) throws SQLException {
+        String path = library.toAbsolutePath().toString();
+        var database = connection.unwrap(SQLiteConnection.class).getDatabase();
+        database.enable_load_extension(true);
+
+        try (var load = connection.prepareStatement("SELECT load_extension(?)")) {
+            load.setString(1, path);
+            load.executeQuery().close();
+        } finally {
+            database.enable_load_extension(false);
+        }
     }
 
     /**

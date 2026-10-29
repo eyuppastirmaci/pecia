@@ -358,7 +358,13 @@ class CorePackagingIT {
                     "META-INF/licenses/commonmark-LICENSE.txt",
                     "Copyright (c) 2015, Atlassian Pty Ltd",
                     "META-INF/licenses/onnxruntime-LICENSE.txt",
-                    "Copyright (c) Microsoft Corporation");
+                    "Copyright (c) Microsoft Corporation",
+                    "META-INF/licenses/sqlite-vec-LICENSE-MIT.txt",
+                    "Copyright (c) 2024 Alex Garcia",
+                    "META-INF/licenses/sqlite-vec-LICENSE-APACHE.txt",
+                    "Apache License",
+                    "dev/eyuppastirmaci/pecia/semantic/sqlite-vec/NOTICE.txt",
+                    "sqlite-vec 0.1.9 loadable extension");
 
             for (var notice : requiredNotices.entrySet()) {
                 String text = new String(readEntry(jar, notice.getKey()), StandardCharsets.UTF_8);
