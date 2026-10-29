@@ -38,6 +38,7 @@ class OfflineEnvironmentTest {
         child.put("home", "/host-home");
         child.put("XDG_CACHE_HOME", "/host-cache");
         child.put("HF_HOME", "/host-models");
+        child.put("pecia_cache_dir", "/host-pecia-cache");
 
         isolated.configure(child);
 
@@ -78,6 +79,8 @@ class OfflineEnvironmentTest {
                 "TFHUB_CACHE_DIR")) {
             assertTrue(Path.of(child.get(variable)).startsWith(isolated.cache()), variable);
         }
+        assertFalse(child.containsKey("pecia_cache_dir"));
+        assertEquals(isolated.cache().resolve("pecia").toString(), child.get("PECIA_CACHE_DIR"));
         for (String variable : List.of("TMPDIR", "TMP", "TEMP")) {
             assertEquals(isolated.temporary().toString(), child.get(variable));
         }

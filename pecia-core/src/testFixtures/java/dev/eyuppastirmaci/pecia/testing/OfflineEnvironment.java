@@ -209,6 +209,8 @@ public final class OfflineEnvironment {
         values.put("XDG_DATA_DIRS", home.resolve("data").toString());
         values.put("XDG_STATE_HOME", home.resolve("state").toString());
         values.put("XDG_CACHE_HOME", cache.resolve("xdg").toString());
+        // Pecia's own override, so a host setting can never point a test at the user's real model cache.
+        values.put("PECIA_CACHE_DIR", cache.resolve("pecia").toString());
         values.put("XDG_RUNTIME_DIR", temporary.resolve("runtime").toString());
         for (String variable : List.of("TMPDIR", "TMP", "TEMP")) {
             values.put(variable, temporary.toString());
