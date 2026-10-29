@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.index.StorageFailure;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
@@ -95,7 +96,8 @@ class IndexCommandTest {
         Files.writeString(root.resolve("good.md"), "text");
         assertEquals(1, run(root.toString(), "--dry-run"));
         assertTrue(out.toString().contains("good.md"));
-        assertTrue(err.toString().contains("warning:"));
+        assertTrue(err.toString().contains("warning: bad/.gitignore: IO_ERROR: "), err.toString());
+        assertTrue(err.toString().contains(" (its folder was skipped)"), err.toString());
         assertTrue(err.toString().contains("incomplete scan"));
     }
 
@@ -299,8 +301,9 @@ class IndexCommandTest {
                 summary.subList(summary.size() - 4, summary.size()));
         assertEquals(
                 List.of(
-                        "warning: a.txt: INVALID_OUTPUT: The model returned token embeddings whose average is not a finite,"
-                                + " non-zero vector (indexed without embeddings)"),
+                        "warning: a.txt: INVALID_OUTPUT: The model returned token embeddings whose average is not a"
+                                + " finite, non-zero vector (indexed without embeddings)",
+                        "pecia index: PARTIAL: 1 file could not be embedded; every other file was indexed"),
                 err.toString().lines().toList());
     }
 
@@ -333,8 +336,9 @@ class IndexCommandTest {
                 summary.subList(summary.size() - 4, summary.size()));
         assertEquals(
                 List.of(
-                        "warning: a.txt: INVALID_OUTPUT: The model returned token embeddings whose average is not a finite,"
-                                + " non-zero vector (indexed without embeddings)"),
+                        "warning: a.txt: INVALID_OUTPUT: The model returned token embeddings whose average is not a"
+                                + " finite, non-zero vector (indexed without embeddings)",
+                        "pecia index: PARTIAL: 1 file could not be embedded; every other file was indexed"),
                 err.toString().lines().toList());
     }
 
@@ -595,6 +599,11 @@ class IndexCommandTest {
         assertTrue(out.toString().contains("indexed: 1"));
         assertTrue(out.toString().contains("rejected: 1"));
         assertTrue(err.toString().contains("warning: bad.txt: BINARY_CONTENT:"));
+        assertTrue(
+                err.toString()
+                        .contains("pecia index: PARTIAL: 1 file could not be read or were rejected; every other file"
+                                + " was indexed, and no file was removed from the index"),
+                err.toString());
         assertFalse(out.toString().contains("warning:"));
         assertFalse(err.toString().contains("\tat "));
     }
@@ -606,10 +615,35 @@ class IndexCommandTest {
 
         assertEquals(1, run(root.toString()));
         assertTrue(out.toString().contains("indexed: 1"));
-        assertTrue(err.toString().contains("warning: " + bad + ": IO_ERROR: "), err.toString());
-        assertFalse(err.toString().contains("pecia index:"), err.toString());
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(2, lines.size(), err.toString());
+        assertTrue(lines.get(0).startsWith("warning: bad/.gitignore: IO_ERROR: "), lines.get(0));
+        assertTrue(lines.get(0).endsWith(" (its folder was skipped)"), lines.get(0));
+        assertEquals(
+                "pecia index: PARTIAL: 1 path could not be scanned; every other file was indexed, and no file was"
+                        + " removed from the index",
+                lines.get(1));
+        assertTrue(bad.endsWith(".gitignore"));
         assertFalse(err.toString().contains("\tat "));
         assertTrue(Files.exists(root.resolve(".pecia/index.db")));
+    }
+
+    @ParameterizedTest
+    @EnumSource(StorageFailure.class)
+    void everyStorageFailureSaysWhatToDo(StorageFailure reason) {
+        Path database = root.resolve(".pecia/index.db");
+
+        String advice = IndexCommand.storageAdvice(reason, database);
+
+        assertTrue(advice.endsWith("."), advice);
+        // Advice that involves the index names it, so the user knows which file is meant.
+        boolean namesTheIndex =
+                switch (reason) {
+                    case READ_ONLY, CORRUPT, WRONG_PROJECT, INCOMPATIBLE -> advice.contains(database.toString());
+                    case IO_ERROR -> advice.contains(database.getParent().toString());
+                    case DISK_FULL, BUSY, OTHER -> !advice.contains(database.toString());
+                };
+        assertTrue(namesTheIndex, advice);
     }
 
     @Test
@@ -620,8 +654,14 @@ class IndexCommandTest {
         Files.write(database, corrupt);
 
         assertEquals(1, run(root.toString()));
-        assertTrue(err.toString().contains("pecia index: Index storage or cleanup operation failed:"));
-        assertTrue(err.toString().contains("not a database"));
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(2, lines.size(), err.toString());
+        assertTrue(lines.get(0).startsWith("pecia index: FAILED: CORRUPT: "), lines.get(0));
+        assertTrue(lines.get(0).contains("not a database"), lines.get(0));
+        assertEquals(
+                "The index is damaged; delete " + database.toRealPath() + " and run the command again to rebuild it"
+                        + " from your files.",
+                lines.get(1));
         assertFalse(err.toString().contains("\tat "));
         assertTrue(out.toString().contains("indexed: 0"));
         org.junit.jupiter.api.Assertions.assertArrayEquals(corrupt, Files.readAllBytes(database));
@@ -687,7 +727,7 @@ class IndexCommandTest {
 
         List<String> lines = err.toString().lines().toList();
         assertEquals(typoWarning(config), lines.get(0));
-        assertTrue(lines.get(1).startsWith("pecia index: Index storage or cleanup operation failed:"), lines.get(1));
+        assertTrue(lines.get(1).startsWith("pecia index: FAILED: CORRUPT: "), lines.get(1));
     }
 
     @Test

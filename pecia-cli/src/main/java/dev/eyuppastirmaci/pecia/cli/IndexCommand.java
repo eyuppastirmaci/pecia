@@ -9,6 +9,7 @@ import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.index.StorageFailure;
 import dev.eyuppastirmaci.pecia.index.WalkResult;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
@@ -18,6 +19,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -135,6 +137,10 @@ public class IndexCommand implements Callable<Integer> {
                     return INTERRUPTED;
                 }
 
+                if (result.status() == IndexResult.Status.PARTIAL) {
+                    reportPartial(result);
+                }
+
                 return result.status() == IndexResult.Status.COMPLETE ? 0 : 1;
             }
 
@@ -144,7 +150,7 @@ public class IndexCommand implements Callable<Integer> {
             report(preview);
 
             for (WalkResult.Issue issue : result.issues()) {
-                reportScanIssue(issue);
+                reportScanIssue(preview.target(), issue);
             }
 
             if (!result.complete()) {
@@ -185,6 +191,21 @@ public class IndexCommand implements Callable<Integer> {
 
             reportIndex(failure.result());
 
+            if (failure.storageFailure().isPresent() && failure.getCause() != null) {
+                StorageFailure reason = failure.storageFailure().orElseThrow();
+
+                spec.commandLine()
+                        .getErr()
+                        .println("pecia index: " + status + ": " + reason + ": "
+                                + failure.getCause().getMessage());
+                spec.commandLine()
+                        .getErr()
+                        .println(
+                                storageAdvice(reason, failure.result().context().databasePath()));
+
+                return 1;
+            }
+
             String detail =
                     failure.getCause() == null ? "" : ": " + failure.getCause().getMessage();
             spec.commandLine().getErr().println("pecia index: " + failure.getMessage() + detail);
@@ -224,7 +245,7 @@ public class IndexCommand implements Callable<Integer> {
         }
 
         for (WalkResult.Issue issue : result.scanIssues()) {
-            reportScanIssue(issue);
+            reportScanIssue(result.context().projectRoot(), issue);
         }
 
         for (IndexResult.SemanticIssue issue : result.semanticIssues()) {
@@ -251,8 +272,70 @@ public class IndexCommand implements Callable<Integer> {
         }
     }
 
-    private void reportScanIssue(WalkResult.Issue issue) {
-        spec.commandLine().getErr().println("warning: " + issue.path() + ": " + issue.cause() + ": " + issue.reason());
+    /** Prints a path discovery could not read, relative to {@code base} when it lies below it. */
+    private void reportScanIssue(Path base, WalkResult.Issue issue) {
+        Path path = issue.path();
+        String shown = path.startsWith(base) ? FileWalker.portablePath(base.relativize(path)) : path.toString();
+        // Without its ignore rules, a folder's files could include some the user meant to leave out.
+        String effect = path.getFileName().toString().equals(".gitignore") ? "its folder was skipped" : "not scanned";
+
+        spec.commandLine()
+                .getErr()
+                .println("warning: " + shown + ": " + issue.cause() + ": " + issue.reason() + " (" + effect + ")");
+    }
+
+    /** Summarizes what a partial run left out, after the issues themselves. */
+    private void reportPartial(IndexResult result) {
+        List<String> parts = new ArrayList<>();
+
+        if (!result.issues().isEmpty()) {
+            parts.add(count(result.issues().size(), "file") + " could not be read or were rejected");
+        }
+
+        if (!result.semanticIssues().isEmpty()) {
+            parts.add(count(result.semanticIssues().size(), "file") + " could not be embedded");
+        }
+
+        if (!result.scanIssues().isEmpty()) {
+            parts.add(count(result.scanIssues().size(), "path") + " could not be scanned");
+        }
+
+        boolean keptDeletions =
+                !result.issues().isEmpty() || !result.scanIssues().isEmpty();
+
+        spec.commandLine()
+                .getErr()
+                .println("pecia index: PARTIAL: "
+                        + String.join("; ", parts)
+                        + "; every other file was indexed"
+                        + (keptDeletions ? ", and no file was removed from the index" : ""));
+    }
+
+    private static String count(int count, String noun) {
+        return count + " " + noun + (count == 1 ? "" : "s");
+    }
+
+    /** Says what to do about a storage failure; files committed before it stay in the index. */
+    static String storageAdvice(StorageFailure reason, Path database) {
+        return switch (reason) {
+            case DISK_FULL -> "Free some disk space and run the command again; the files indexed so far are kept.";
+            case BUSY ->
+                "Another process is using the index, such as another 'pecia index'; run the command again when it"
+                        + " has finished.";
+            case READ_ONLY -> "Make " + database + " and its folder writable, then run the command again.";
+            case IO_ERROR ->
+                "Check that the disk is available and " + database.getParent() + " is writable, then run the"
+                        + " command again.";
+            case CORRUPT ->
+                "The index is damaged; delete " + database + " and run the command again to rebuild it from your"
+                        + " files.";
+            case WRONG_PROJECT ->
+                "The index belongs to another project folder; delete " + database + " to index this one.";
+            case INCOMPATIBLE ->
+                "The index was written by another version of Pecia; delete " + database
+                        + " and run the command again to rebuild it.";
+            case OTHER -> "Run the command again; the files indexed so far are kept.";
+        };
     }
 
     private void announceDownload(SemanticModel model, Path file) {

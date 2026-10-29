@@ -167,7 +167,9 @@ class PackagedCliDiscoveryIT {
         assertEquals(
                 "config: defaults (no .pecia.toml found)\nsemantic: disabled\n1 file(s) would be indexed:\n  good.md\n",
                 result.out());
-        assertTrue(result.err().startsWith("warning: " + invalidIgnore + ": "), result.err());
+        assertTrue(invalidIgnore.endsWith(".gitignore"));
+        assertTrue(result.err().startsWith("warning: bad/.gitignore: IO_ERROR: "), result.err());
+        assertTrue(result.err().contains(" (its folder was skipped)\n"), result.err());
         assertTrue(
                 result.err().endsWith("pecia index: incomplete scan; listed files are only partial results\n"),
                 result.err());

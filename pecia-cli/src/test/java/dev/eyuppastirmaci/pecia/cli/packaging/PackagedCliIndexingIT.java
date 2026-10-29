@@ -161,6 +161,11 @@ class PackagedCliIndexingIT {
                         + "\ncandidates: 2\nindexed: 1\nrechunked: 0\nunchanged: 0\ndeleted: 0\nchunks: 1\nrejected: 1\nfailed: 0\n",
                 partial.out());
         assertTrue(partial.err().startsWith("warning: bad.txt: INVALID_UTF8: "), partial.err());
+        assertTrue(
+                partial.err()
+                        .endsWith("pecia index: PARTIAL: 1 file could not be read or were rejected; every other file"
+                                + " was indexed, and no file was removed from the index\n"),
+                partial.err());
         assertNoStackTrace(partial.err());
 
         Result retained = cli.run(project, "query", "retainedneedle");
