@@ -59,7 +59,12 @@ final class PipelineScenario {
         Files.writeString(root.resolve(".pecia.toml"), configuration);
         Files.writeString(root.resolve(".gitignore"), "ignored.md\n");
         Path docs = Files.createDirectory(root.resolve("docs"));
-        String markdown = "# Installation\nintro\n## Windows\n- one\n- two\n";
+        // Sections long enough that none of them is joined to a neighbour, so each keeps its own heading path.
+        String markdown = "# Installation\nintro: this guide explains how to install the command-line tool on every"
+                + " supported operating system and how to check that it works before indexing a first project.\n"
+                + "## Windows\n- one: download the installer from the releases page and run it with the default"
+                + " options.\n- two: open a new terminal so that the updated PATH takes effect, then print the"
+                + " version.\n";
         Path source = Files.writeString(docs.resolve("keep.md"), markdown);
         Files.writeString(docs.resolve("ignored.md"), "ignored by JGit");
         Files.writeString(docs.resolve("excluded.md"), "excluded by configuration");

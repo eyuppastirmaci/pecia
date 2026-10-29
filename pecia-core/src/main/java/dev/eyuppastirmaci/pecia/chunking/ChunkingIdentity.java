@@ -30,7 +30,7 @@ public record ChunkingIdentity(
     private static final String BUILT_IN_EXTRACTION_VERSION = "pecia-utf8-extraction-v1";
 
     // Bump for changes to built-in routing, boundaries, context, overlap, locations, or metadata.
-    private static final String BUILT_IN_CHUNKING_VERSION = "pecia-built-in-chunking-v1";
+    private static final String BUILT_IN_CHUNKING_VERSION = "pecia-built-in-chunking-v2";
 
     /** Validates behavior versions and chunk limits against the non-null tokenizer contract. */
     public ChunkingIdentity {

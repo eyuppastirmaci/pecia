@@ -336,7 +336,7 @@ class MarkdownChunkerTest {
 
     @Test
     void repeatedHeadingsKeepDistinctLocationsAndDoNotLeakAcrossDocuments() {
-        MarkdownChunker chunker = new MarkdownChunker(tokenizer, 256, 0);
+        MarkdownChunker chunker = new MarkdownChunker(tokenizer, 256, 0, false);
         String text = "# Same\n## Child\n# Same\n## Child\n";
         List<Chunk> first = chunker.chunk(document(text));
 
@@ -391,12 +391,12 @@ class MarkdownChunkerTest {
     }
 
     /**
-     * Checks global coverage, exact source slices, Unicode boundaries, overlap, and line ranges independently of
-     * chunking helpers.
+     * Checks global coverage, exact source slices, Unicode boundaries, overlap, line ranges, and each chunk's section
+     * independently of chunking helpers, with tiny groups kept apart so every chunk keeps its own section's path.
      */
     private List<Chunk> verify(String text, int limit, int overlap) {
         Document document = document(text);
-        DocumentChunker chunker = new MarkdownChunker(tokenizer, limit, overlap);
+        DocumentChunker chunker = new MarkdownChunker(tokenizer, limit, overlap, false);
         List<Chunk> chunks = chunker.chunk(document);
         assertEquals(chunks, chunker.chunk(document));
         StringBuilder reconstructed = new StringBuilder();

@@ -77,7 +77,12 @@ class DocumentChunkerFactoryTest {
     void routesDetectedMarkdownExtensionsToHeadingAwareChunking() {
         DocumentChunkerFactory factory = DocumentChunkerFactory.create(MiniLmTokenizer.bundled(), 256, 0);
         FileTypeDetector detector = new FileTypeDetector();
-        String text = "# Installation\nintro\n## Windows\n- one\n- two\n";
+        // Sections long enough that none of them is joined to a neighbour.
+        String text = "# Installation\nThis guide explains how to install the command-line tool on every supported"
+                + " operating system, which settings it reads at start-up, and how to check that the installation"
+                + " works before indexing a first project.\n## Windows\n- Download the installer from the releases"
+                + " page, run it, and accept the default folder unless your organisation requires another one.\n- Open"
+                + " a new terminal so that the updated PATH takes effect, then print the version to confirm it.\n";
 
         for (String filename : List.of("guide.md", "guide.markdown", "GUIDE.MD", "GUIDE.MARKDOWN")) {
             Path path = Path.of(filename);
