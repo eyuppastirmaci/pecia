@@ -78,14 +78,13 @@ class PackagedCliContractIT {
             assertTrue(
                     jar.stream()
                             .map(entry -> entry.getName())
-                            .noneMatch(name -> name.startsWith("ai/onnxruntime/")
-                                    || name.startsWith("ai/djl/")
+                            .noneMatch(name -> name.startsWith("ai/djl/")
                                     || name.startsWith("org/tensorflow/")
                                     || name.startsWith("org/pytorch/")
                                     || name.endsWith(".onnx")
                                     || name.endsWith(".safetensors")
                                     || name.endsWith("pytorch_model.bin")),
-                    "The lexical JAR must not bundle a semantic runtime or model");
+                    "The CLI JAR must not bundle another semantic runtime or any model");
             byte[] vocabulary = resource(jar, TOKENIZER_PATH + "vocab.txt");
             assertEquals(
                     VOCABULARY_SHA256,

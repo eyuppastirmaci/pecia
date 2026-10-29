@@ -51,7 +51,6 @@ public final class PackagedCoreConsumer {
                 "dev.eyuppastirmaci.pecia.testing.OfflineEnvironment",
                 "dev.eyuppastirmaci.pecia.packaging.CorePackagingIT",
                 "dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport",
-                "ai.onnxruntime.OrtEnvironment",
                 "ai.djl.Model")) {
             try {
                 Class.forName(unavailable, false, PackagedCoreConsumer.class.getClassLoader());

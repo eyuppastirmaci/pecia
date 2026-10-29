@@ -10,6 +10,8 @@ dependencies {
     // Used only for its .gitignore rule engine (org.eclipse.jgit.ignore).
     implementation(libs.jgit)
     implementation(libs.tomlj)
+    // Loaded only when an embedder is opened, so lexical runs never initialize it.
+    implementation(libs.onnxruntime)
 
     // Enforced, so the BOM's JUnit Platform version wins over jqwik's older requests instead of counting as a conflict.
     testImplementation(enforcedPlatform(libs.junit.bom))

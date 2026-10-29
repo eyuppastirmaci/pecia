@@ -260,7 +260,6 @@ class CorePackagingIT {
                     "org.slf4j.impl.StaticLoggerBinder",
                     "org.junit.jupiter.api.Test",
                     "dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport",
-                    "ai.onnxruntime.OrtEnvironment",
                     "ai.djl.Model")) {
                 assertThrows(ClassNotFoundException.class, () -> consumerLoader.loadClass(unavailable), unavailable);
             }
