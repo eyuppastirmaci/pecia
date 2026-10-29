@@ -668,18 +668,20 @@ class IndexCommandTest {
     }
 
     @Test
-    void invalidTokenBudgetFailsRealIndexButDoesNotAffectDryRun() throws IOException {
+    void invalidTokenBudgetFailsTheDryRunAsItFailsTheRealIndex() throws IOException {
         Files.writeString(root.resolve(".pecia.toml"), "[index]\ninclude = ['*.txt']\n[chunk]\nmax_tokens = 512\n");
         Files.writeString(root.resolve("a.txt"), "needle");
 
         assertEquals(1, run(root.toString()));
         assertFalse(Files.exists(root.resolve(".pecia")));
 
+        String indexError = err.toString();
         out.getBuffer().setLength(0);
         err.getBuffer().setLength(0);
 
-        assertEquals(0, run(root.toString(), "--dry-run"));
-        assertTrue(out.toString().contains("1 file(s) would be indexed"));
+        assertEquals(1, run(root.toString(), "--dry-run"));
+        assertEquals(indexError, err.toString());
+        assertTrue(err.toString().contains("chunk.max_tokens"), err.toString());
         assertFalse(Files.exists(root.resolve(".pecia")));
     }
 

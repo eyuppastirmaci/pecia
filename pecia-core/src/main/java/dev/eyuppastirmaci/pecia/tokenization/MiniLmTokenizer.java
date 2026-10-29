@@ -31,14 +31,7 @@ public final class MiniLmTokenizer implements TokenCounter {
     private static final int EXPECTED_SEPARATOR_TOKEN_ID = 102;
     private static final int MAX_WORD_CODE_POINTS = 100;
 
-    private static final TokenizerIdentity IDENTITY = new TokenizerIdentity(
-            "sentence-transformers/all-MiniLM-L6-v2",
-            "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-            "bert-uncased-wordpiece-v2",
-            "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
-            30_522,
-            256,
-            2);
+    private static final TokenizerIdentity IDENTITY = TokenizerIdentity.MINILM;
 
     private final Map<String, Integer> vocabulary;
 

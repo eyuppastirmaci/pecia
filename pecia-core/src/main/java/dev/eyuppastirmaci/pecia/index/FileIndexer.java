@@ -7,11 +7,6 @@ import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.DocumentExtractionService;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
-import dev.eyuppastirmaci.pecia.content.ExtractionRequest;
-import dev.eyuppastirmaci.pecia.content.FileContent;
-import dev.eyuppastirmaci.pecia.content.FileContentLoader;
-import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
-import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingInput;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
@@ -29,29 +24,22 @@ import java.util.Objects;
  */
 final class FileIndexer {
 
-    private final ProjectContext context;
-    private final DocumentExtractionService extraction;
+    private final FileInspector inspector;
     private final DocumentChunkerFactory chunkers;
     private final ChunkingIdentity identity;
-    private final FileTypeDetector types = new FileTypeDetector();
 
     FileIndexer(ProjectContext context) {
+        // The inspector reports an invalid budget with its configuration keys before the chunkers reject it.
+        this.inspector = new FileInspector(context);
         PeciaConfig config = context.loadedConfig().config();
         MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
         TokenizerIdentity limits = tokenizer.identity();
-        // Report an invalid budget with its configuration keys before the chunkers reject it with internal names.
-        config.requireChunkBudget(limits.maxInputTokens(), limits.specialTokenCount());
-        FileContentLoader contentLoader = new FileContentLoader(config.maxFileBytes());
-        TextDocumentExtractor extractor = new TextDocumentExtractor();
-
-        this.context = context;
-        this.extraction = new DocumentExtractionService(contentLoader, extractor);
         // Chunks leave room for the context line their embedding input starts with, so content is never cut; the
         // constant is inlined, so lexical runs never initialize the semantic class that declares it.
         int maxTokens = Math.min(config.maxTokens(), limits.maxInputTokens() - EmbeddingInput.CONTEXT_TOKENS);
         int overlapTokens = Math.min(config.overlapTokens(), maxTokens - limits.specialTokenCount() - 1);
         this.chunkers = DocumentChunkerFactory.create(tokenizer, maxTokens, overlapTokens);
-        this.identity = ChunkingIdentity.from(config, tokenizer.identity());
+        this.identity = inspector.identity();
     }
 
     FileIndexer(
@@ -59,10 +47,9 @@ final class FileIndexer {
             DocumentExtractionService extraction,
             DocumentChunkerFactory chunkers,
             ChunkingIdentity identity) {
-        this.context = Objects.requireNonNull(context, "context");
-        this.extraction = Objects.requireNonNull(extraction, "extraction");
+        this.inspector = new FileInspector(context, extraction, identity);
         this.chunkers = Objects.requireNonNull(chunkers, "chunkers");
-        this.identity = Objects.requireNonNull(identity, "identity");
+        this.identity = identity;
     }
 
     /**
@@ -79,42 +66,19 @@ final class FileIndexer {
     }
 
     /**
-     * Loads and hashes a candidate and, unless its stored state matches, extracts and chunks it without writing, so
-     * that its chunks can be embedded before {@link #write(Changed, SqliteStorage, EmbeddingProfile, List)}.
+     * Inspects a candidate as {@link FileInspector} does and, unless its stored state matches, chunks it without
+     * writing, so that its chunks can be embedded before {@link #write(Changed, SqliteStorage, EmbeddingProfile,
+     * List)}.
      */
     Prepared prepare(Path candidate, SqliteStorage storage) throws ExtractionException, SQLException {
-        Objects.requireNonNull(storage, "storage");
-        Path absolute = context.absoluteSource(candidate);
+        return switch (inspector.inspect(candidate, storage)) {
+            case FileInspector.Unchanged unchanged -> new Unchanged(new Result(unchanged.file(), 0, true));
+            case FileInspector.Readable readable -> {
+                Document document = readable.document();
 
-        if (context.storageFiles().contains(absolute)) {
-            throw new IllegalArgumentException("Index storage cannot be a source candidate: " + candidate);
-        }
-
-        ExtractionRequest request =
-                new ExtractionRequest(absolute, context.sourcePath(candidate), types.typeForCandidate(candidate));
-        FileContent content = extraction.load(request);
-        var unchanged = storage.findUnchangedFile(request, content.contentHash(), identity);
-
-        if (unchanged.isPresent()) {
-            return new Unchanged(new Result(unchanged.orElseThrow(), 0, true));
-        }
-
-        // Same path and bytes but not unchanged: the stored chunks were made under other processing settings. A
-        // different
-        // document type for the same path can only come from changed detection rules, which are such settings too.
-        boolean rechunked = storage.files()
-                .findByPath(request.sourcePath())
-                .filter(stored -> stored.contentHash().equals(content.contentHash()))
-                .isPresent();
-        Document document = extraction.extract(request, content);
-
-        if (!document.contentHash().equals(content.contentHash())
-                || !document.sourcePath().equals(request.sourcePath())
-                || document.type() != request.type()) {
-            throw new IllegalArgumentException("Extracted document must preserve the loaded source identity and hash");
-        }
-
-        return new Changed(document, chunkers.getChunker(document).chunk(document), rechunked);
+                yield new Changed(document, chunkers.getChunker(document).chunk(document), readable.rechunked());
+            }
+        };
     }
 
     /** Replaces a changed file with its chunks and no embeddings. */
