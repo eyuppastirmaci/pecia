@@ -16,6 +16,8 @@ import java.util.Objects;
  * @param writtenChunks chunks written by committed replacements, excluding unchanged files
  * @param semanticModel how the semantic model became available; null when the run did not need it
  * @param embeddedChunks embeddings stored with committed replacements; zero when the run did not embed
+ * @param backfilledChunks embeddings stored for chunks of unchanged files that had none; zero when the run did not
+ *     embed
  */
 public record IndexResult(
         ProjectContext context,
@@ -27,7 +29,8 @@ public record IndexResult(
         long writtenChunks,
         List<FileIssue> issues,
         ModelOutcome semanticModel,
-        long embeddedChunks) {
+        long embeddedChunks,
+        long backfilledChunks) {
 
     /**
      * Copies issues and rejects negative counters, more processed files than candidates, and embeddings beyond the
@@ -50,6 +53,36 @@ public record IndexResult(
         if (embeddedChunks < 0 || embeddedChunks > writtenChunks || (embeddedChunks > 0 && semanticModel == null)) {
             throw new IllegalArgumentException("Invalid embedding counter");
         }
+
+        if (backfilledChunks < 0 || (backfilledChunks > 0 && semanticModel == null)) {
+            throw new IllegalArgumentException("Invalid backfill counter");
+        }
+    }
+
+    /** Creates an outcome that embedded no stored chunks. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            int unchangedFiles,
+            int deletedFiles,
+            long writtenChunks,
+            List<FileIssue> issues,
+            ModelOutcome semanticModel,
+            long embeddedChunks) {
+        this(
+                context,
+                status,
+                candidateCount,
+                indexedFiles,
+                unchangedFiles,
+                deletedFiles,
+                writtenChunks,
+                issues,
+                semanticModel,
+                embeddedChunks,
+                0);
     }
 
     /** Creates an outcome that stored no embeddings. */
@@ -128,7 +161,10 @@ public record IndexResult(
         MODEL_UNAVAILABLE,
         /** The semantic model was available, but its embedder could not be opened; nothing was indexed. */
         EMBEDDER_UNAVAILABLE,
-        /** Embedding a changed file's chunks failed; earlier files stay committed and the failing file is unchanged. */
+        /**
+         * Embedding failed, either for a changed file, which is left as it was, or for stored chunks; everything
+         * committed earlier stays.
+         */
         EMBEDDING_FAILED,
         /** A storage operation failed after discovery completed. */
         FAILED

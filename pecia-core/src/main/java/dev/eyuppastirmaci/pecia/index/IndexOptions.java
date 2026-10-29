@@ -11,8 +11,15 @@ import java.util.Objects;
  * @param semanticEnabled whether the run builds embeddings for semantic search; null leaves it to {@code
  *     semantic.enabled}
  * @param downloadListener told before the semantic model is downloaded; null when nobody listens
+ * @param progressListener told how far long-running work has come; null when nobody listens
  */
-public record IndexOptions(Boolean semanticEnabled, DownloadListener downloadListener) {
+public record IndexOptions(
+        Boolean semanticEnabled, DownloadListener downloadListener, IndexProgressListener progressListener) {
+
+    /** Creates options without a progress listener. */
+    public IndexOptions(Boolean semanticEnabled, DownloadListener downloadListener) {
+        this(semanticEnabled, downloadListener, null);
+    }
 
     /** Returns options that leave every setting to the project configuration. */
     public static IndexOptions configured() {
@@ -34,7 +41,17 @@ public record IndexOptions(Boolean semanticEnabled, DownloadListener downloadLis
      * @throws NullPointerException if listener is null
      */
     public IndexOptions withDownloadListener(DownloadListener listener) {
-        return new IndexOptions(semanticEnabled, Objects.requireNonNull(listener, "listener"));
+        return new IndexOptions(semanticEnabled, Objects.requireNonNull(listener, "listener"), progressListener);
+    }
+
+    /**
+     * Returns these options with a listener that hears how far long-running work, such as embedding stored chunks,
+     * has come.
+     *
+     * @throws NullPointerException if listener is null
+     */
+    public IndexOptions withProgressListener(IndexProgressListener listener) {
+        return new IndexOptions(semanticEnabled, downloadListener, Objects.requireNonNull(listener, "listener"));
     }
 
     /**

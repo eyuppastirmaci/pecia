@@ -171,8 +171,9 @@ class LexicalConfigurationTest {
         IndexResult result = indexService.index(root);
 
         assertCounts(result, 1, 0, 1, 0, 0);
-        // Unchanged files keep the chunks they have and gain no embeddings in this run.
+        // Unchanged files keep the chunks they have; their missing embeddings are made from the stored chunks.
         assertEquals(0, result.embeddedChunks());
+        assertEquals(OVERLAPPING_RANGES.size(), result.backfilledChunks());
         assertTrue(result.context().loadedConfig().config().semanticEnabled());
         assertEquals(
                 SearchMode.LEXICAL, result.context().loadedConfig().config().searchMode());

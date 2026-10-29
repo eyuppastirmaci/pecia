@@ -136,9 +136,10 @@ public final class IndexService {
      * Indexes like {@link #index(Path)} with the caller's choices for this run, which override the project
      * configuration. When semantic indexing resolves to enabled, the semantic model is made available and its
      * embedder opened after the configuration and token budget are validated and before storage opens; each new or
-     * changed file's chunks are then embedded and stored with their vectors in the file's replacement. Unchanged files
-     * keep whatever vectors they have. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs
-     * the model.
+     * changed file's chunks are then embedded and stored with their vectors in the file's replacement. After cleanup,
+     * the stored chunks of unchanged files that have no embedding are embedded from storage in pages that commit on
+     * their own, so an interrupted run leaves only the rest for the next one; the progress listener hears how far this
+     * has come. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs the model.
      *
      * @param target directory whose descendants are indexed
      * @param options the caller's choices for this run
@@ -190,6 +191,8 @@ public final class IndexService {
         int deletedFiles = 0;
         long writtenChunks = 0;
         long embeddedChunks = 0;
+        EmbeddingBackfill backfill = null;
+        List<Long> unchanged = new ArrayList<>();
         List<IndexResult.FileIssue> issues = new ArrayList<>();
 
         try (embedder;
@@ -199,6 +202,7 @@ public final class IndexService {
                     FileIndexer.Result result = indexer.index(candidate, storage, semantic);
                     if (result.unchanged()) {
                         unchangedFiles++;
+                        unchanged.add(result.file().id());
                     } else {
                         indexedFiles++;
                     }
@@ -220,6 +224,12 @@ public final class IndexService {
                 // Recheck absence and scope immediately before applying the batch.
                 deletedFiles = storage.deleteFiles(planner.plan(scanResult, missing));
             }
+
+            if (semantic != null) {
+                // Unchanged files' chunks match their content and chunking, so they are embedded from storage.
+                backfill = new EmbeddingBackfill(storage, semantic, semanticOptions.progressListener());
+                backfill.run(unchanged);
+            }
         } catch (IOException | SQLException failure) {
             IndexResult result = new IndexResult(
                     context,
@@ -231,22 +241,25 @@ public final class IndexService {
                     writtenChunks,
                     issues,
                     semanticModel,
-                    embeddedChunks);
+                    embeddedChunks,
+                    backfilled(backfill));
 
             throw new IndexException("Index storage or cleanup operation failed", failure, result, List.of());
         } catch (EmbeddingException failure) {
-            // Cleanup is skipped like after any other aborted run; the failing file was not written.
+            // A failing file is not written; a failure while embedding stored chunks keeps the committed pages and the
+            // cleanup that ran before it.
             IndexResult result = new IndexResult(
                     context,
                     IndexResult.Status.EMBEDDING_FAILED,
                     candidates.size(),
                     indexedFiles,
                     unchangedFiles,
-                    0,
+                    deletedFiles,
                     writtenChunks,
                     issues,
                     semanticModel,
-                    embeddedChunks);
+                    embeddedChunks,
+                    backfilled(backfill));
 
             throw new IndexException("Semantic indexing could not embed a file's chunks", failure, result, List.of());
         }
@@ -263,7 +276,12 @@ public final class IndexService {
                 writtenChunks,
                 issues,
                 semanticModel,
-                embeddedChunks);
+                embeddedChunks,
+                backfilled(backfill));
+    }
+
+    private static long backfilled(EmbeddingBackfill backfill) {
+        return backfill == null ? 0 : backfill.stored();
     }
 
     private TextEmbedder openEmbedder(ProjectContext context, List<Path> candidates, ModelOutcome model)
