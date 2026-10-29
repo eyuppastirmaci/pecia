@@ -18,6 +18,7 @@ import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.IndexWriteObserver;
 import dev.eyuppastirmaci.pecia.testing.LegacyIndexFixture;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -33,7 +34,7 @@ import org.sqlite.SQLiteConfig;
 
 /**
  * Migrates working copies of indexes written by the code of each earlier schema version. Version 4, the current
- * schema, is the baseline that needs no migration or reindexing.
+ * schema, needs no migration; reindexing rewrites it only when it was written with another tokenizer algorithm.
  */
 class LegacyIndexMigrationTest {
 
@@ -120,6 +121,7 @@ class LegacyIndexMigrationTest {
         Path root = Files.createDirectory(sandbox.resolve("project")).toRealPath();
         Path database = LegacyIndexFixture.install(version, root);
         SqliteStorage.open(database, root).close();
+        boolean rewritten = version < CURRENT_VERSION || !usesCurrentTokenizer(database);
         IndexWriteObserver observer = IndexWriteObserver.start(database);
 
         IndexResult result = indexService.index(root);
@@ -131,7 +133,7 @@ class LegacyIndexMigrationTest {
         assertEquals(IndexResult.Status.COMPLETE, result.status());
         assertEquals(corpusSize, result.candidateCount());
         assertEquals(0, result.deletedFiles());
-        if (version < CURRENT_VERSION) {
+        if (rewritten) {
             assertEquals(corpusSize, result.indexedFiles());
             assertEquals(corpus, writes.writtenFiles());
         } else {
@@ -149,6 +151,14 @@ class LegacyIndexMigrationTest {
         IndexWriteObserver rerun = IndexWriteObserver.start(database);
         assertEquals(corpusSize, indexService.index(root).unchangedFiles());
         assertEquals(0, rerun.finish().writeCount(), "A follow-up run must write nothing");
+    }
+
+    /** Returns whether every stored chunking profile was written with the current tokenizer algorithm. */
+    private static boolean usesCurrentTokenizer(Path database) throws SQLException {
+        String current = MiniLmTokenizer.bundled().identity().algorithm();
+
+        return rows(database, "SELECT DISTINCT tokenizer_algorithm FROM file_chunking_profiles")
+                .equals(List.of(List.of(current)));
     }
 
     private static List<List<List<Object>>> preservedRows(Path database) throws SQLException {

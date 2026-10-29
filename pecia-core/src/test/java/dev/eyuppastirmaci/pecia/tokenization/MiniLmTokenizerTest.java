@@ -20,7 +20,7 @@ class MiniLmTokenizerTest {
         assertSame(tokenizer, MiniLmTokenizer.bundled());
         assertEquals("sentence-transformers/all-MiniLM-L6-v2", identity.modelId());
         assertEquals("1110a243fdf4706b3f48f1d95db1a4f5529b4d41", identity.revision());
-        assertEquals("bert-uncased-wordpiece-v1", identity.algorithm());
+        assertEquals("bert-uncased-wordpiece-v2", identity.algorithm());
         assertEquals("07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3", identity.vocabularySha256());
         assertEquals(30_522, identity.vocabularySize());
         assertEquals(256, identity.maxInputTokens());
@@ -49,6 +49,23 @@ class MiniLmTokenizerTest {
         assertEquals(List.of("[UNK]", "[UNK]", "世", "[UNK]"), tokenizer.tokenize("你好世界"));
         assertEquals(List.of("em", "##oj", "##i", "[UNK]", "test"), tokenizer.tokenize("emoji 😀 test"));
         assertEquals(List.of("[UNK]"), tokenizer.tokenize("a".repeat(101)));
+    }
+
+    @Test
+    void classifiesCharactersAsHuggingFacesFastTokenizerDoes() {
+        // Private-use and format characters vanish, while unassigned code points stay part of their word.
+        assertEquals(List.of("ab"), tokenizer.tokenize("a\ue000b"));
+        assertEquals(List.of("ab"), tokenizer.tokenize("a" + Character.toString(0xF0000) + "b"));
+        assertEquals(List.of("ab"), tokenizer.tokenize("a\u200bb"));
+        assertEquals(List.of("[UNK]"), tokenizer.tokenize("a\u0378b"));
+        assertEquals(List.of("a", "b", "c"), tokenizer.tokenize("a\u2028b\u2029c"));
+    }
+
+    @Test
+    void splitsTheCjkExtensionBlockWhereHuggingFaceStartsIt() {
+        assertEquals(List.of("[UNK]"), tokenizer.tokenize("ab" + Character.toString(0x2B91F) + "cd"));
+        assertEquals(List.of("ab", "[UNK]", "cd"), tokenizer.tokenize("ab" + Character.toString(0x2B920) + "cd"));
+        assertEquals(List.of("ab", "[UNK]", "cd"), tokenizer.tokenize("ab" + Character.toString(0x2CEAF) + "cd"));
     }
 
     @Test
