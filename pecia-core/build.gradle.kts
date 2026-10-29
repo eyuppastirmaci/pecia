@@ -20,6 +20,28 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
+// Reference checks need the real model in the cache that PECIA_CACHE_DIR names, so only referenceTest runs them.
+val referenceTag = "reference"
+
+tasks.named<Test>("test") {
+    useJUnitPlatform {
+        excludeTags(referenceTag)
+    }
+}
+
+tasks.register<Test>("referenceTest") {
+    description = "Compares the real model's embeddings with the committed sentence-transformers references."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags(referenceTag)
+    }
+    shouldRunAfter(tasks.test)
+    // The model lives outside the build, so Gradle cannot tell when a previous result is still valid.
+    outputs.upToDateWhen { false }
+}
+
 // The packaged-core consumer runs on the core JAR plus exactly these runtime dependencies.
 val itRuntime = tasks.register<Sync>("itRuntime") {
     from(configurations.runtimeClasspath)
