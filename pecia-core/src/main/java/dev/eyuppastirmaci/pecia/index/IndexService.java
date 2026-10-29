@@ -276,7 +276,8 @@ public final class IndexService {
         } catch (IOException | SQLException failure) {
             IndexResult result = tally.result(IndexResult.Status.FAILED);
 
-            throw new IndexException("Index storage or cleanup operation failed", failure, result);
+            throw new IndexException(
+                    "Index storage or cleanup operation failed", failure, result, StorageFailure.of(failure));
         } catch (EmbeddingException failure) {
             // Files and pages before the one that stopped the run stay, as does the cleanup that ran before it.
             IndexResult result = tally.result(IndexResult.Status.EMBEDDING_FAILED);
