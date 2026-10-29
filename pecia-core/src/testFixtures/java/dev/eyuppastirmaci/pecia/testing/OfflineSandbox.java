@@ -224,6 +224,21 @@ public final class OfflineSandbox {
             environment.assertOnlyAdded(before, additions);
         }
 
+        /**
+         * Validates a run that opened an embedder offline: no network attempt, ONNX Runtime initialized, and nothing
+         * written except the runtime's native extraction directory.
+         */
+        public void verifyEmbedding(String requiredClass) throws IOException {
+            assertNoNetworkAttempts();
+            environment.assertOnlyRuntimeExtraction(before);
+            for (String className :
+                    List.of(requiredClass, NetworkGuard.class.getName(), "ai.onnxruntime.OrtEnvironment")) {
+                if (!OfflineEnvironment.initialized(initializationLog(), className)) {
+                    throw new AssertionError(className + " was not initialized in the embedding JVM");
+                }
+            }
+        }
+
         /** Validates network, cache and initialized-class evidence after the child has exited. */
         public void verifyLexical(String requiredClass) throws IOException {
             assertNoNetworkAttempts();

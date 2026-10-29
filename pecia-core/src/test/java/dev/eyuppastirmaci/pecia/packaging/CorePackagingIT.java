@@ -17,6 +17,7 @@ import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -146,6 +147,30 @@ class CorePackagingIT {
                                 offline,
                                 model.downloadUri().getHost(),
                                 lockFile)
+                        .stdout()
+                        .strip());
+    }
+
+    @Test
+    void embedsOfflineWithATinyModelUsingOnlyThePackagedCore() throws Exception {
+        Path sandbox =
+                Files.createDirectory(fixture.resolve("offline embedding")).toRealPath();
+        Path project = Files.createDirectory(fixture.resolve("offline embedding project"))
+                .toRealPath();
+        try (InputStream model = CorePackagingIT.class.getResourceAsStream("/semantic/tiny/tiny.onnx")) {
+            Files.copy(model, project.resolve("tiny.onnx"));
+        }
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-embedding",
+                runner.runOfflineEmbedding("semantic-embedding", project, offline)
                         .stdout()
                         .strip());
     }
@@ -298,7 +323,9 @@ class CorePackagingIT {
                     TOKENIZER_RESOURCES + "LICENSE.txt",
                     "Apache License",
                     "META-INF/licenses/commonmark-LICENSE.txt",
-                    "Copyright (c) 2015, Atlassian Pty Ltd");
+                    "Copyright (c) 2015, Atlassian Pty Ltd",
+                    "META-INF/licenses/onnxruntime-LICENSE.txt",
+                    "Copyright (c) Microsoft Corporation");
 
             for (var notice : requiredNotices.entrySet()) {
                 String text = new String(readEntry(jar, notice.getKey()), StandardCharsets.UTF_8);

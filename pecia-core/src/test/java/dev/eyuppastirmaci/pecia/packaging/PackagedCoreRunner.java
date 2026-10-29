@@ -210,6 +210,13 @@ final class PackagedCoreRunner {
         return run(scenario, project, Duration.ofSeconds(30), offline, evidence -> evidence.verifyLexical(CONSUMER));
     }
 
+    /** Runs a scenario offline that opens an embedder; see {@link OfflineSandbox.Run#verifyEmbedding}. */
+    Result runOfflineEmbedding(String scenario, Path project, OfflineSandbox offline)
+            throws IOException, InterruptedException {
+        Objects.requireNonNull(offline, "offline");
+        return run(scenario, project, Duration.ofSeconds(30), offline, evidence -> evidence.verifyEmbedding(CONSUMER));
+    }
+
     /**
      * Runs a scenario offline that is expected to try one model download and be denied; see {@link
      * OfflineSandbox.Run#verifyDeniedDownload}.
