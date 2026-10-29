@@ -71,6 +71,12 @@ spotless {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     failOnNoDiscoveredTests = true
+    // Test classes run in parallel JVMs, about one per two processors and at most four, which keeps CI runners
+    // (three or four processors) busy without overloading them; -Ppecia.testForks=N overrides it for measurements.
+    maxParallelForks = providers
+        .gradleProperty("pecia.testForks")
+        .map(String::toInt)
+        .getOrElse(((Runtime.getRuntime().availableProcessors() + 1) / 2).coerceIn(1, 4))
     // Path-validation tests compare real paths, so give test JVMs a temporary directory without symbolic links
     // (macOS resolves /var through one) or short names (Windows).
     systemProperty("java.io.tmpdir", Path.of(System.getProperty("java.io.tmpdir")).toRealPath().toString())

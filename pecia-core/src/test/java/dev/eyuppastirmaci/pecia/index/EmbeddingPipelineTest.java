@@ -312,6 +312,24 @@ class EmbeddingPipelineTest {
     }
 
     @Test
+    void noWorkerThreadIsAliveOnceClosed() throws Exception {
+        // The executor reports termination while its last thread is still exiting, which about one close in ten
+        // shows, so many rounds catch a close that does not wait for its threads.
+        for (int round = 0; round < 300; round++) {
+            List<Thread> workers;
+
+            try (EmbeddingPipeline pipeline = new EmbeddingPipeline(echo(), cancellation, 2)) {
+                pipeline.submit(texts("r" + round, 16), vectors -> {}, RETHROW);
+                pipeline.finish();
+                workers = workerThreads();
+            }
+
+            // Asked at once: listing every thread again takes long enough for a late thread to end meanwhile.
+            assertEquals(List.of(), workers.stream().filter(Thread::isAlive).toList(), "round " + round);
+        }
+    }
+
+    @Test
     void invalidSizesAreRejected() {
         assertThrows(IllegalArgumentException.class, () -> new EmbeddingPipeline(echo(), cancellation, 0));
         assertThrows(IllegalArgumentException.class, () -> new EmbeddingPipeline(echo(), cancellation, 1, 0));
