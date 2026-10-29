@@ -78,6 +78,10 @@ jobs:
           java -jar pecia-cli/build/libs/pecia.jar query --mode semantic --root "$project" "embedding a single passage" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-query.txt"
           head -n 1 "$RUNNER_TEMP/semantic-query.txt" | grep -qx 'readme.md:1-1'
           grep -q '^  cosine: ' "$RUNNER_TEMP/semantic-query.txt"
+          # Both sides rank the only chunk, which contains the query's words.
+          java -jar pecia-cli/build/libs/pecia.jar query --mode hybrid --root "$project" "semantic model" | tr -d '\r' | tee "$RUNNER_TEMP/hybrid-query.txt"
+          head -n 1 "$RUNNER_TEMP/hybrid-query.txt" | grep -qx 'readme.md:1-1'
+          grep -q '^  RRF: .* (lexical #1, semantic #1)$' "$RUNNER_TEMP/hybrid-query.txt"
 
       - name: Check embeddings and retrieval against the references
         env:

@@ -117,6 +117,41 @@ class QueryCommandTest {
     }
 
     @Test
+    void hybridQueriesPrintFusedScoresWithTheSidesThatRankedEachHit() throws Exception {
+        String refunds = "Refunds are issued to the original card within five days.";
+        Files.writeString(root.resolve("refunds.txt"), refunds + "\n");
+        Files.writeString(root.resolve("shipping.txt"), "Parcels leave the warehouse every weekday morning.\n");
+        Files.writeString(root.resolve("accounts.txt"), "Users reset forgotten passwords from the sign-in page.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+        // Indexed lexically afterwards, so this file has no embedding and only the lexical side can rank it.
+        Files.writeString(root.resolve("notes.txt"), refunds + " Ask the bank if it takes longer.\n");
+        new IndexService(loader).index(root);
+        QueryService hybrid = QueryService.withModelLookup(loader, () -> Optional.of(TinyModel.cached()));
+        List<SearchHit> expected = hybrid.query(root, new SearchRequest(refunds), QueryOptions.mode(SearchMode.HYBRID))
+                .hits();
+
+        assertEquals(0, run(hybrid, refunds, "--root", root.toString(), "--mode", "hybrid"));
+
+        assertEquals("", err.toString());
+        List<String> scores = out.toString()
+                .lines()
+                .filter(line -> line.startsWith("  RRF: "))
+                .toList();
+        assertEquals(4, expected.size());
+        assertEquals(
+                List.of(
+                        "  RRF: " + expected.get(0).score().value() + " (lexical #1, semantic #1)",
+                        "  RRF: " + expected.get(1).score().value() + " (semantic #2)",
+                        "  RRF: " + expected.get(2).score().value() + " (lexical #2)",
+                        "  RRF: " + expected.get(3).score().value() + " (semantic #3)"),
+                scores);
+        // Rank 2 on either side scores the same; the tie breaks by path.
+        assertEquals(Path.of("accounts.txt"), expected.get(1).sourcePath());
+        assertEquals(Path.of("notes.txt"), expected.get(2).sourcePath());
+        assertTrue(out.toString().startsWith("refunds.txt:1-1" + System.lineSeparator()), out.toString());
+    }
+
+    @Test
     void aSemanticQueryWithoutTheCachedModelSaysSoAndNeverDownloadsIt() throws Exception {
         Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");
         IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));

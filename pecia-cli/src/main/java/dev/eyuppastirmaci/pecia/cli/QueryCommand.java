@@ -3,6 +3,7 @@ package dev.eyuppastirmaci.pecia.cli;
 import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
+import dev.eyuppastirmaci.pecia.search.FusedRanks;
 import dev.eyuppastirmaci.pecia.search.QueryException;
 import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryResult;
@@ -13,6 +14,7 @@ import dev.eyuppastirmaci.pecia.search.SearchScore;
 import java.io.PrintWriter;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -115,7 +117,7 @@ public class QueryCommand implements Callable<Integer> {
         }
 
         out.println(location);
-        out.println("  " + scoreLabel(hit.score().kind()) + ": " + hit.score().value());
+        out.println("  " + scoreLabel(hit.score().kind()) + ": " + hit.score().value() + fusedRanks(hit));
 
         if (!hit.metadata().headingPath().isEmpty()) {
             out.println("  heading: " + String.join(" > ", hit.metadata().headingPath()));
@@ -132,6 +134,20 @@ public class QueryCommand implements Callable<Integer> {
             case COSINE_SIMILARITY -> "cosine";
             case RECIPROCAL_RANK_FUSION -> "RRF";
         };
+    }
+
+    /** Shows which sides ranked a hybrid hit, for example {@code " (lexical #1, semantic #4)"}; empty otherwise. */
+    private static String fusedRanks(SearchHit hit) {
+        if (hit.fusedRanks().isEmpty()) {
+            return "";
+        }
+
+        FusedRanks ranks = hit.fusedRanks().orElseThrow();
+        List<String> sides = new ArrayList<>();
+        ranks.lexical().ifPresent(rank -> sides.add("lexical #" + rank));
+        ranks.semantic().ifPresent(rank -> sides.add("semantic #" + rank));
+
+        return " (" + String.join(", ", sides) + ")";
     }
 
     private static String launcherJar() {
