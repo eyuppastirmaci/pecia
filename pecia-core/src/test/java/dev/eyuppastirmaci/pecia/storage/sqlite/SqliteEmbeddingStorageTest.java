@@ -15,6 +15,7 @@ import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
+import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerCompatibility;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -244,6 +245,157 @@ class SqliteEmbeddingStorageTest {
 
             assertEquals(Map.of("guide.md#1", 4), vectorKeys(connection));
         }
+    }
+
+    @Test
+    void storedChunksWithoutVectorsAreFoundPerFileInPositionOrder() throws Exception {
+        Path database = root.resolve("index.db");
+        long lexicalId;
+        long embeddedId;
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            Document lexical = document("lexical.md", "lexicalbody");
+            lexicalId = storage.replaceFile(lexical, chunks(lexical), IDENTITY).id();
+            embeddedId = replace(storage, "embedded.md", PROFILE).id();
+        }
+
+        byte[] before = Files.readAllBytes(database);
+
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            List<UnembeddedChunk> unembedded = storage.findUnembeddedChunks(lexicalId);
+
+            assertEquals(List.of("lexicalbody part 0", "lexicalbody part 1"), contents(unembedded));
+            assertEquals(List.of(), storage.findUnembeddedChunks(embeddedId));
+            assertEquals(List.of(), storage.findUnembeddedChunks(Long.MAX_VALUE));
+            assertThrows(IllegalArgumentException.class, () -> storage.findUnembeddedChunks(0));
+        }
+
+        assertArrayEquals(before, Files.readAllBytes(database));
+    }
+
+    @Test
+    void embeddingsForStoredChunksAreStoredUnderTheirProfile() throws Exception {
+        try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
+            Document first = document("first.md", "firstbody");
+            Document second = document("second.md", "secondbody");
+            long firstId = storage.replaceFile(first, chunks(first), IDENTITY).id();
+            long secondId =
+                    storage.replaceFile(second, chunks(second), IDENTITY).id();
+            List<UnembeddedChunk> firstChunks = storage.findUnembeddedChunks(firstId);
+
+            assertEquals(2, storage.storeEmbeddings(PROFILE, firstChunks, vectors(2, 3)));
+            assertEquals(2, storage.storeEmbeddings(PROFILE, storage.findUnembeddedChunks(secondId), vectors(2, 4)));
+
+            assertVectors(
+                    storage.connection(),
+                    Map.of(
+                            "first.md#0", vectors(2, 3).get(0),
+                            "first.md#1", vectors(2, 3).get(1),
+                            "second.md#0", vectors(2, 4).get(0),
+                            "second.md#1", vectors(2, 4).get(1)));
+            assertEquals(List.of(), storage.findUnembeddedChunks(firstId));
+            assertEquals(
+                    1L,
+                    rows(storage.connection(), "SELECT count(*) FROM embedding_profiles")
+                            .getFirst()
+                            .getFirst());
+            assertEquals(0, storage.storeEmbeddings(PROFILE, List.of(), List.of()));
+        }
+    }
+
+    @Test
+    void chunksChangedDeletedOrEmbeddedMeanwhileAreSkipped() throws Exception {
+        try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
+            List<UnembeddedChunk> pending = new ArrayList<>();
+            List<StoredFile> files = new ArrayList<>();
+
+            for (String path : List.of("changed.md", "deleted.md", "embedded.md", "kept.md")) {
+                Document document = document(path, path.replace(".md", "body"));
+                StoredFile file = storage.replaceFile(document, chunks(document), IDENTITY);
+                files.add(file);
+                pending.addAll(storage.findUnembeddedChunks(file.id()));
+            }
+
+            // While the vectors are being made: one chunk's text changes, a file is deleted, and another run embeds
+            // a chunk with different values.
+            execute(
+                    storage.connection(),
+                    "UPDATE chunks SET content = 'edited' WHERE id = ?",
+                    pending.get(0).id());
+            assertEquals(1, storage.deleteFiles(List.of(files.get(1))));
+            assertEquals(1, storage.storeEmbeddings(PROFILE, List.of(pending.get(4)), vectors(1, 7)));
+
+            int stored = storage.storeEmbeddings(PROFILE, pending, vectors(pending.size(), 1));
+
+            assertEquals(4, stored);
+            assertVectors(
+                    storage.connection(),
+                    Map.of(
+                            "changed.md#1", vectors(8, 1).get(1),
+                            "embedded.md#0", vectors(1, 7).get(0),
+                            "embedded.md#1", vectors(8, 1).get(5),
+                            "kept.md#0", vectors(8, 1).get(6),
+                            "kept.md#1", vectors(8, 1).get(7)));
+        }
+    }
+
+    @Test
+    void embeddingsThatDoNotMatchTheChunksOrProfileAreRejectedBeforeAnyWrite() throws Exception {
+        Path database = root.resolve("index.db");
+        List<UnembeddedChunk> pending;
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            Document document = document("guide.md", "guidebody");
+            pending = storage.findUnembeddedChunks(
+                    storage.replaceFile(document, chunks(document), IDENTITY).id());
+        }
+
+        byte[] before = Files.readAllBytes(database);
+        List<float[]> nullVector = new ArrayList<>(List.of(new float[4]));
+        nullVector.add(null);
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            for (List<float[]> invalid : List.of(
+                    vectors(1, 1),
+                    vectors(3, 1),
+                    List.of(new float[4], new float[5]),
+                    List.of(new float[4], new float[] {0, Float.NaN, 0, 0}))) {
+                assertThrows(IllegalArgumentException.class, () -> storage.storeEmbeddings(PROFILE, pending, invalid));
+            }
+
+            assertThrows(NullPointerException.class, () -> storage.storeEmbeddings(PROFILE, pending, nullVector));
+            assertThrows(NullPointerException.class, () -> storage.storeEmbeddings(null, pending, vectors(2, 1)));
+            assertThrows(NullPointerException.class, () -> storage.storeEmbeddings(PROFILE, null, vectors(2, 1)));
+        }
+
+        assertArrayEquals(before, Files.readAllBytes(database));
+    }
+
+    @Test
+    void aFailedPageStoresNoneOfItsEmbeddings() throws Exception {
+        try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
+            Document document = document("guide.md", "guidebody");
+            List<UnembeddedChunk> pending = storage.findUnembeddedChunks(
+                    storage.replaceFile(document, chunks(document), IDENTITY).id());
+            execute(storage.connection(), """
+                CREATE TEMP TRIGGER fail_second_vector BEFORE INSERT ON chunk_embeddings
+                WHEN (SELECT count(*) FROM chunk_embeddings) = 1
+                BEGIN SELECT RAISE(ABORT, 'injected vector failure'); END
+                """);
+
+            assertThrows(SQLException.class, () -> storage.storeEmbeddings(PROFILE, pending, vectors(2, 1)));
+
+            assertEquals(Map.of(), vectorKeys(storage.connection()));
+            assertEquals(pending, storage.findUnembeddedChunks(fileId(storage)));
+        }
+    }
+
+    private static long fileId(SqliteStorage storage) throws SQLException {
+        return storage.files().findAll().getFirst().id();
+    }
+
+    private static List<String> contents(List<UnembeddedChunk> chunks) {
+        return chunks.stream().map(UnembeddedChunk::content).toList();
     }
 
     private static void assertRejected(Connection connection, String sql, Object... parameters) {

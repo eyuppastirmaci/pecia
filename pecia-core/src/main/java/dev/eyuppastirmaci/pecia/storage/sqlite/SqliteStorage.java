@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
+import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -358,7 +359,7 @@ public final class SqliteStorage implements AutoCloseable {
         List<Chunk> replacement = validateChunks(document, chunks);
 
         return replaceIdentified(
-                document, replacement, identity, profile, validateVectors(replacement, profile, vectors));
+                document, replacement, identity, profile, validateVectors(replacement.size(), profile, vectors));
     }
 
     /** Writes chunks, IDs, optional vectors, and finally the chunking profile; {@code profile} is null without vectors. */
@@ -390,6 +391,52 @@ public final class SqliteStorage implements AutoCloseable {
             files().saveChunkingIdentity(saved.file().id(), identity);
 
             return saved.file();
+        });
+    }
+
+    /**
+     * Returns a file's stored chunks that have no embedding, in position order, with the content an embedding would be
+     * made from. This method never writes data.
+     *
+     * @param fileId the positive manifest ID; an unknown file has no chunks
+     * @throws IllegalArgumentException if fileId is not positive
+     * @throws SQLException if reading fails
+     */
+    public List<UnembeddedChunk> findUnembeddedChunks(long fileId) throws SQLException {
+        if (fileId <= 0) {
+            throw new IllegalArgumentException("fileId must be positive: " + fileId);
+        }
+
+        return new SqliteEmbeddingRepository(connection).findUnembedded(fileId);
+    }
+
+    /**
+     * Stores embeddings for stored chunks atomically under the given profile. A vector is stored only for a chunk that
+     * still exists with the content it was made from and still has no embedding, so a chunk changed or deleted
+     * meanwhile, or embedded by another run, never receives a vector for other content; such chunks are skipped.
+     *
+     * @param chunks the chunks the vectors were made from, as returned by {@link #findUnembeddedChunks(long)}
+     * @param vectors one vector per chunk, in chunk order, each with the profile's dimensions and only finite values
+     * @return how many vectors were stored; the others were skipped
+     * @throws SQLException if persistence fails, with no vector of this call stored when rollback succeeds; an outer
+     *     transaction remains caller-owned
+     * @throws IllegalArgumentException if the vectors do not match the chunks and profile
+     * @throws NullPointerException if any argument, chunk, or vector is null
+     */
+    public int storeEmbeddings(EmbeddingProfile profile, List<UnembeddedChunk> chunks, List<float[]> vectors)
+            throws SQLException {
+        Objects.requireNonNull(profile, "profile");
+        List<UnembeddedChunk> targets = List.copyOf(chunks);
+        List<float[]> embeddings = validateVectors(targets.size(), profile, vectors);
+
+        if (targets.isEmpty()) {
+            return 0;
+        }
+
+        return inScope(() -> {
+            SqliteEmbeddingRepository repository = new SqliteEmbeddingRepository(connection);
+
+            return repository.saveIfUnchanged(targets, repository.profileId(profile), embeddings);
         });
     }
 
@@ -452,12 +499,12 @@ public final class SqliteStorage implements AutoCloseable {
         return replacement;
     }
 
-    private static List<float[]> validateVectors(List<Chunk> chunks, EmbeddingProfile profile, List<float[]> vectors) {
+    private static List<float[]> validateVectors(int chunks, EmbeddingProfile profile, List<float[]> vectors) {
         List<float[]> embeddings = List.copyOf(vectors);
 
-        if (embeddings.size() != chunks.size()) {
+        if (embeddings.size() != chunks) {
             throw new IllegalArgumentException(
-                    "Expected one vector per chunk: " + chunks.size() + " chunks, " + embeddings.size() + " vectors");
+                    "Expected one vector per chunk: " + chunks + " chunks, " + embeddings.size() + " vectors");
         }
 
         for (float[] vector : embeddings) {

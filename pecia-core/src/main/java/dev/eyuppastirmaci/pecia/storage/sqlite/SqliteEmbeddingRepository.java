@@ -2,11 +2,13 @@ package dev.eyuppastirmaci.pecia.storage.sqlite;
 
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
+import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Writes embedding profiles and chunk vectors using the owning storage's connection. */
@@ -75,6 +77,56 @@ final class SqliteEmbeddingRepository {
                 }
             }
         }
+    }
+
+    /** Returns the file's chunks that have no embedding, in position order. */
+    List<UnembeddedChunk> findUnembedded(long fileId) throws SQLException {
+        List<UnembeddedChunk> chunks = new ArrayList<>();
+
+        try (var query = connection.prepareStatement("""
+                SELECT c.id, c.content FROM chunks c
+                WHERE c.file_id = ? AND NOT EXISTS (SELECT 1 FROM chunk_embeddings e WHERE e.chunk_id = c.id)
+                ORDER BY c.chunk_index
+                """)) {
+            query.setLong(1, fileId);
+
+            try (var result = query.executeQuery()) {
+                while (result.next()) {
+                    chunks.add(new UnembeddedChunk(result.getLong(1), result.getString(2)));
+                }
+            }
+        }
+
+        return chunks;
+    }
+
+    /**
+     * Stores one vector per chunk, in the same order, for each chunk that still has the same content and no vector;
+     * the caller has validated the vectors' dimensions.
+     *
+     * @return how many vectors were stored
+     */
+    int saveIfUnchanged(List<UnembeddedChunk> chunks, long profileId, List<float[]> vectors) throws SQLException {
+        int stored = 0;
+
+        try (var insert = connection.prepareStatement("""
+                INSERT INTO chunk_embeddings(chunk_id, profile_id, vector)
+                SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM chunks WHERE id = ? AND content = ?)
+                    AND NOT EXISTS (SELECT 1 FROM chunk_embeddings WHERE chunk_id = ?)
+                """)) {
+            for (int index = 0; index < chunks.size(); index++) {
+                UnembeddedChunk chunk = chunks.get(index);
+                insert.setLong(1, chunk.id());
+                insert.setLong(2, profileId);
+                insert.setBytes(3, encode(vectors.get(index)));
+                insert.setLong(4, chunk.id());
+                insert.setString(5, chunk.content());
+                insert.setLong(6, chunk.id());
+                stored += insert.executeUpdate();
+            }
+        }
+
+        return stored;
     }
 
     /** Encodes a vector as little-endian float32 values, the layout sqlite-vec reads. */
