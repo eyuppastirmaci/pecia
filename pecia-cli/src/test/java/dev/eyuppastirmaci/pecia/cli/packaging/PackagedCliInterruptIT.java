@@ -12,6 +12,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -64,6 +65,42 @@ class PackagedCliInterruptIT {
         assertEquals(0, next.exitCode(), next.err());
         assertEquals(FILES - indexed, indexed(next.out()));
         assertTrue(next.out().contains("unchanged: " + indexed + "\n"), next.out());
+    }
+
+    @Test
+    void aKilledRunLeavesAConsistentIndexThatTheNextRunCompletes() throws Exception {
+        PackagedCli cli = PackagedCli.create(sandbox);
+        Path project = cli.project();
+        writeCorpus(project);
+        Path database = project.resolve(".pecia/index.db");
+        Path clean = Files.createDirectories(sandbox.resolve("clean")).toRealPath();
+        writeCorpus(clean);
+
+        Started started = cli.start(project, "index", "--no-semantic");
+        awaitCommittedFile(started.process(), database);
+        // A hard kill: no shutdown hook runs and no transaction is finished.
+        started.process().destroyForcibly();
+
+        assertTrue(started.process().waitFor(PATIENCE.toSeconds(), TimeUnit.SECONDS), "The run did not stop");
+        int committed = Integer.parseInt(query(database, "SELECT count(*) FROM files"));
+        assertTrue(committed > 0 && committed < FILES, committed + " files were committed before the kill");
+        assertEquals("ok", query(database, "PRAGMA integrity_check"));
+        assertEquals("0", query(database, "SELECT count(*) FROM pragma_foreign_key_check"));
+
+        Result next = cli.run(project, "index", "--no-semantic");
+        Result fresh = cli.run(clean, "index", "--no-semantic");
+
+        assertEquals(0, next.exitCode(), next.err());
+        assertEquals(FILES - committed, indexed(next.out()));
+        assertEquals(0, fresh.exitCode(), fresh.err());
+
+        for (String text : List.of("refund policy", "word42", "Note 799")) {
+            Result recovered = cli.run(project, "query", "--mode=lexical", "--limit=20", text);
+            Result expected = cli.run(clean, "query", "--mode=lexical", "--limit=20", text);
+
+            assertEquals(0, recovered.exitCode(), recovered.err());
+            assertEquals(expected.out(), recovered.out(), text);
+        }
     }
 
     /** Writes enough Markdown files that indexing them takes several seconds. */

@@ -210,6 +210,25 @@ final class PackagedCoreRunner {
         return run(scenario, project, Duration.ofSeconds(30), offline, evidence -> evidence.verifyLexical(CONSUMER));
     }
 
+    /**
+     * Starts a scenario and returns at once, for tests that act on the process while it runs; the caller ends it.
+     * Standard output and error go to files in the sandbox.
+     */
+    Process start(String scenario, Path project) throws IOException {
+        Path output = Files.createTempDirectory(sandbox, "start-");
+        ProcessBuilder builder = new ProcessBuilder(command(scenario, project))
+                .directory(project.toFile())
+                .redirectOutput(output.resolve("stdout.txt").toFile())
+                .redirectError(output.resolve("stderr.txt").toFile());
+        builder.environment()
+                .keySet()
+                .removeAll(List.of("CLASSPATH", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"));
+        Process process = builder.start();
+        process.getOutputStream().close();
+
+        return process;
+    }
+
     /** Runs a scenario offline that opens an embedder; see {@link OfflineSandbox.Run#verifyEmbedding}. */
     Result runOfflineEmbedding(String scenario, Path project, OfflineSandbox offline)
             throws IOException, InterruptedException {

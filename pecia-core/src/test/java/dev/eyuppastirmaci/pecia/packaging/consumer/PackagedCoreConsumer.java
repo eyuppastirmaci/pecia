@@ -25,7 +25,9 @@ public final class PackagedCoreConsumer {
             "lexical-reopen",
             "lexical-determinism",
             "lexical-determinism-reversed",
-            "lexical-incremental");
+            "lexical-incremental",
+            "recovery-lexical",
+            "recovery-semantic");
 
     private PackagedCoreConsumer() {}
 
@@ -79,6 +81,8 @@ public final class PackagedCoreConsumer {
                 System.out.print(new LexicalHardeningScenario(root).indexCorpus(true));
             case "lexical-incremental" ->
                 System.out.print(new LexicalHardeningScenario(root).verifyIncrementalLifecycle());
+            case "recovery-lexical" -> RecoveryScenario.index(root, false);
+            case "recovery-semantic" -> RecoveryScenario.index(root, true);
             default -> throw new IllegalStateException(scenario);
         }
         System.out.println("PACKAGED_CORE_OK " + scenario);
