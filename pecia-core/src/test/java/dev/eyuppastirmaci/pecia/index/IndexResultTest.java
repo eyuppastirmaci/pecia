@@ -9,6 +9,8 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -61,6 +63,29 @@ class IndexResultTest {
                         deleted,
                         chunks,
                         List.of()));
+    }
+
+    @Test
+    void embeddingsMustBeWrittenChunksOfASemanticRun() {
+        ModelOutcome model = TinyModel.cached();
+
+        assertEquals(
+                3,
+                new IndexResult(CONTEXT, IndexResult.Status.COMPLETE, 1, 1, 0, 0, 3, List.of(), model, 3)
+                        .embeddedChunks());
+        assertEquals(
+                0, new IndexResult(CONTEXT, IndexResult.Status.COMPLETE, 1, 1, 0, 0, 3, List.of()).embeddedChunks());
+
+        for (long embedded : new long[] {-1, 4}) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new IndexResult(
+                            CONTEXT, IndexResult.Status.COMPLETE, 1, 1, 0, 0, 3, List.of(), model, embedded));
+        }
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new IndexResult(CONTEXT, IndexResult.Status.COMPLETE, 1, 1, 0, 0, 3, List.of(), null, 1));
     }
 
     @Test

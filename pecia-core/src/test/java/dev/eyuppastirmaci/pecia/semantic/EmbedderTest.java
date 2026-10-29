@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -19,7 +19,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * Runs the embedder on the tiny models that {@code semantic/tiny/generate_tiny_models.py} writes. The valid model
+ * Runs the embedder on the tiny models of {@link TinyModel}. The valid model
  * shifts the values of masked positions, of non-zero token types, and of every token in an input whose padding is not
  * masked, so only correct inputs and pooling give the embeddings {@link #expected(String)} computes.
  */
@@ -179,10 +179,8 @@ class EmbedderTest {
         return Embedder.open(new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, file));
     }
 
-    static Path model(String name) throws URISyntaxException {
-        return Path.of(EmbedderTest.class
-                .getResource("/semantic/tiny/" + name + ".onnx")
-                .toURI());
+    static Path model(String name) {
+        return TinyModel.path(name);
     }
 
     /** Computes the valid tiny model's embedding in float arithmetic, as ONNX Runtime does before pooling. */

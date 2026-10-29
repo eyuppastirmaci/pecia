@@ -18,10 +18,10 @@ import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
-import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -72,11 +72,8 @@ class LexicalConfigurationTest {
             new LineRange(9, 11),
             new LineRange(11, 12));
 
-    // Semantic runs get the model from a stub, so these tests never download it.
-    private static final ModelOutcome CACHED_MODEL = new ModelOutcome(
-            ModelOutcome.Status.CACHED,
-            SemanticModel.MINILM,
-            Path.of("model.onnx").toAbsolutePath());
+    // Semantic runs get the tiny test model from a stub, so these tests never download the real one.
+    private static final ModelOutcome CACHED_MODEL = TinyModel.cached();
 
     @TempDir
     Path root;
@@ -174,6 +171,8 @@ class LexicalConfigurationTest {
         IndexResult result = indexService.index(root);
 
         assertCounts(result, 1, 0, 1, 0, 0);
+        // Unchanged files keep the chunks they have and gain no embeddings in this run.
+        assertEquals(0, result.embeddedChunks());
         assertTrue(result.context().loadedConfig().config().semanticEnabled());
         assertEquals(
                 SearchMode.LEXICAL, result.context().loadedConfig().config().searchMode());

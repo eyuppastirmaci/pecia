@@ -13,6 +13,7 @@ import dev.eyuppastirmaci.pecia.content.FileContentLoader;
 import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
@@ -66,6 +67,21 @@ final class FileIndexer {
      * Programming/chunking failures propagate without being disguised as content rejections.
      */
     Result index(Path candidate, SqliteStorage storage) throws ExtractionException, SQLException {
+        try {
+            return index(candidate, storage, null);
+        } catch (EmbeddingException impossible) {
+            throw new IllegalStateException("A lexical replacement cannot embed", impossible);
+        }
+    }
+
+    /**
+     * Indexes like {@link #index(Path, SqliteStorage)}; when {@code semantic} is not null, a changed file's chunks are
+     * embedded first and stored with their vectors in the same replacement. Unchanged files are not embedded.
+     *
+     * @throws EmbeddingException if embedding fails, before the file is written
+     */
+    Result index(Path candidate, SqliteStorage storage, SemanticIndexing semantic)
+            throws ExtractionException, SQLException, EmbeddingException {
         Objects.requireNonNull(storage, "storage");
         Path absolute = context.absoluteSource(candidate);
 
@@ -91,13 +107,19 @@ final class FileIndexer {
         }
 
         List<Chunk> chunks = chunkers.getChunker(document).chunk(document);
-        StoredFile file = storage.replaceFile(document, chunks, identity);
 
-        return new Result(file, chunks.size(), false);
+        if (semantic == null) {
+            return new Result(storage.replaceFile(document, chunks, identity), chunks.size(), false, 0);
+        }
+
+        List<float[]> vectors = semantic.embed(chunks);
+        StoredFile file = storage.replaceFile(document, chunks, identity, semantic.profile(), vectors);
+
+        return new Result(file, chunks.size(), false, vectors.size());
     }
 
-    /** Chunk count describes writes in this operation; unchanged files always report zero. */
-    record Result(StoredFile file, int chunkCount, boolean unchanged) {
+    /** Chunk and embedding counts describe writes in this operation; unchanged files always report zero. */
+    record Result(StoredFile file, int chunkCount, boolean unchanged, int embeddedChunks) {
 
         Result {
             Objects.requireNonNull(file, "file");
@@ -105,6 +127,14 @@ final class FileIndexer {
             if (chunkCount < 0 || (unchanged && chunkCount != 0)) {
                 throw new IllegalArgumentException("chunkCount must be non-negative and zero for unchanged files");
             }
+
+            if (embeddedChunks < 0 || embeddedChunks > chunkCount) {
+                throw new IllegalArgumentException("embeddedChunks must be between zero and chunkCount");
+            }
+        }
+
+        Result(StoredFile file, int chunkCount, boolean unchanged) {
+            this(file, chunkCount, unchanged, 0);
         }
     }
 }

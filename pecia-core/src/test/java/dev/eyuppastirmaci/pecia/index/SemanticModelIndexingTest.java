@@ -11,8 +11,8 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.semantic.DownloadListener;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
-import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,10 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 /** When an indexing run asks for the semantic model, and what a missing model leaves behind. */
 class SemanticModelIndexingTest {
 
-    private static final ModelOutcome CACHED = new ModelOutcome(
-            ModelOutcome.Status.CACHED,
-            SemanticModel.MINILM,
-            Path.of("model.onnx").toAbsolutePath());
+    private static final ModelOutcome CACHED = TinyModel.cached();
 
     @TempDir
     Path sandbox;

@@ -15,6 +15,7 @@ import java.util.Objects;
  *
  * @param writtenChunks chunks written by committed replacements, excluding unchanged files
  * @param semanticModel how the semantic model became available; null when the run did not need it
+ * @param embeddedChunks embeddings stored with committed replacements; zero when the run did not embed
  */
 public record IndexResult(
         ProjectContext context,
@@ -25,9 +26,13 @@ public record IndexResult(
         int deletedFiles,
         long writtenChunks,
         List<FileIssue> issues,
-        ModelOutcome semanticModel) {
+        ModelOutcome semanticModel,
+        long embeddedChunks) {
 
-    /** Copies issues and rejects negative counters or more processed files than candidates. */
+    /**
+     * Copies issues and rejects negative counters, more processed files than candidates, and embeddings beyond the
+     * written chunks or without a semantic model.
+     */
     public IndexResult {
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(status, "status");
@@ -41,6 +46,34 @@ public record IndexResult(
                 || (long) indexedFiles + unchangedFiles + issues.size() > candidateCount) {
             throw new IllegalArgumentException("Invalid indexing counters");
         }
+
+        if (embeddedChunks < 0 || embeddedChunks > writtenChunks || (embeddedChunks > 0 && semanticModel == null)) {
+            throw new IllegalArgumentException("Invalid embedding counter");
+        }
+    }
+
+    /** Creates an outcome that stored no embeddings. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            int unchangedFiles,
+            int deletedFiles,
+            long writtenChunks,
+            List<FileIssue> issues,
+            ModelOutcome semanticModel) {
+        this(
+                context,
+                status,
+                candidateCount,
+                indexedFiles,
+                unchangedFiles,
+                deletedFiles,
+                writtenChunks,
+                issues,
+                semanticModel,
+                0);
     }
 
     /** Creates an outcome that did not need the semantic model. */
@@ -93,6 +126,10 @@ public record IndexResult(
         INCOMPLETE_SCAN,
         /** Semantic indexing was requested, but its model could not be made available; nothing was indexed. */
         MODEL_UNAVAILABLE,
+        /** The semantic model was available, but its embedder could not be opened; nothing was indexed. */
+        EMBEDDER_UNAVAILABLE,
+        /** Embedding a changed file's chunks failed; earlier files stay committed and the failing file is unchanged. */
+        EMBEDDING_FAILED,
         /** A storage operation failed after discovery completed. */
         FAILED
     }

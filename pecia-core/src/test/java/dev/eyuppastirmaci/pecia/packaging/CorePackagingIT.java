@@ -74,6 +74,10 @@ class CorePackagingIT {
 
     @Test
     void choosesSemanticIndexingPerRunUsingOnlyThePackagedCore() throws Exception {
+        // The consumer embeds with the tiny model, which it finds beside the project rather than inside it.
+        try (InputStream model = CorePackagingIT.class.getResourceAsStream("/semantic/tiny/tiny.onnx")) {
+            Files.copy(model, fixture.resolve("tiny.onnx"));
+        }
         runConsumer("verifySemanticIndexingOptions");
     }
 

@@ -6,6 +6,8 @@ import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
 import dev.eyuppastirmaci.pecia.semantic.DownloadListener;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.semantic.ModelCache;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
@@ -24,6 +26,7 @@ public final class IndexService {
     private final ProjectContextResolver contextResolver;
     private final StorageOpener storageOpener;
     private final ModelProvider models;
+    private final TextEmbedder.Opener embedders;
 
     /**
      * Creates an indexing service that opens SQLite storage for each resolved project and keeps the semantic model in
@@ -53,9 +56,18 @@ public final class IndexService {
     }
 
     IndexService(PeciaConfigLoader configLoader, StorageOpener storageOpener, ModelProvider models) {
+        this(configLoader, storageOpener, models, TextEmbedder::open);
+    }
+
+    IndexService(
+            PeciaConfigLoader configLoader,
+            StorageOpener storageOpener,
+            ModelProvider models,
+            TextEmbedder.Opener embedders) {
         this.contextResolver = new ProjectContextResolver(configLoader);
         this.storageOpener = Objects.requireNonNull(storageOpener, "storageOpener");
         this.models = Objects.requireNonNull(models, "models");
+        this.embedders = Objects.requireNonNull(embedders, "embedders");
     }
 
     /** Returns a provider that creates the user's model cache only when a run needs the model. */
@@ -122,10 +134,11 @@ public final class IndexService {
 
     /**
      * Indexes like {@link #index(Path)} with the caller's choices for this run, which override the project
-     * configuration. When semantic indexing resolves to enabled, the semantic model is made available after the
-     * configuration and token budget are validated and before storage opens; embeddings are not built yet, so the
-     * index itself stays lexical. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs the
-     * model.
+     * configuration. When semantic indexing resolves to enabled, the semantic model is made available and its
+     * embedder opened after the configuration and token budget are validated and before storage opens; each new or
+     * changed file's chunks are then embedded and stored with their vectors in the file's replacement. Unchanged files
+     * keep whatever vectors they have. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs
+     * the model.
      *
      * @param target directory whose descendants are indexed
      * @param options the caller's choices for this run
@@ -133,8 +146,8 @@ public final class IndexService {
      * @throws IOException if target/configuration resolution or initial discovery fails, before storage is opened
      * @throws IllegalArgumentException if configuration, paths, globs, tokenizer budgets, or the model cache or proxy
      *     settings are invalid
-     * @throws IndexException if discovery is incomplete, the semantic model is unavailable, or storage fails;
-     *     includes completed work and the cause
+     * @throws IndexException if discovery is incomplete, the semantic model or its embedder is unavailable, embedding
+     *     fails, or storage fails; includes completed work and the cause
      */
     public IndexResult index(Path target, IndexOptions options) throws IOException, IndexException {
         Objects.requireNonNull(options, "options");
@@ -167,16 +180,23 @@ public final class IndexService {
         // Constructing the file pipeline validates the real tokenizer budget before opening storage.
         FileIndexer indexer = new FileIndexer(context);
         ModelOutcome semanticModel = semanticOptions == null ? null : ensureModel(context, candidates, semanticOptions);
+        // Semantic classes are created only for a semantic run; the profile comes first so nothing can fail between
+        // opening the embedder and the try block that closes it.
+        EmbeddingProfile profile = semanticModel == null ? null : EmbeddingProfile.minilm();
+        TextEmbedder embedder = semanticModel == null ? null : openEmbedder(context, candidates, semanticModel);
+        SemanticIndexing semantic = embedder == null ? null : new SemanticIndexing(embedder, profile);
         int indexedFiles = 0;
         int unchangedFiles = 0;
         int deletedFiles = 0;
         long writtenChunks = 0;
+        long embeddedChunks = 0;
         List<IndexResult.FileIssue> issues = new ArrayList<>();
 
-        try (SqliteStorage storage = storageOpener.open(context)) {
+        try (embedder;
+                SqliteStorage storage = storageOpener.open(context)) {
             for (Path candidate : candidates) {
                 try {
-                    FileIndexer.Result result = indexer.index(candidate, storage);
+                    FileIndexer.Result result = indexer.index(candidate, storage, semantic);
                     if (result.unchanged()) {
                         unchangedFiles++;
                     } else {
@@ -184,6 +204,7 @@ public final class IndexService {
                     }
 
                     writtenChunks += result.chunkCount();
+                    embeddedChunks += result.embeddedChunks();
                 } catch (ExtractionException failure) {
                     IndexResult.FileIssue issue = new IndexResult.FileIssue(
                             context.sourcePath(candidate), failure.reason(), failure.getMessage());
@@ -209,9 +230,25 @@ public final class IndexService {
                     deletedFiles,
                     writtenChunks,
                     issues,
-                    semanticModel);
+                    semanticModel,
+                    embeddedChunks);
 
             throw new IndexException("Index storage or cleanup operation failed", failure, result, List.of());
+        } catch (EmbeddingException failure) {
+            // Cleanup is skipped like after any other aborted run; the failing file was not written.
+            IndexResult result = new IndexResult(
+                    context,
+                    IndexResult.Status.EMBEDDING_FAILED,
+                    candidates.size(),
+                    indexedFiles,
+                    unchangedFiles,
+                    0,
+                    writtenChunks,
+                    issues,
+                    semanticModel,
+                    embeddedChunks);
+
+            throw new IndexException("Semantic indexing could not embed a file's chunks", failure, result, List.of());
         }
 
         IndexResult.Status status = issues.isEmpty() ? IndexResult.Status.COMPLETE : IndexResult.Status.PARTIAL;
@@ -225,7 +262,20 @@ public final class IndexService {
                 deletedFiles,
                 writtenChunks,
                 issues,
-                semanticModel);
+                semanticModel,
+                embeddedChunks);
+    }
+
+    private TextEmbedder openEmbedder(ProjectContext context, List<Path> candidates, ModelOutcome model)
+            throws IndexException {
+        try {
+            return embedders.open(model);
+        } catch (EmbeddingException failure) {
+            IndexResult result = new IndexResult(
+                    context, IndexResult.Status.EMBEDDER_UNAVAILABLE, candidates.size(), 0, 0, 0, 0, List.of(), model);
+
+            throw new IndexException("Semantic indexing could not open its embedder", failure, result, List.of());
+        }
     }
 
     private ModelOutcome ensureModel(ProjectContext context, List<Path> candidates, IndexOptions options)

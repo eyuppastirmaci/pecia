@@ -23,10 +23,10 @@ import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
-import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.sqlite.IndexAccessException;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.LegacyIndexFixture;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
@@ -88,11 +88,8 @@ class HostileInputCorpusTest {
     Path sandbox;
 
     private final PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
-    // Semantic runs get the model from a stub, so these tests never download it.
-    private static final ModelOutcome CACHED_MODEL = new ModelOutcome(
-            ModelOutcome.Status.CACHED,
-            SemanticModel.MINILM,
-            Path.of("model.onnx").toAbsolutePath());
+    // Semantic runs get the tiny test model from a stub, so these tests never download the real one.
+    private static final ModelOutcome CACHED_MODEL = TinyModel.cached();
 
     private final IndexService indexService = IndexService.withModelProvider(loader, listener -> CACHED_MODEL);
     private final QueryService queryService = new QueryService(loader);

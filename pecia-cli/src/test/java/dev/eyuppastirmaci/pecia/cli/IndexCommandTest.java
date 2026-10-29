@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.semantic.ModelProvider;
 import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -218,7 +219,7 @@ class IndexCommandTest {
         Path file = root.resolve("cache/models/all-MiniLM-L6-v2/rev/model.onnx");
         models = listener -> {
             listener.downloading(SemanticModel.MINILM, file);
-            return new ModelOutcome(ModelOutcome.Status.DOWNLOADED, SemanticModel.MINILM, file);
+            return new ModelOutcome(ModelOutcome.Status.DOWNLOADED, SemanticModel.MINILM, TinyModel.path("tiny"));
         };
 
         assertEquals(0, run(root.toString(), "--semantic"));
@@ -596,9 +597,8 @@ class IndexCommandTest {
     private int run(String... args) {
         PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
 
-        // Semantic runs get the model from a stub, so these tests never download it.
-        ModelOutcome cached =
-                new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, root.resolve("model.onnx"));
+        // Semantic runs get the tiny test model from a stub, so these tests never download the real one.
+        ModelOutcome cached = TinyModel.cached();
         ModelProvider provider = models != null ? models : listener -> cached;
         CommandLine commandLine = new CommandLine(new IndexCommand(IndexService.withModelProvider(loader, provider)));
         commandLine.setOut(new PrintWriter(out));

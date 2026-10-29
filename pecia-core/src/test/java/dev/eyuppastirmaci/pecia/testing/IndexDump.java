@@ -92,6 +92,11 @@ public record IndexDump(
                 results);
     }
 
+    /** Returns this dump without its embeddings, to compare the lexical parts of two indexes. */
+    public IndexDump withoutEmbeddings() {
+        return new IndexDump(formatVersion, files, chunks, ftsRows, List.of(), queries);
+    }
+
     /**
      * Serializes the dump with one entry per line, escaping backslashes and line breaks, so dumps produced by
      * separate processes can be exchanged as text and compared exactly.

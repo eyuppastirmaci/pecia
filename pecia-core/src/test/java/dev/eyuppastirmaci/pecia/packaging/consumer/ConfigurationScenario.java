@@ -69,9 +69,10 @@ final class ConfigurationScenario {
         verifyArchiveOrigins(coreJar, runtimeDirectory);
         Files.writeString(root.resolve(".pecia.toml"), "[semantic]\nenabled = true\n");
         Files.writeString(root.resolve("guide.md"), "# Guide\n\nsemanticneedle\n");
-        // A stub provides the model, so the unguarded consumer process never downloads it.
+        // A stub provides the tiny model that the packaging test places beside the project, so the unguarded consumer
+        // process never downloads the real one.
         ModelOutcome cached =
-                new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, root.resolve("model.onnx"));
+                new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, root.resolveSibling("tiny.onnx"));
         IndexService indexService =
                 IndexService.withModelProvider(new PeciaConfigLoader(new PeciaConfigParser()), listener -> cached);
 
@@ -81,8 +82,11 @@ final class ConfigurationScenario {
                 "A packaged caller's choice must override semantic.enabled");
         IndexResult indexed = indexService.index(root, IndexOptions.semantic(true));
         check(
-                indexed.status() == IndexResult.Status.COMPLETE && cached.equals(indexed.semanticModel()),
-                "Packaged indexing must complete with the model when the caller chooses semantic indexing");
+                indexed.status() == IndexResult.Status.COMPLETE
+                        && cached.equals(indexed.semanticModel())
+                        && indexed.embeddedChunks() == indexed.writtenChunks()
+                        && indexed.embeddedChunks() > 0,
+                "Packaged indexing must embed every chunk when the caller chooses semantic indexing");
         check(
                 indexService.index(root, IndexOptions.semantic(false)).semanticModel() == null,
                 "Packaged lexical indexing must not ask for the model");

@@ -8,12 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
-import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -25,11 +26,8 @@ class IndexOptionsTest {
     @TempDir
     Path sandbox;
 
-    // Semantic runs get the model from a stub, so these tests never download it.
-    private static final ModelOutcome CACHED_MODEL = new ModelOutcome(
-            ModelOutcome.Status.CACHED,
-            SemanticModel.MINILM,
-            Path.of("model.onnx").toAbsolutePath());
+    // Semantic runs get the tiny test model from a stub, so these tests never download the real one.
+    private static final ModelOutcome CACHED_MODEL = TinyModel.cached();
 
     private final IndexService indexService =
             IndexService.withModelProvider(new PeciaConfigLoader(new PeciaConfigParser()), listener -> CACHED_MODEL);
@@ -78,7 +76,7 @@ class IndexOptionsTest {
     }
 
     @Test
-    void choosingSemanticIndexingWritesTheSameIndexAsLeavingItOff() throws Exception {
+    void choosingSemanticIndexingAddsEmbeddingsWithoutChangingTheLexicalIndex() throws Exception {
         Path disabled = Files.createDirectories(sandbox.resolve("disabled")).toRealPath();
         Path enabled = Files.createDirectories(sandbox.resolve("enabled")).toRealPath();
         LexicalTestCorpus.write(disabled);
@@ -88,7 +86,9 @@ class IndexOptionsTest {
         IndexDump withSemantic = indexAndDump(enabled, IndexOptions.semantic(true));
 
         assertFalse(withoutSemantic.chunks().isEmpty());
-        assertEquals(withoutSemantic, withSemantic);
+        assertEquals(List.of(), withoutSemantic.embeddings());
+        assertEquals(withSemantic.chunks().size(), withSemantic.embeddings().size());
+        assertEquals(withoutSemantic, withSemantic.withoutEmbeddings());
     }
 
     @Test
