@@ -51,8 +51,8 @@ jobs:
         run: .\gradlew.bat check --profile
 
       # Only the next three steps use the real model, comparing its embeddings with the committed sentence-transformers
-      # references. A cache miss downloads it through the packaged CLI, which verifies its SHA-256; the test tasks above
-      # never download it.
+      # references. The packaged CLI indexes a project semantically with the cached model, downloading it on a cache miss
+      # and verifying its SHA-256; the test tasks above never download it.
       - name: Restore the semantic model
         id: semantic-model
         uses: actions/cache@v6
@@ -61,16 +61,16 @@ jobs:
           # SemanticModel.java holds the pinned revision and SHA-256, so any change to the pin starts a new cache.
           key: semantic-model-${{ hashFiles('pecia-core/src/main/java/dev/eyuppastirmaci/pecia/semantic/SemanticModel.java') }}
 
-      - name: Download the semantic model
-        if: steps.semantic-model.outputs.cache-hit != 'true'
+      - name: Index semantically with the packaged CLI
         shell: bash
         env:
           PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
         run: |
-          project="$RUNNER_TEMP/semantic-model-download"
+          project="$RUNNER_TEMP/semantic-index"
           mkdir -p "$project"
-          echo "Downloads the semantic model." > "$project/readme.md"
-          java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project"
+          echo "Indexes one chunk with the semantic model." > "$project/readme.md"
+          java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-index.txt"
+          grep -qx 'embedded: 1' "$RUNNER_TEMP/semantic-index.txt"
 
       - name: Compare embeddings with the references
         env:
