@@ -7,18 +7,26 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * What an indexing run would do, found without writing anything: the absolute target, project configuration, scan
- * outcome, whether the run would build embeddings, and what it would do with the index and each candidate.
+ * What an indexing run would do, found without writing anything: the absolute target, the index it would write,
+ * project configuration, scan outcome, whether the run would build embeddings, and what it would do with the index and
+ * each candidate.
  *
+ * @param databasePath the absolute path of the project's index, which may not exist yet
  * @param semanticEnabled whether the run would build embeddings for semantic search, with the caller's choice
  *     overriding the configuration
  */
 public record IndexPreview(
-        Path target, LoadedConfig loadedConfig, WalkResult walkResult, boolean semanticEnabled, Changes changes) {
+        Path target,
+        Path databasePath,
+        LoadedConfig loadedConfig,
+        WalkResult walkResult,
+        boolean semanticEnabled,
+        Changes changes) {
 
     /** Requires every component. */
     public IndexPreview {
         Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(databasePath, "databasePath");
         Objects.requireNonNull(loadedConfig, "loadedConfig");
         Objects.requireNonNull(walkResult, "walkResult");
         Objects.requireNonNull(changes, "changes");

@@ -184,6 +184,10 @@ class PackagedCliSemanticSettingsIT {
     }
 
     private static String semanticLine(Result result) {
-        return result.out().lines().toList().get(1);
+        return result.out()
+                .lines()
+                .filter(line -> line.startsWith("semantic: "))
+                .findFirst()
+                .orElseThrow();
     }
 }

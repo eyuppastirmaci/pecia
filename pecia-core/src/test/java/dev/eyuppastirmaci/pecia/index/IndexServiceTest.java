@@ -40,6 +40,7 @@ class IndexServiceTest {
     void previewRequiresTargetConfigurationScanResultAndChanges() {
         var loaded = new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), root, false);
         var walked = new WalkResult(List.of(), List.of());
+        var database = root.resolve(".pecia/index.db");
         var changes = new IndexPreview.Changes(
                 IndexPreview.IndexState.NONE,
                 List.of(),
@@ -52,10 +53,12 @@ class IndexServiceTest {
                 null,
                 null);
 
-        assertThrows(NullPointerException.class, () -> new IndexPreview(null, loaded, walked, false, changes));
-        assertThrows(NullPointerException.class, () -> new IndexPreview(root, null, walked, false, changes));
-        assertThrows(NullPointerException.class, () -> new IndexPreview(root, loaded, null, false, changes));
-        assertThrows(NullPointerException.class, () -> new IndexPreview(root, loaded, walked, false, null));
+        assertThrows(
+                NullPointerException.class, () -> new IndexPreview(null, database, loaded, walked, false, changes));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, database, null, walked, false, changes));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, database, loaded, null, false, changes));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, database, loaded, walked, false, null));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, null, loaded, walked, false, changes));
     }
 
     @Test

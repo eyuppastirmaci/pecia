@@ -154,7 +154,8 @@ public final class IndexService {
             changes = withModel(changes);
         }
 
-        return new IndexPreview(context.target(), context.loadedConfig(), result, semanticEnabled, changes);
+        return new IndexPreview(
+                context.target(), context.databasePath(), context.loadedConfig(), result, semanticEnabled, changes);
     }
 
     /** Adds whether the model is cached, which the preview finds out without downloading or loading anything. */
