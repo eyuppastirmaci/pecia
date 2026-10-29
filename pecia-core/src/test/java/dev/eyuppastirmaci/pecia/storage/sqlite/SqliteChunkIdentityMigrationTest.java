@@ -50,11 +50,11 @@ class SqliteChunkIdentityMigrationTest {
     Path root;
 
     @Test
-    void createsFreshVersionFourWithEmptyIdentityStorageAndUsableSearch() throws Exception {
+    void createsFreshIndexWithEmptyIdentityStorageAndUsableSearch() throws Exception {
         Path database = root.resolve("nested/index.db");
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             Connection connection = storage.connection();
-            assertVersionFour(connection);
+            assertCurrentVersion(connection);
             assertNoIdentities(connection);
             assertEquals(0, scalar(connection, "SELECT count(*) FROM file_indexing_profiles"));
             seed(connection);
@@ -65,7 +65,7 @@ class SqliteChunkIdentityMigrationTest {
 
         byte[] before = Files.readAllBytes(database);
         try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
-            assertVersionFour(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertNoIdentities(storage.connection());
             assertMatches(storage.connection(), "identitybody", 11);
         }
@@ -91,7 +91,7 @@ class SqliteChunkIdentityMigrationTest {
         Path database = root.resolve("index.db");
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             Connection connection = storage.connection();
-            assertVersionFour(connection);
+            assertCurrentVersion(connection);
             assertEquals(before, sourceSnapshot(connection));
             assertEquals(legacyProfiles, tableRows(connection, "file_indexing_profiles"));
             assertNoIdentities(connection);
@@ -103,7 +103,7 @@ class SqliteChunkIdentityMigrationTest {
 
         byte[] migrated = Files.readAllBytes(database);
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertVersionFour(storage.connection());
+            assertCurrentVersion(storage.connection());
             assertEquals(before, sourceSnapshot(storage.connection()));
             assertEquals(legacyProfiles, tableRows(storage.connection(), "file_indexing_profiles"));
             assertNoIdentities(storage.connection());
@@ -126,7 +126,7 @@ class SqliteChunkIdentityMigrationTest {
                             resource(V4_RESOURCE),
                             SqliteFtsSupport::verify);
 
-            assertVersionFour(connection);
+            assertCurrentVersion(connection);
             assertEquals(profiles, tableRows(connection, "file_indexing_profiles"));
             assertNoIdentities(connection);
             assertEquals(EXPECTED_FTS, rows(connection));
@@ -135,7 +135,7 @@ class SqliteChunkIdentityMigrationTest {
     }
 
     @Test
-    void healthyVersionFourReopenSkipsAllMigrationScriptsWithoutPersistentWrites() throws Exception {
+    void healthyCurrentIndexReopenSkipsAllMigrationScriptsWithoutPersistentWrites() throws Exception {
         Path database = root.resolve("index.db");
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             seedHistorical(storage.connection(), 3);
@@ -151,7 +151,7 @@ class SqliteChunkIdentityMigrationTest {
                             "INVALID V4 SQL;",
                             SqliteFtsSupport::verify);
 
-            assertVersionFour(connection);
+            assertCurrentVersion(connection);
             assertEquals(EXPECTED_FTS, rows(connection));
             assertEquals(2, scalar(connection, "SELECT count(*) FROM file_indexing_profiles"));
             assertNoIdentities(connection);
@@ -267,7 +267,7 @@ class SqliteChunkIdentityMigrationTest {
             }
 
             SqliteSchemaInitializer.load(connection, rootUri()).initialize();
-            assertVersionFour(connection);
+            assertCurrentVersion(connection);
             assertNoIdentities(connection);
             assertEquals(profilesBefore, tableRows(connection, "file_indexing_profiles"));
             if (version > 0) {
@@ -346,7 +346,7 @@ class SqliteChunkIdentityMigrationTest {
         assertTrue(start.await(5, TimeUnit.SECONDS));
         try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
             Connection connection = storage.connection();
-            assertVersionFour(connection);
+            assertCurrentVersion(connection);
             assertNoIdentities(connection);
             assertEquals(sources, sourceSnapshot(connection));
             assertEquals(profiles, tableRows(connection, "file_indexing_profiles"));
@@ -388,9 +388,9 @@ class SqliteChunkIdentityMigrationTest {
         execute(connection, "INSERT INTO chunk_attributes VALUES (29, 'custom', '')");
     }
 
-    private static void assertVersionFour(Connection connection) throws SQLException {
-        assertEquals(4, scalar(connection, "PRAGMA user_version"));
-        assertEquals(4, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+    private static void assertCurrentVersion(Connection connection) throws SQLException {
+        assertEquals(5, scalar(connection, "PRAGMA user_version"));
+        assertEquals(5, scalar(connection, "SELECT index_format_version FROM index_metadata"));
     }
 
     private static void assertNoIdentities(Connection connection) throws SQLException {

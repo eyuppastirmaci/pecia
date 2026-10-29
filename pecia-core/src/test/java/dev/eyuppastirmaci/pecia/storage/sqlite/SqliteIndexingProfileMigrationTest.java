@@ -319,7 +319,7 @@ class SqliteIndexingProfileMigrationTest {
         Path database = root.resolve("index.db");
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             seed(storage.connection());
-            execute(storage.connection(), "PRAGMA user_version = 5");
+            execute(storage.connection(), "PRAGMA user_version = 6");
         }
         assertBothModesRejectWithoutMutation(database, IndexAccessException.Reason.INCOMPATIBLE);
     }
@@ -417,8 +417,8 @@ class SqliteIndexingProfileMigrationTest {
     }
 
     private static void assertCurrentVersion(Connection connection) throws SQLException {
-        assertEquals(4, scalar(connection, "PRAGMA user_version"));
-        assertEquals(4, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+        assertEquals(5, scalar(connection, "PRAGMA user_version"));
+        assertEquals(5, scalar(connection, "SELECT index_format_version FROM index_metadata"));
     }
 
     private static Map<String, List<List<String>>> sourceSnapshot(Connection connection) throws SQLException {

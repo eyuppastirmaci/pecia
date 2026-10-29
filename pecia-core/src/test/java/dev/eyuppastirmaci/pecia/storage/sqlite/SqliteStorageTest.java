@@ -41,8 +41,8 @@ class SqliteStorageTest {
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             owned = storage.connection();
-            assertEquals(4, scalar(owned, "PRAGMA user_version"));
-            assertEquals(4, scalar(owned, "SELECT index_format_version FROM index_metadata"));
+            assertEquals(5, scalar(owned, "PRAGMA user_version"));
+            assertEquals(5, scalar(owned, "SELECT index_format_version FROM index_metadata"));
             assertEquals(1, scalar(owned, "PRAGMA foreign_keys"));
             for (String table : List.of(
                     "files",
@@ -101,7 +101,7 @@ class SqliteStorageTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {-1, 5, 100})
+    @ValueSource(ints = {-1, 6, 100})
     void rejectsUnsupportedSchemaVersionsWithoutChangingTheDatabase(int version) throws Exception {
         Path database = root.resolve("index.db");
 
@@ -183,7 +183,7 @@ class SqliteStorageTest {
         }
 
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
-            assertEquals(4, scalar(storage.connection(), "PRAGMA user_version"));
+            assertEquals(5, scalar(storage.connection(), "PRAGMA user_version"));
         }
     }
 

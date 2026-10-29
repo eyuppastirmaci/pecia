@@ -20,3 +20,6 @@ pecia-core/src/test/resources/storage/legacy/*.db binary
 gradlew text eol=lf
 gradlew.bat text eol=crlf
 gradle/wrapper/gradle-wrapper.jar binary
+
+# ONNX models are binary test fixtures.
+*.onnx binary

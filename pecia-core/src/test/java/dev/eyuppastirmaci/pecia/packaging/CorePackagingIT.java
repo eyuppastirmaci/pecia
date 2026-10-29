@@ -11,11 +11,13 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -71,6 +73,20 @@ class CorePackagingIT {
     }
 
     @Test
+    void choosesSemanticIndexingPerRunUsingOnlyThePackagedCore() throws Exception {
+        // The consumer embeds with the tiny model, which it finds beside the project rather than inside it.
+        try (InputStream model = CorePackagingIT.class.getResourceAsStream("/semantic/tiny/tiny.onnx")) {
+            Files.copy(model, fixture.resolve("tiny.onnx"));
+        }
+        runConsumer("verifySemanticIndexingOptions");
+    }
+
+    @Test
+    void appliesSearchModesUsingOnlyThePackagedCore() throws Exception {
+        runConsumer("verifySearchModes");
+    }
+
+    @Test
     void persistsIndexingProfilesAtomicallyUsingOnlyThePackagedCore() throws Exception {
         runConsumer("verifyIndexingProfiles");
     }
@@ -110,6 +126,86 @@ class CorePackagingIT {
         assertEquals(
                 "PACKAGED_CORE_OK lexical-reopen",
                 runner.runOffline("lexical-reopen", project, offline).stdout().strip());
+    }
+
+    @Test
+    void lexicalRunsUpdateAndSearchAnIndexWithEmbeddingsOfflineWithoutTheSemanticRuntime() throws Exception {
+        Path sandbox = Files.createDirectory(fixture.resolve("embedded index")).toRealPath();
+        Path project =
+                Files.createDirectory(fixture.resolve("embedded index project")).toRealPath();
+        try (InputStream model = CorePackagingIT.class.getResourceAsStream("/semantic/tiny/tiny.onnx")) {
+            Files.copy(model, fixture.resolve("tiny.onnx"));
+        }
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-index",
+                runner.runOfflineEmbedding("semantic-index", project, offline)
+                        .stdout()
+                        .strip());
+        // The second process is lexical: no network attempt, no storage change, and no semantic class initialized.
+        assertEquals(
+                "PACKAGED_CORE_OK lexical-after-semantic",
+                runner.runOffline("lexical-after-semantic", project, offline)
+                        .stdout()
+                        .strip());
+    }
+
+    @Test
+    void semanticIndexingFailsOfflineWithoutDownloadingOrTouchingTheIndex() throws Exception {
+        Path sandbox = Files.createDirectory(fixture.resolve("offline model")).toRealPath();
+        Path project =
+                Files.createDirectory(fixture.resolve("offline model project")).toRealPath();
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+        SemanticModel model = SemanticModel.MINILM;
+        Path lockFile = Path.of("models", model.name(), model.revision(), ".lock");
+
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-offline",
+                runner.runOfflineDeniedDownload(
+                                "semantic-offline",
+                                project,
+                                offline,
+                                model.downloadUri().getHost(),
+                                lockFile)
+                        .stdout()
+                        .strip());
+    }
+
+    @Test
+    void embedsOfflineWithATinyModelUsingOnlyThePackagedCore() throws Exception {
+        Path sandbox =
+                Files.createDirectory(fixture.resolve("offline embedding")).toRealPath();
+        Path project = Files.createDirectory(fixture.resolve("offline embedding project"))
+                .toRealPath();
+        try (InputStream model = CorePackagingIT.class.getResourceAsStream("/semantic/tiny/tiny.onnx")) {
+            Files.copy(model, project.resolve("tiny.onnx"));
+        }
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-embedding",
+                runner.runOfflineEmbedding("semantic-embedding", project, offline)
+                        .stdout()
+                        .strip());
     }
 
     @Test
@@ -222,7 +318,6 @@ class CorePackagingIT {
                     "org.slf4j.impl.StaticLoggerBinder",
                     "org.junit.jupiter.api.Test",
                     "dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport",
-                    "ai.onnxruntime.OrtEnvironment",
                     "ai.djl.Model")) {
                 assertThrows(ClassNotFoundException.class, () -> consumerLoader.loadClass(unavailable), unavailable);
             }
@@ -261,7 +356,9 @@ class CorePackagingIT {
                     TOKENIZER_RESOURCES + "LICENSE.txt",
                     "Apache License",
                     "META-INF/licenses/commonmark-LICENSE.txt",
-                    "Copyright (c) 2015, Atlassian Pty Ltd");
+                    "Copyright (c) 2015, Atlassian Pty Ltd",
+                    "META-INF/licenses/onnxruntime-LICENSE.txt",
+                    "Copyright (c) Microsoft Corporation");
 
             for (var notice : requiredNotices.entrySet()) {
                 String text = new String(readEntry(jar, notice.getKey()), StandardCharsets.UTF_8);

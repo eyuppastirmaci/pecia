@@ -24,8 +24,8 @@ public final class PeciaConfigParser {
      * @param toml raw TOML text
      * @return the parsed configuration
      * @throws NullPointerException if toml is null
-     * @throws IllegalArgumentException if the TOML is malformed or a value has the wrong type or an
-     *     invalid range
+     * @throws IllegalArgumentException if the TOML is malformed or a value has the wrong type, an invalid range,
+     *     or an unknown spelling
      */
     public PeciaConfig parse(String toml) {
         return read(parseToml(toml));
@@ -70,7 +70,9 @@ public final class PeciaConfigParser {
                 intValue(result, ConfigKey.CHUNK_MAX_TOKENS, defaults.maxTokens()),
                 intValue(result, ConfigKey.CHUNK_OVERLAP_TOKENS, defaults.overlapTokens()),
                 intValue(result, ConfigKey.EMBED_CONCURRENCY, defaults.embedConcurrency()),
-                stringValue(result, ConfigKey.STORE_PATH, defaults.storePath()));
+                stringValue(result, ConfigKey.STORE_PATH, defaults.storePath()),
+                booleanValue(result, ConfigKey.SEMANTIC_ENABLED, defaults.semanticEnabled()),
+                searchModeValue(result, ConfigKey.SEARCH_MODE, defaults.searchMode()));
     }
 
     private static String describeErrors(TomlParseResult result) {
@@ -131,6 +133,28 @@ public final class PeciaConfigParser {
         String value = tomlValue(key, "a string", toml::getString);
 
         return value == null ? fallback : value;
+    }
+
+    private static boolean booleanValue(TomlParseResult toml, ConfigKey key, boolean fallback) {
+        Boolean value = tomlValue(key, "a boolean", toml::getBoolean);
+
+        return value == null ? fallback : value;
+    }
+
+    private static SearchMode searchModeValue(TomlParseResult toml, ConfigKey key, SearchMode fallback) {
+        String value = tomlValue(key, "a string", toml::getString);
+
+        if (value == null) {
+            return fallback;
+        }
+
+        return SearchMode.fromConfigValue(value)
+                .orElseThrow(() -> new IllegalArgumentException(key.path()
+                        + " must be one of "
+                        + String.join(", ", SearchMode.configValues())
+                        + ", got \""
+                        + value
+                        + "\""));
     }
 
     /** A parsed configuration and the warnings found in its file, in source order. */

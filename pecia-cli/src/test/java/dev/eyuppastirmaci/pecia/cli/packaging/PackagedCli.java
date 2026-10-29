@@ -67,6 +67,24 @@ final class PackagedCli {
     }
 
     Result run(Path directory, List<String> jvmArguments, String... arguments) throws Exception {
+        return run(directory, jvmArguments, null, arguments);
+    }
+
+    /**
+     * Runs a command offline that is expected to try one model download and be denied, verified by {@link
+     * OfflineSandbox.Run#verifyDeniedDownload} instead of the lexical checks.
+     */
+    Result runDeniedDownload(Path directory, String host, Path lockFile, String... arguments) throws Exception {
+        if (offline == null) {
+            throw new IllegalStateException("A denied download needs the offline guard");
+        }
+
+        return run(directory, List.of(), evidence -> evidence.verifyDeniedDownload(host, lockFile), arguments);
+    }
+
+    /** Runs the distribution; {@code check} replaces the lexical checks of offline runs when it is not null. */
+    private Result run(Path directory, List<String> jvmArguments, EvidenceCheck check, String... arguments)
+            throws Exception {
         Path javaBin = Path.of(System.getProperty("java.home"), "bin");
         Path java = Files.isRegularFile(javaBin.resolve("java.exe"))
                 ? javaBin.resolve("java.exe")
@@ -114,7 +132,10 @@ final class PackagedCli {
             assertTrue(completed, () -> "CLI timed out: " + command);
 
             String error = Files.readString(stderr).replace("\r\n", "\n");
-            if (evidence != null) {
+            if (evidence != null && check != null) {
+                check.verify(evidence);
+                error = OfflineSandbox.applicationStderr(error);
+            } else if (evidence != null) {
                 evidence.verifyLexical(Bootstrap.class.getName());
                 error = OfflineSandbox.applicationStderr(error);
                 List<String> options = List.of(arguments);
@@ -168,4 +189,10 @@ final class PackagedCli {
 
     /** A completed CLI process with CRLF-normalized output streams. */
     record Result(int exitCode, String out, String err) {}
+
+    @FunctionalInterface
+    private interface EvidenceCheck {
+
+        void verify(OfflineSandbox.Run evidence) throws IOException;
+    }
 }

@@ -1,8 +1,10 @@
 package dev.eyuppastirmaci.pecia.cli;
 
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryResult;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
@@ -10,6 +12,7 @@ import dev.eyuppastirmaci.pecia.search.SearchRequest;
 import java.io.PrintWriter;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
@@ -37,6 +40,15 @@ public class QueryCommand implements Callable<Integer> {
     @Option(names = "--limit", description = "Maximum results (default: ${DEFAULT-VALUE}).")
     int limit = SearchRequest.DEFAULT_LIMIT;
 
+    // Null when absent, so search.mode in .pecia.toml applies.
+    @Option(
+            names = "--mode",
+            converter = ModeNames.class,
+            completionCandidates = ModeNames.class,
+            description = "Search mode for this query (${COMPLETION-CANDIDATES}), overriding search.mode in"
+                    + " .pecia.toml (default: auto).")
+    SearchMode mode;
+
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
@@ -49,12 +61,14 @@ public class QueryCommand implements Callable<Integer> {
 
     /**
      * Searches the stored index; returns 0 for successful queries and 1 for core validation/access
-     * failures. Configuration warnings are printed to stderr before any other output and do not change the exit code.
+     * failures, including a search mode that is not available. Configuration warnings are printed to stderr before
+     * any other output and do not change the exit code.
      */
     @Override
     public Integer call() {
         try {
-            QueryResult result = queryService.query(root, new SearchRequest(text, limit));
+            QueryOptions options = mode == null ? QueryOptions.configured() : QueryOptions.mode(mode);
+            QueryResult result = queryService.query(root, new SearchRequest(text, limit), options);
             WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
             List<SearchHit> hits = result.hits();
             PrintWriter out = spec.commandLine().getOut();
@@ -130,5 +144,21 @@ public class QueryCommand implements Callable<Integer> {
 
     private static String shellQuote(String value) {
         return "'" + value.replace("'", "'\"'\"'") + "'";
+    }
+
+    /** Converts and lists {@code --mode} values, accepting exactly the spellings configuration uses. */
+    static final class ModeNames implements CommandLine.ITypeConverter<SearchMode>, Iterable<String> {
+
+        @Override
+        public SearchMode convert(String value) {
+            return SearchMode.fromConfigValue(value)
+                    .orElseThrow(() -> new CommandLine.TypeConversionException(
+                            "expected one of " + String.join(", ", this) + " but was '" + value + "'"));
+        }
+
+        @Override
+        public Iterator<String> iterator() {
+            return SearchMode.configValues().iterator();
+        }
     }
 }

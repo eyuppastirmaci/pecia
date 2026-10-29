@@ -15,6 +15,10 @@ import java.util.Set;
 public final class PackagedCoreConsumer {
 
     private static final Set<String> SCENARIOS = Set.of(
+            "semantic-offline",
+            "semantic-embedding",
+            "semantic-index",
+            "lexical-after-semantic",
             "lexical-lifecycle",
             "lexical-reopen",
             "lexical-determinism",
@@ -50,7 +54,6 @@ public final class PackagedCoreConsumer {
                 "dev.eyuppastirmaci.pecia.testing.OfflineEnvironment",
                 "dev.eyuppastirmaci.pecia.packaging.CorePackagingIT",
                 "dev.eyuppastirmaci.pecia.storage.sqlite.SqliteFtsTestSupport",
-                "ai.onnxruntime.OrtEnvironment",
                 "ai.djl.Model")) {
             try {
                 Class.forName(unavailable, false, PackagedCoreConsumer.class.getClassLoader());
@@ -60,6 +63,10 @@ public final class PackagedCoreConsumer {
             }
         }
         switch (scenario) {
+            case "semantic-offline" -> ConfigurationScenario.verifyOfflineModelDownload(root);
+            case "semantic-embedding" -> EmbeddingScenario.verifyEmbedding(root);
+            case "semantic-index" -> EmbeddingScenario.indexSemantically(root);
+            case "lexical-after-semantic" -> EmbeddingScenario.verifyLexicalAfterSemantic(root);
             case "lexical-lifecycle" -> new LexicalLifecycleScenario(root).runLifecycle();
             case "lexical-reopen" -> new LexicalLifecycleScenario(root).verifyReopened();
             // The dump precedes the success marker on standard output for the packaging test to compare.
@@ -117,6 +124,16 @@ public final class PackagedCoreConsumer {
     /** Runs {@link ConfigurationScenario#verifyConfigurationWarnings}. */
     public static void verifyConfigurationWarnings(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
         ConfigurationScenario.verifyConfigurationWarnings(root, coreJar, runtimeDirectory);
+    }
+
+    /** Runs {@link ConfigurationScenario#verifySemanticIndexingOptions}. */
+    public static void verifySemanticIndexingOptions(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        ConfigurationScenario.verifySemanticIndexingOptions(root, coreJar, runtimeDirectory);
+    }
+
+    /** Runs {@link ConfigurationScenario#verifySearchModes}. */
+    public static void verifySearchModes(Path root, Path coreJar, Path runtimeDirectory) throws Exception {
+        ConfigurationScenario.verifySearchModes(root, coreJar, runtimeDirectory);
     }
 
     /** Runs {@link RetrievalScenario#verifyLexicalSearch}. */

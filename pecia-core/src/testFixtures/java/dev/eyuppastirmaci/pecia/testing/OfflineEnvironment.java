@@ -24,6 +24,7 @@ import java.util.regex.Pattern;
 /** Isolates child-process user storage and verifies lexical execution leaves no model artifacts. */
 public final class OfflineEnvironment {
 
+    private static final Pattern RUNTIME_EXTRACTION = Pattern.compile("onnxruntime-java[0-9]+");
     private static final Pattern SQLITE_TEMPORARY_FILE =
             Pattern.compile("sqlite-[0-9]+(?:\\.[0-9]+)+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-"
                     + "(?:libsqlitejdbc\\.(?:so|dylib)|sqlitejdbc\\.dll)(?:\\.lck)?");
@@ -87,6 +88,11 @@ public final class OfflineEnvironment {
         return cache;
     }
 
+    /** Returns the directory child processes receive as {@code PECIA_CACHE_DIR}. */
+    public Path peciaCache() {
+        return cache.resolve("pecia");
+    }
+
     public Path temporary() {
         return temporary;
     }
@@ -108,6 +114,8 @@ public final class OfflineEnvironment {
     /** Returns literal JVM arguments; callers must pass them as individual process arguments. */
     public List<String> jvmArguments() {
         return List.of(
+                // On Windows the JVM keeps its monitoring files under TEMP, which points into the audited storage.
+                "-XX:-UsePerfData",
                 "-Duser.home=" + home,
                 "-Djava.io.tmpdir=" + temporary,
                 "-Dorg.sqlite.tmpdir=" + temporary,
@@ -165,6 +173,68 @@ public final class OfflineEnvironment {
         }
     }
 
+    /**
+     * Fails unless the only differences since {@code before} are the given new entries; nothing may change or
+     * disappear.
+     *
+     * @param additions absolute paths that must have appeared, and nothing else
+     */
+    public void assertOnlyAdded(Map<Path, String> before, Set<Path> additions) throws IOException {
+        Objects.requireNonNull(before, "before");
+        Map<Path, String> after = snapshot();
+        Set<Path> expected = new TreeSet<>();
+        for (Path addition : additions) {
+            expected.add(sandbox.relativize(addition));
+        }
+        Set<Path> added = new TreeSet<>(after.keySet());
+        added.removeAll(before.keySet());
+        Set<Path> changed = new TreeSet<>();
+        for (Map.Entry<Path, String> entry : before.entrySet()) {
+            if (!entry.getValue().equals(after.get(entry.getKey()))) {
+                changed.add(entry.getKey());
+            }
+        }
+        if (!changed.isEmpty() || !added.equals(expected)) {
+            throw new AssertionError("Offline home/cache/tmp changed: expected only " + expected + ", added " + added
+                    + ", changed or" + " removed " + changed);
+        }
+    }
+
+    /**
+     * Fails unless the only differences since {@code before} are ONNX Runtime's native extraction directories in the
+     * temporary root, with whatever they still hold: each process extracts the libraries into its own directory, and
+     * Windows cannot delete libraries that are still loaded at exit.
+     */
+    public void assertOnlyRuntimeExtraction(Map<Path, String> before) throws IOException {
+        Objects.requireNonNull(before, "before");
+        Map<Path, String> after = snapshot();
+        Path temporaryRoot = sandbox.relativize(temporary);
+        Set<Path> unexpected = new TreeSet<>();
+
+        for (Map.Entry<Path, String> entry : after.entrySet()) {
+            Path path = entry.getKey();
+            boolean extraction = path.startsWith(temporaryRoot)
+                    && path.getNameCount() > temporaryRoot.getNameCount()
+                    && RUNTIME_EXTRACTION
+                            .matcher(path.getName(temporaryRoot.getNameCount()).toString())
+                            .matches();
+
+            if (!extraction && !entry.getValue().equals(before.get(path))) {
+                unexpected.add(path);
+            }
+        }
+
+        for (Path path : before.keySet()) {
+            if (!after.containsKey(path)) {
+                unexpected.add(path);
+            }
+        }
+
+        if (!unexpected.isEmpty()) {
+            throw new AssertionError("Offline home/cache/tmp changed outside the runtime extraction: " + unexpected);
+        }
+    }
+
     /** Requires a positive initialization record and rejects semantic runtime initialization. */
     public static void assertLexicalInitialization(Path log, String requiredClass) throws IOException {
         String required = normalizedClass(requiredClass);
@@ -209,6 +279,8 @@ public final class OfflineEnvironment {
         values.put("XDG_DATA_DIRS", home.resolve("data").toString());
         values.put("XDG_STATE_HOME", home.resolve("state").toString());
         values.put("XDG_CACHE_HOME", cache.resolve("xdg").toString());
+        // Pecia's own override, so a host setting can never point a test at the user's real model cache.
+        values.put("PECIA_CACHE_DIR", peciaCache().toString());
         values.put("XDG_RUNTIME_DIR", temporary.resolve("runtime").toString());
         for (String variable : List.of("TMPDIR", "TMP", "TEMP")) {
             values.put(variable, temporary.toString());

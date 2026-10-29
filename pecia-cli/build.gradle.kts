@@ -34,6 +34,8 @@ tasks.shadowJar {
     }
     // Drop dependency signature files; they no longer match once everything is merged into one JAR.
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.EC")
+    // ONNX Runtime ships macOS debug symbols beside its libraries; they add about 57 MB and are never loaded.
+    exclude("ai/onnxruntime/native/**/*.dSYM/**")
     // Keep the JAR single-release, as it has always been, so the JVM ignores dependencies' META-INF/versions entries.
     addMultiReleaseAttribute = false
 }

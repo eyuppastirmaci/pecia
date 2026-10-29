@@ -18,6 +18,7 @@ import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.IndexWriteObserver;
 import dev.eyuppastirmaci.pecia.testing.LegacyIndexFixture;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
+import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -32,12 +33,15 @@ import org.sqlite.JDBC;
 import org.sqlite.SQLiteConfig;
 
 /**
- * Migrates working copies of indexes written by the code of each earlier schema version. Version 4, the current
- * schema, is the baseline that needs no migration or reindexing.
+ * Migrates working copies of indexes written by the code of each earlier schema version. Fixtures from version 4 on
+ * already store chunk identities, so reindexing rewrites them only when they were written with another tokenizer
+ * algorithm.
  */
 class LegacyIndexMigrationTest {
 
-    private static final int CURRENT_VERSION = 4;
+    private static final int CURRENT_VERSION = LegacyIndexFixture.CURRENT_VERSION;
+    // The first schema version that stores deterministic chunk identities.
+    private static final int IDENTITY_VERSION = 4;
     // The source rows a migration must carry over unchanged, keyed by table in primary-key order.
     private static final List<String> PRESERVED_ROWS = List.of(
             "SELECT id, source_path, document_type, content_hash FROM files ORDER BY id",
@@ -59,13 +63,10 @@ class LegacyIndexMigrationTest {
         Path database = LegacyIndexFixture.install(version, root);
         byte[] before = Files.readAllBytes(database);
 
-        if (version < CURRENT_VERSION) {
-            QueryException failure =
-                    assertThrows(QueryException.class, () -> queryService.search(root, new SearchRequest("payment")));
-            assertEquals(QueryException.Reason.MIGRATION_REQUIRED, failure.reason());
-        } else {
-            assertFalse(queryService.search(root, new SearchRequest("payment")).isEmpty());
-        }
+        // Every fixture is older than the current schema.
+        QueryException failure =
+                assertThrows(QueryException.class, () -> queryService.search(root, new SearchRequest("payment")));
+        assertEquals(QueryException.Reason.MIGRATION_REQUIRED, failure.reason());
 
         assertArrayEquals(before, Files.readAllBytes(database));
     }
@@ -91,10 +92,13 @@ class LegacyIndexMigrationTest {
                 rows(database, "SELECT id, content FROM chunks ORDER BY id"),
                 rows(database, "SELECT rowid, content FROM chunks_fts ORDER BY rowid"),
                 "Full-text rows must mirror the chunks after migration");
-        // Migrated legacy chunks have no identities until reindexing; the current schema already stores them.
+        // Chunks migrated from before identities have none until reindexing; later fixtures already store them.
         assertEquals(
-                version < CURRENT_VERSION ? 0 : count(database, "SELECT count(*) FROM chunks"),
+                version < IDENTITY_VERSION ? 0 : count(database, "SELECT count(*) FROM chunks"),
                 count(database, "SELECT count(*) FROM chunk_identities"));
+        // Every fixture predates embeddings, so migrated indexes start without vectors.
+        assertEquals(0, count(database, "SELECT count(*) FROM embedding_profiles"));
+        assertEquals(0, count(database, "SELECT count(*) FROM chunk_embeddings"));
     }
 
     @ParameterizedTest(name = "schema v{0}")
@@ -109,7 +113,7 @@ class LegacyIndexMigrationTest {
 
             assertFalse(hits.isEmpty(), query);
             assertTrue(
-                    hits.stream().allMatch(hit -> hit.stableId().isPresent() == (version == CURRENT_VERSION)),
+                    hits.stream().allMatch(hit -> hit.stableId().isPresent() == (version >= IDENTITY_VERSION)),
                     "Stable IDs for '" + query + "'");
         }
     }
@@ -120,6 +124,7 @@ class LegacyIndexMigrationTest {
         Path root = Files.createDirectory(sandbox.resolve("project")).toRealPath();
         Path database = LegacyIndexFixture.install(version, root);
         SqliteStorage.open(database, root).close();
+        boolean rewritten = version < IDENTITY_VERSION || !usesCurrentTokenizer(database);
         IndexWriteObserver observer = IndexWriteObserver.start(database);
 
         IndexResult result = indexService.index(root);
@@ -131,7 +136,7 @@ class LegacyIndexMigrationTest {
         assertEquals(IndexResult.Status.COMPLETE, result.status());
         assertEquals(corpusSize, result.candidateCount());
         assertEquals(0, result.deletedFiles());
-        if (version < CURRENT_VERSION) {
+        if (rewritten) {
             assertEquals(corpusSize, result.indexedFiles());
             assertEquals(corpus, writes.writtenFiles());
         } else {
@@ -149,6 +154,14 @@ class LegacyIndexMigrationTest {
         IndexWriteObserver rerun = IndexWriteObserver.start(database);
         assertEquals(corpusSize, indexService.index(root).unchangedFiles());
         assertEquals(0, rerun.finish().writeCount(), "A follow-up run must write nothing");
+    }
+
+    /** Returns whether every stored chunking profile was written with the current tokenizer algorithm. */
+    private static boolean usesCurrentTokenizer(Path database) throws SQLException {
+        String current = MiniLmTokenizer.bundled().identity().algorithm();
+
+        return rows(database, "SELECT DISTINCT tokenizer_algorithm FROM file_chunking_profiles")
+                .equals(List.of(List.of(current)));
     }
 
     private static List<List<List<Object>>> preservedRows(Path database) throws SQLException {

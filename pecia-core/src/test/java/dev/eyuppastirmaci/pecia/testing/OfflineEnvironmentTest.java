@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,6 +39,7 @@ class OfflineEnvironmentTest {
         child.put("home", "/host-home");
         child.put("XDG_CACHE_HOME", "/host-cache");
         child.put("HF_HOME", "/host-models");
+        child.put("pecia_cache_dir", "/host-pecia-cache");
 
         isolated.configure(child);
 
@@ -78,11 +80,14 @@ class OfflineEnvironmentTest {
                 "TFHUB_CACHE_DIR")) {
             assertTrue(Path.of(child.get(variable)).startsWith(isolated.cache()), variable);
         }
+        assertFalse(child.containsKey("pecia_cache_dir"));
+        assertEquals(isolated.cache().resolve("pecia").toString(), child.get("PECIA_CACHE_DIR"));
         for (String variable : List.of("TMPDIR", "TMP", "TEMP")) {
             assertEquals(isolated.temporary().toString(), child.get(variable));
         }
         assertEquals(
                 List.of(
+                        "-XX:-UsePerfData",
                         "-Duser.home=" + isolated.home(),
                         "-Djava.io.tmpdir=" + isolated.temporary(),
                         "-Dorg.sqlite.tmpdir=" + isolated.temporary(),
@@ -169,6 +174,54 @@ class OfflineEnvironmentTest {
         AssertionError failure = assertThrows(AssertionError.class, () -> isolated.assertUnchanged(before));
 
         assertTrue(failure.getMessage().contains(model.getFileName().toString()));
+    }
+
+    @Test
+    void acceptsExactlyTheExpectedAdditionsAndNothingElse() throws Exception {
+        OfflineEnvironment isolated = OfflineEnvironment.create(sandbox);
+        Path existing = Files.writeString(isolated.cache().resolve("existing.bin"), "kept");
+        Map<Path, String> before = isolated.snapshot();
+        Path directory = Files.createDirectories(isolated.peciaCache().resolve("models"));
+        Path lock = Files.writeString(directory.resolve(".lock"), "");
+        Set<Path> additions = Set.of(isolated.peciaCache(), directory, lock);
+
+        isolated.assertOnlyAdded(before, additions);
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyAdded(before, Set.of(isolated.peciaCache())));
+
+        Path extra = Files.writeString(directory.resolve("model.part"), "partial");
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyAdded(before, additions));
+
+        Files.delete(extra);
+        Files.writeString(existing, "edit");
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyAdded(before, additions));
+    }
+
+    @Test
+    void allowsOnlyTheRuntimesExtractionDirectoriesAndTheirContents() throws Exception {
+        OfflineEnvironment isolated = OfflineEnvironment.create(sandbox);
+        Path existing = Files.writeString(isolated.home().resolve("notes.txt"), "keep");
+        Map<Path, String> before = isolated.snapshot();
+        Path extraction = Files.createDirectory(isolated.temporary().resolve("onnxruntime-java123"));
+        Files.writeString(extraction.resolve("onnxruntime.dll"), "still loaded");
+        Files.createDirectory(isolated.temporary().resolve("onnxruntime-java456"));
+
+        isolated.assertOnlyRuntimeExtraction(before);
+
+        for (Path unexpected : List.of(
+                isolated.temporary().resolve(".ses"),
+                isolated.temporary().resolve("onnxruntime-javaX"),
+                isolated.home().resolve("onnxruntime-java789"),
+                isolated.cache().resolve("deviceid"))) {
+            Files.writeString(unexpected, "unexpected");
+            assertThrows(
+                    AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before), unexpected.toString());
+            Files.delete(unexpected);
+        }
+
+        Files.writeString(existing, "edit");
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before));
+        Files.delete(existing);
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyRuntimeExtraction(before));
     }
 
     @Test

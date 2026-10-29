@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
@@ -16,9 +17,11 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -69,11 +72,14 @@ class LexicalConfigurationTest {
             new LineRange(9, 11),
             new LineRange(11, 12));
 
+    // Semantic runs get the tiny test model from a stub, so these tests never download the real one.
+    private static final ModelOutcome CACHED_MODEL = TinyModel.cached();
+
     @TempDir
     Path root;
 
     private final PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
-    private final IndexService indexService = new IndexService(loader);
+    private final IndexService indexService = IndexService.withModelProvider(loader, listener -> CACHED_MODEL);
     private final QueryService queryService = new QueryService(loader);
     private final MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
 
@@ -150,6 +156,28 @@ class LexicalConfigurationTest {
         assertEquals(original, snapshot());
         assertEquals(originalHits, search("needle"));
         assertDocument(original.get(DOCUMENT), 14, 4, OVERLAPPING_RANGES);
+        assertUnchanged(1);
+    }
+
+    @Test
+    void changingOnlySemanticSettingsPreservesProfilesChunksAndSearchResults() throws Exception {
+        Files.writeString(root.resolve(DOCUMENT), DOCUMENT_TEXT);
+        writeConfig(chunkConfig(14, 4));
+        assertCounts(indexService.index(root), 1, 1, 0, 0, OVERLAPPING_RANGES.size());
+        Map<Path, IndexedFile> original = snapshot();
+        List<SearchHit> originalHits = search("needle");
+
+        writeConfig(chunkConfig(14, 4) + "\n[semantic]\nenabled = true\n\n[search]\nmode = \"lexical\"\n");
+        IndexResult result = indexService.index(root);
+
+        assertCounts(result, 1, 0, 1, 0, 0);
+        // Unchanged files keep the chunks they have and gain no embeddings in this run.
+        assertEquals(0, result.embeddedChunks());
+        assertTrue(result.context().loadedConfig().config().semanticEnabled());
+        assertEquals(
+                SearchMode.LEXICAL, result.context().loadedConfig().config().searchMode());
+        assertEquals(original, snapshot());
+        assertEquals(originalHits, search("needle"));
         assertUnchanged(1);
     }
 

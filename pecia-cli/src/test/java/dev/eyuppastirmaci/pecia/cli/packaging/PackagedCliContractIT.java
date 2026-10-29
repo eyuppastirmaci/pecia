@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.cli.packaging;
 
 import static dev.eyuppastirmaci.pecia.cli.packaging.PackagedCliAssertions.assertSuccess;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.jar.JarFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -78,14 +80,13 @@ class PackagedCliContractIT {
             assertTrue(
                     jar.stream()
                             .map(entry -> entry.getName())
-                            .noneMatch(name -> name.startsWith("ai/onnxruntime/")
-                                    || name.startsWith("ai/djl/")
+                            .noneMatch(name -> name.startsWith("ai/djl/")
                                     || name.startsWith("org/tensorflow/")
                                     || name.startsWith("org/pytorch/")
                                     || name.endsWith(".onnx")
                                     || name.endsWith(".safetensors")
                                     || name.endsWith("pytorch_model.bin")),
-                    "The lexical JAR must not bundle a semantic runtime or model");
+                    "The CLI JAR must not bundle another semantic runtime or any model");
             byte[] vocabulary = resource(jar, TOKENIZER_PATH + "vocab.txt");
             assertEquals(
                     VOCABULARY_SHA256,
@@ -102,6 +103,52 @@ class PackagedCliContractIT {
                     new String(resource(jar, "META-INF/licenses/commonmark-LICENSE.txt"), StandardCharsets.UTF_8);
             assertTrue(commonmarkLicense.contains("Copyright (c) 2015, Atlassian Pty Ltd"));
             assertTrue(commonmarkLicense.contains("Redistribution and use in source and binary forms"));
+        }
+    }
+
+    @Test
+    void executableJarCarriesTheSemanticRuntimeWithoutDebugSymbols() throws Exception {
+        try (JarFile jar = new JarFile(cli.executableJar().toFile())) {
+            assertNotNull(jar.getJarEntry("ai/onnxruntime/OrtEnvironment.class"));
+
+            for (String library : List.of(
+                    "linux-x64/libonnxruntime.so",
+                    "linux-x64/libonnxruntime4j_jni.so",
+                    "linux-aarch64/libonnxruntime.so",
+                    "linux-aarch64/libonnxruntime4j_jni.so",
+                    "osx-aarch64/libonnxruntime.dylib",
+                    "osx-aarch64/libonnxruntime4j_jni.dylib",
+                    "win-x64/onnxruntime.dll",
+                    "win-x64/onnxruntime4j_jni.dll",
+                    "win-x64/onnxruntime_providers_shared.dll")) {
+                assertNotNull(jar.getJarEntry("ai/onnxruntime/native/" + library), library);
+            }
+
+            assertTrue(
+                    jar.stream().noneMatch(entry -> entry.getName().contains(".dSYM/")),
+                    "The CLI JAR must not carry the runtime's macOS debug symbols");
+
+            // Runtime releases from 1.29.0 embed Microsoft's telemetry uploader and its endpoint in these libraries.
+            for (var entry : jar.stream()
+                    .filter(entry -> entry.getName().startsWith("ai/onnxruntime/native/") && !entry.isDirectory())
+                    .toList()) {
+                String binary;
+
+                try (var input = jar.getInputStream(entry)) {
+                    binary = new String(input.readAllBytes(), StandardCharsets.ISO_8859_1);
+                }
+
+                for (String marker : List.of("events.data.microsoft.com", "OneCollector", "ORT_DISABLE_TELEMETRY")) {
+                    assertFalse(binary.contains(marker), entry.getName() + " contains " + marker);
+                }
+            }
+
+            String license =
+                    new String(resource(jar, "META-INF/licenses/onnxruntime-LICENSE.txt"), StandardCharsets.UTF_8);
+            assertTrue(license.contains("Copyright (c) Microsoft Corporation"));
+            assertTrue(license.contains("Permission is hereby granted, free of charge"));
+            String notices = new String(resource(jar, "ThirdPartyNotices.txt"), StandardCharsets.UTF_8);
+            assertTrue(notices.startsWith("THIRD PARTY SOFTWARE NOTICES AND INFORMATION"));
         }
     }
 

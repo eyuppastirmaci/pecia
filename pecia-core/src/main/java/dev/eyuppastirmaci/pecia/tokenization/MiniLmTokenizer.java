@@ -34,7 +34,7 @@ public final class MiniLmTokenizer implements TokenCounter {
     private static final TokenizerIdentity IDENTITY = new TokenizerIdentity(
             "sentence-transformers/all-MiniLM-L6-v2",
             "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
-            "bert-uncased-wordpiece-v1",
+            "bert-uncased-wordpiece-v2",
             "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
             30_522,
             256,
@@ -76,6 +76,30 @@ public final class MiniLmTokenizer implements TokenCounter {
     @Override
     public int count(String text) {
         return tokenize(text).size();
+    }
+
+    /**
+     * Encodes text as model input: the {@code [CLS]} id, the WordPiece ids, and the {@code [SEP]} id, cut to the
+     * tokenizer's input limit so that {@code [SEP]} stays last.
+     *
+     * @param text exact text to encode
+     * @return between 2 and {@link TokenizerIdentity#maxInputTokens()} vocabulary ids
+     * @throws NullPointerException if text is null
+     */
+    public int[] encode(String text) {
+        List<String> pieces = tokenize(text);
+        int content = Math.min(pieces.size(), IDENTITY.maxInputTokens() - IDENTITY.specialTokenCount());
+        int[] ids = new int[content + 2];
+
+        ids[0] = EXPECTED_CLASSIFICATION_TOKEN_ID;
+
+        for (int index = 0; index < content; index++) {
+            ids[index + 1] = vocabulary.get(pieces.get(index));
+        }
+
+        ids[content + 1] = EXPECTED_SEPARATOR_TOKEN_ID;
+
+        return ids;
     }
 
     /**
@@ -283,18 +307,25 @@ public final class MiniLmTokenizer implements TokenCounter {
         return offsets;
     }
 
+    // Character classes follow Hugging Face's fast tokenizer, which produced the ids the model is used with. Java's
+    // newer Unicode tables still classify a few hundred recently added or recategorized characters differently.
     private static boolean isWhitespace(int codePoint) {
-        return codePoint == ' '
-                || codePoint == '\t'
-                || codePoint == '\n'
-                || codePoint == '\r'
-                || Character.getType(codePoint) == Character.SPACE_SEPARATOR;
+        if (codePoint == ' ' || codePoint == '\t' || codePoint == '\n' || codePoint == '\r') {
+            return true;
+        }
+
+        int type = Character.getType(codePoint);
+
+        return type == Character.SPACE_SEPARATOR
+                || type == Character.LINE_SEPARATOR
+                || type == Character.PARAGRAPH_SEPARATOR;
     }
 
+    /** Matches the dropped characters: unassigned code points are kept and become unknown tokens. */
     private static boolean isControl(int codePoint) {
         int type = Character.getType(codePoint);
 
-        return type == Character.CONTROL || type == Character.FORMAT;
+        return type == Character.CONTROL || type == Character.FORMAT || type == Character.PRIVATE_USE;
     }
 
     private static boolean isPunctuation(int codePoint) {
@@ -322,7 +353,8 @@ public final class MiniLmTokenizer implements TokenCounter {
                 || codePoint >= 0x20000 && codePoint <= 0x2A6DF
                 || codePoint >= 0x2A700 && codePoint <= 0x2B73F
                 || codePoint >= 0x2B740 && codePoint <= 0x2B81F
-                || codePoint >= 0x2B820 && codePoint <= 0x2CEAF
+                // Hugging Face's fast tokenizer starts this block at U+2B920 rather than BERT's U+2B820.
+                || codePoint >= 0x2B920 && codePoint <= 0x2CEAF
                 || codePoint >= 0xF900 && codePoint <= 0xFAFF
                 || codePoint >= 0x2F800 && codePoint <= 0x2FA1F;
     }

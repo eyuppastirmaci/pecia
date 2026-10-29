@@ -40,9 +40,9 @@ class IndexServiceTest {
         var loaded = new PeciaConfigLoader.LoadedConfig(PeciaConfig.defaults(), root, false);
         var walked = new WalkResult(List.of(), List.of());
 
-        assertThrows(NullPointerException.class, () -> new IndexPreview(null, loaded, walked));
-        assertThrows(NullPointerException.class, () -> new IndexPreview(root, null, walked));
-        assertThrows(NullPointerException.class, () -> new IndexPreview(root, loaded, null));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(null, loaded, walked, false));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, null, walked, false));
+        assertThrows(NullPointerException.class, () -> new IndexPreview(root, loaded, null, false));
     }
 
     @Test

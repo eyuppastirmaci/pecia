@@ -5,9 +5,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -170,8 +172,6 @@ public final class OfflineSandbox {
         /** Returns JVM arguments that isolate storage and record network and class-initialization evidence. */
         public List<String> jvmArguments() {
             List<String> arguments = new ArrayList<>(environment.jvmArguments());
-            // Keep JVM monitoring files out of the directory audited for unexpected model writes.
-            arguments.add("-XX:-UsePerfData");
             arguments.add("-Dfile.encoding=UTF-8");
             arguments.add("-Dstdout.encoding=UTF-8");
             arguments.add("-Dstderr.encoding=UTF-8");
@@ -195,6 +195,45 @@ public final class OfflineSandbox {
             String audit = Files.readString(auditLog());
             if (!audit.equals("READY\n")) {
                 throw new AssertionError("Lexical process attempted network access or has an invalid audit: " + audit);
+            }
+        }
+
+        /**
+         * Validates a run that tried to download a model and was denied: the audit holds exactly one denial, for the
+         * host's name resolution, and Pecia's cache gained only the directories leading to the model's lock file and
+         * that file.
+         *
+         * @param host the download host, such as {@code huggingface.co}
+         * @param lockFile the lock file's path relative to Pecia's cache directory
+         */
+        public void verifyDeniedDownload(String host, Path lockFile) throws IOException {
+            String audit = Files.readString(auditLog());
+            String expected = "READY\nDENY CONNECT " + host + ":-1\n";
+            if (!audit.equals(expected)) {
+                throw new AssertionError("Expected exactly one denied connection to " + host + ": " + audit);
+            }
+            Set<Path> additions = new LinkedHashSet<>();
+            Path entry = environment.peciaCache();
+            additions.add(entry);
+            for (Path part : lockFile) {
+                entry = entry.resolve(part);
+                additions.add(entry);
+            }
+            environment.assertOnlyAdded(before, additions);
+        }
+
+        /**
+         * Validates a run that opened an embedder offline: no network attempt, ONNX Runtime initialized, and nothing
+         * written except the runtime's native extraction directory.
+         */
+        public void verifyEmbedding(String requiredClass) throws IOException {
+            assertNoNetworkAttempts();
+            environment.assertOnlyRuntimeExtraction(before);
+            for (String className :
+                    List.of(requiredClass, NetworkGuard.class.getName(), "ai.onnxruntime.OrtEnvironment")) {
+                if (!OfflineEnvironment.initialized(initializationLog(), className)) {
+                    throw new AssertionError(className + " was not initialized in the embedding JVM");
+                }
             }
         }
 

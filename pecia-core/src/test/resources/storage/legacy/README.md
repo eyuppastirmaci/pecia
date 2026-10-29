@@ -21,6 +21,7 @@ What each version adds:
 - **V2:** the `chunks_fts` full-text index.
 - **V3:** `file_indexing_profiles`, one row per file.
 - **V4:** `file_chunking_profiles` and `chunk_identities`, one identity per chunk; legacy indexing profiles are no longer written.
+- **V5:** `embedding_profiles` and `chunk_embeddings`, at most one vector per chunk. No fixture exists for it yet: add `schema-v5.db` before the next schema change.
 
 Each `schema-vN.sql` is a reviewable dump of its fixture, written by `generator/dump-fixture.py`: the schema in name order and every ordinary table's rows in primary-key order. FTS5 shadow tables are omitted because they are binary structures derived from `chunks`. Regenerate a dump whenever its fixture is added, and review it instead of the binary.
 

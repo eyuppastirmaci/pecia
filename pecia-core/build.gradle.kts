@@ -10,12 +10,36 @@ dependencies {
     // Used only for its .gitignore rule engine (org.eclipse.jgit.ignore).
     implementation(libs.jgit)
     implementation(libs.tomlj)
+    // Loaded only when an embedder is opened, so lexical runs never initialize it.
+    implementation(libs.onnxruntime)
 
     // Enforced, so the BOM's JUnit Platform version wins over jqwik's older requests instead of counting as a conflict.
     testImplementation(enforcedPlatform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.jqwik)
     testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+// Reference checks need the real model in the cache that PECIA_CACHE_DIR names, so only referenceTest runs them.
+val referenceTag = "reference"
+
+tasks.named<Test>("test") {
+    useJUnitPlatform {
+        excludeTags(referenceTag)
+    }
+}
+
+tasks.register<Test>("referenceTest") {
+    description = "Compares the real model's embeddings with the committed sentence-transformers references."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags(referenceTag)
+    }
+    shouldRunAfter(tasks.test)
+    // The model lives outside the build, so Gradle cannot tell when a previous result is still valid.
+    outputs.upToDateWhen { false }
 }
 
 // The packaged-core consumer runs on the core JAR plus exactly these runtime dependencies.

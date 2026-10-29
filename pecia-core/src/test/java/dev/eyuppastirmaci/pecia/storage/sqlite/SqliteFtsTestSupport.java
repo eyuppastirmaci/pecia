@@ -22,6 +22,8 @@ final class SqliteFtsTestSupport {
     static final String V1_RESOURCE = "/db/migration/V1__create_initial_schema.sql";
     static final String V2_RESOURCE = "/db/migration/V2__add_chunk_fts.sql";
     static final String V3_RESOURCE = "/db/migration/V3__add_file_indexing_profiles.sql";
+    static final String V4_RESOURCE = "/db/migration/V4__add_chunk_identities.sql";
+    static final String V5_RESOURCE = "/db/migration/V5__add_chunk_embeddings.sql";
 
     private SqliteFtsTestSupport() {}
 
@@ -76,6 +78,23 @@ final class SqliteFtsTestSupport {
             applyScript(connection, resource(V3_RESOURCE));
             execute(connection, "UPDATE index_metadata SET index_format_version = 3");
             execute(connection, "PRAGMA user_version = 3");
+            return connection;
+        } catch (IOException | SQLException | RuntimeException | Error failure) {
+            try {
+                connection.close();
+            } catch (SQLException closeFailure) {
+                failure.addSuppressed(closeFailure);
+            }
+            throw failure;
+        }
+    }
+
+    static Connection openVersionFour(Path root) throws IOException, SQLException {
+        Connection connection = openVersionThree(root);
+        try {
+            applyScript(connection, resource(V4_RESOURCE));
+            execute(connection, "UPDATE index_metadata SET index_format_version = 4");
+            execute(connection, "PRAGMA user_version = 4");
             return connection;
         } catch (IOException | SQLException | RuntimeException | Error failure) {
             try {

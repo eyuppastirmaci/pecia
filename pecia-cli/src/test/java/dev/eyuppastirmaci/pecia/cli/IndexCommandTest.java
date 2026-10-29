@@ -9,7 +9,12 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.semantic.ModelException;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.ModelProvider;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -21,6 +26,9 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import picocli.CommandLine;
 
 class IndexCommandTest {
@@ -122,6 +130,7 @@ class IndexCommandTest {
 
     private final StringWriter out = new StringWriter();
     private final StringWriter err = new StringWriter();
+    private ModelProvider models;
 
     @BeforeEach
     void useCanonicalRoot() throws IOException {
@@ -151,6 +160,168 @@ class IndexCommandTest {
 
         assertEquals(0, exitCode);
         assertTrue(out.toString().contains("defaults (no .pecia.toml found)"));
+    }
+
+    @ParameterizedTest(name = "file {0}, flag {1} -> {2}")
+    @CsvSource(
+            nullValues = "none",
+            value = {
+                "none, none, disabled",
+                "none, --semantic, enabled",
+                "none, --no-semantic, disabled",
+                "true, none, enabled",
+                "true, --semantic, enabled",
+                "true, --no-semantic, disabled",
+                "false, none, disabled",
+                "false, --semantic, enabled",
+                "false, --no-semantic, disabled"
+            })
+    void dryRunReportsTheSemanticChoiceWithTheFlagOverridingTheFile(Boolean file, String flag, String expected)
+            throws IOException {
+        Files.writeString(root.resolve("notes.md"), "notes");
+
+        if (file != null) {
+            Files.writeString(root.resolve(".pecia.toml"), "[semantic]\nenabled = " + file + "\n");
+        }
+
+        int exitCode = flag == null ? run(root.toString(), "--dry-run") : run(root.toString(), "--dry-run", flag);
+
+        assertEquals(0, exitCode);
+        assertEquals("semantic: " + expected, out.toString().lines().toList().get(1));
+        assertEquals("", err.toString());
+    }
+
+    @Test
+    void semanticRunsAddTheModelAndEmbeddedChunksToTheSummaryAndLexicalRunsDoNot() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+
+        assertEquals(0, run(root.toString(), "--semantic"));
+        List<String> summary = out.toString().lines().toList();
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 1"),
+                summary.subList(summary.size() - 2, summary.size()));
+        assertEquals("", err.toString());
+
+        // The same project indexed from scratch without semantic indexing prints the rest of the summary unchanged.
+        deleteIndex();
+        assertSuccessfulIndex(1, 1, 0, 0, 1);
+        assertEquals(
+                summary.subList(0, summary.size() - 2), out.toString().lines().toList());
+
+        deleteIndex();
+        out.getBuffer().setLength(0);
+        assertEquals(0, run(root.toString(), "--no-semantic"));
+        assertEquals(
+                summary.subList(0, summary.size() - 2), out.toString().lines().toList());
+    }
+
+    @Test
+    void anUnchangedSemanticRerunEmbedsNothing() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        assertEquals(0, run(root.toString(), "--semantic"));
+        out.getBuffer().setLength(0);
+
+        assertEquals(0, run(root.toString(), "--semantic"));
+
+        assertEquals("embedded: 0", out.toString().lines().toList().getLast());
+    }
+
+    @Test
+    void anEmbedderThatCannotOpenPrintsTheReasonAndTheLexicalWayOutWithoutASummary() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        models = listener -> TinyModel.cached("missing-input");
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        assertEquals("", out.toString());
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(2, lines.size(), err.toString());
+        assertTrue(lines.getFirst().startsWith("pecia index: EMBEDDER_UNAVAILABLE: INVALID_MODEL: The model at "));
+        assertEquals("Run with --no-semantic to build only the lexical index.", lines.getLast());
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void anEmbeddingFailurePrintsTheSummarySoFarTheReasonAndTheLexicalWayOut() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        models = listener -> TinyModel.cached("non-finite");
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        List<String> summary = out.toString().lines().toList();
+        assertEquals("indexed: 0", summary.get(2));
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0"),
+                summary.subList(summary.size() - 2, summary.size()));
+        assertEquals(
+                List.of(
+                        "pecia index: EMBEDDING_FAILED: INVALID_OUTPUT: The model returned token embeddings whose"
+                                + " average is not a finite, non-zero vector",
+                        "Run with --no-semantic to build only the lexical index."),
+                err.toString().lines().toList());
+    }
+
+    @Test
+    void aDownloadIsAnnouncedOnStderrAndReportedInTheSummary() throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        Path file = root.resolve("cache/models/all-MiniLM-L6-v2/rev/model.onnx");
+        models = listener -> {
+            listener.downloading(SemanticModel.MINILM, file);
+            return new ModelOutcome(ModelOutcome.Status.DOWNLOADED, SemanticModel.MINILM, TinyModel.path("tiny"));
+        };
+
+        assertEquals(0, run(root.toString(), "--semantic"));
+
+        assertEquals(
+                "Downloading all-MiniLM-L6-v2 (90.4 MB) from huggingface.co into " + file.getParent()
+                        + System.lineSeparator(),
+                err.toString());
+        List<String> summary = out.toString().lines().toList();
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 downloaded (90.4 MB)", "embedded: 1"),
+                summary.subList(summary.size() - 2, summary.size()));
+    }
+
+    @ParameterizedTest
+    @EnumSource(ModelException.Reason.class)
+    void anUnavailableModelPrintsTheReasonAndTheLexicalWayOutWithoutASummary(ModelException.Reason reason)
+            throws IOException {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        models = listener -> {
+            throw new ModelException(reason, "explained failure", null);
+        };
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        assertEquals("", out.toString());
+        assertEquals(
+                List.of(
+                        "pecia index: MODEL_UNAVAILABLE: " + reason + ": explained failure",
+                        "Run with --no-semantic to build only the lexical index."),
+                err.toString().lines().toList());
+        assertFalse(Files.exists(root.resolve(".pecia")));
+    }
+
+    @Test
+    void configurationWarningsStillComeBeforeAnUnavailableModel() throws IOException {
+        Path config = Files.writeString(root.resolve(".pecia.toml"), TYPO_CONFIG);
+        Files.writeString(root.resolve("a.txt"), "needle");
+        models = listener -> {
+            throw new ModelException(ModelException.Reason.OFFLINE, "Could not reach huggingface.co", null);
+        };
+
+        assertEquals(1, run(root.toString(), "--semantic"));
+
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(typoWarning(config), lines.get(0));
+        assertTrue(lines.get(1).startsWith("pecia index: MODEL_UNAVAILABLE: OFFLINE:"), lines.get(1));
+    }
+
+    @Test
+    void contradictorySemanticFlagsAreAUsageError() {
+        assertEquals(2, run(root.toString(), "--dry-run", "--semantic", "--no-semantic"));
+        assertTrue(err.toString().contains("option '--semantic' should be specified only once"), err.toString());
+        assertFalse(Files.exists(root.resolve(".pecia")));
     }
 
     @Test
@@ -412,6 +583,7 @@ class IndexCommandTest {
     void helpAndUsageErrorsDoNotOpenStorage() {
         assertEquals(0, run(root.toString(), "--help"));
         assertTrue(out.toString().contains("local lexical index"));
+        assertTrue(out.toString().contains("--[no-]semantic"));
         assertFalse(out.toString().contains("embeds"));
         assertFalse(Files.exists(root.resolve(".pecia")));
 
@@ -474,7 +646,10 @@ class IndexCommandTest {
     private int run(String... args) {
         PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
 
-        CommandLine commandLine = new CommandLine(new IndexCommand(new IndexService(loader)));
+        // Semantic runs get the tiny test model from a stub, so these tests never download the real one.
+        ModelOutcome cached = TinyModel.cached();
+        ModelProvider provider = models != null ? models : listener -> cached;
+        CommandLine commandLine = new CommandLine(new IndexCommand(IndexService.withModelProvider(loader, provider)));
         commandLine.setOut(new PrintWriter(out));
         commandLine.setErr(new PrintWriter(err));
 

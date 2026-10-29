@@ -6,6 +6,7 @@ import dev.eyuppastirmaci.pecia.chunking.DocumentChunkerFactory;
 import dev.eyuppastirmaci.pecia.chunking.markdown.MarkdownChunker;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.Chunk;
 import dev.eyuppastirmaci.pecia.content.ChunkId;
 import dev.eyuppastirmaci.pecia.content.Document;
@@ -13,11 +14,13 @@ import dev.eyuppastirmaci.pecia.content.DocumentExtractionService;
 import dev.eyuppastirmaci.pecia.content.FileContentLoader;
 import dev.eyuppastirmaci.pecia.content.FileTypeDetector;
 import dev.eyuppastirmaci.pecia.content.TextDocumentExtractor;
+import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchException;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
@@ -65,9 +68,11 @@ final class ConsumerChecks {
     static void verifyArchiveOrigins(Path coreJar, Path runtimeDirectory) throws Exception {
         for (Class<?> type : List.of(
                 IndexService.class,
+                IndexOptions.class,
                 IndexPreview.class,
                 PeciaConfigLoader.class,
                 PeciaConfigParser.class,
+                SearchMode.class,
                 DocumentExtractionService.class,
                 Document.class,
                 FileContentLoader.class,
@@ -89,6 +94,7 @@ final class ConsumerChecks {
                 SearchScore.class,
                 SearchException.class,
                 QueryService.class,
+                QueryOptions.class,
                 QueryException.class,
                 IndexingProfile.class,
                 IndexAccessException.class)) {
@@ -154,12 +160,12 @@ final class ConsumerChecks {
             execute(connection, "INSERT INTO chunks_fts(chunks_fts) VALUES ('integrity-check')");
             try (var statement = connection.createStatement();
                     var result = statement.executeQuery("PRAGMA user_version")) {
-                check(result.next() && result.getInt(1) == 4, "Packaged storage must use schema version 4");
+                check(result.next() && result.getInt(1) == 5, "Packaged storage must use schema version 5");
             }
             try (var statement = connection.createStatement();
                     var result = statement.executeQuery(
                             "SELECT index_format_version FROM index_metadata WHERE singleton = 1")) {
-                check(result.next() && result.getInt(1) == 4, "Packaged storage must use index format 4");
+                check(result.next() && result.getInt(1) == 5, "Packaged storage must use index format 5");
             }
         }
     }

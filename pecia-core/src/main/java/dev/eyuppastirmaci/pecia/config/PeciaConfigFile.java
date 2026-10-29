@@ -33,8 +33,14 @@ public final class PeciaConfigFile {
             max_tokens = %d
             overlap_tokens = %d
 
+            [semantic]
+            enabled = %b   # build all-MiniLM-L6-v2 embeddings while indexing
+
             [embed]
             concurrency = %d
+
+            [search]
+            mode = %s   # lexical, semantic, hybrid, or auto
 
             [store]
             path = %s
@@ -44,7 +50,9 @@ public final class PeciaConfigFile {
                         defaults.maxFileBytes(),
                         defaults.maxTokens(),
                         defaults.overlapTokens(),
+                        defaults.semanticEnabled(),
                         defaults.embedConcurrency(),
+                        quote(defaults.searchMode().configValue()),
                         quote(defaults.storePath()));
     }
 

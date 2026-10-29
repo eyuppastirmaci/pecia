@@ -13,8 +13,8 @@ import java.util.Objects;
 final class SqliteSchemaInitializer {
 
     private static final String SCHEMA_RESOURCE = "/db/migration/V1__create_initial_schema.sql";
-    private static final int SCHEMA_VERSION = 4;
-    private static final int INDEX_FORMAT_VERSION = 4;
+    private static final int SCHEMA_VERSION = 5;
+    private static final int INDEX_FORMAT_VERSION = 5;
     private static final Map<String, String> REQUIRED_COLUMNS = Map.of(
             "files", "id, source_path, document_type, content_hash",
             "chunks", "id, file_id, chunk_index, content, start_line, end_line",
@@ -27,18 +27,21 @@ final class SqliteSchemaInitializer {
     private final SqliteFtsSchema fts;
     private final SqliteIndexingProfileSchema profiles;
     private final SqliteChunkIdentitySchema identities;
+    private final SqliteEmbeddingSchema embeddings;
 
     private SqliteSchemaInitializer(
             Connection connection,
             String rootUri,
             SqliteFtsSchema fts,
             SqliteIndexingProfileSchema profiles,
-            SqliteChunkIdentitySchema identities) {
+            SqliteChunkIdentitySchema identities,
+            SqliteEmbeddingSchema embeddings) {
         this.connection = Objects.requireNonNull(connection, "connection");
         this.rootUri = Objects.requireNonNull(rootUri, "rootUri");
         this.fts = Objects.requireNonNull(fts, "fts");
         this.profiles = Objects.requireNonNull(profiles, "profiles");
         this.identities = Objects.requireNonNull(identities, "identities");
+        this.embeddings = Objects.requireNonNull(embeddings, "embeddings");
     }
 
     static SqliteSchemaInitializer load(Connection connection, String rootUri) throws IOException {
@@ -47,7 +50,8 @@ final class SqliteSchemaInitializer {
                 rootUri,
                 SqliteFtsSchema.load(),
                 SqliteIndexingProfileSchema.load(),
-                SqliteChunkIdentitySchema.load());
+                SqliteChunkIdentitySchema.load(),
+                SqliteEmbeddingSchema.load());
     }
 
     void validateReadOnly() throws SQLException {
@@ -131,9 +135,20 @@ final class SqliteSchemaInitializer {
         initialize(schema, ftsMigration, profileMigration, identities.script(), ftsCheck);
     }
 
-    /** Serializes validation, creation and upgrade to prevent concurrent duplicate migrations. */
     void initialize(
             String schema, String ftsMigration, String profileMigration, String identityMigration, FtsCheck ftsCheck)
+            throws SQLException {
+        initialize(schema, ftsMigration, profileMigration, identityMigration, embeddings.script(), ftsCheck);
+    }
+
+    /** Serializes validation, creation and upgrade to prevent concurrent duplicate migrations. */
+    void initialize(
+            String schema,
+            String ftsMigration,
+            String profileMigration,
+            String identityMigration,
+            String embeddingMigration,
+            FtsCheck ftsCheck)
             throws SQLException {
         try (var statement = connection.createStatement()) {
             try {
@@ -156,7 +171,8 @@ final class SqliteSchemaInitializer {
                     createInitialSchema(statement, schema);
                 }
 
-                applyMigrations(statement, version, ftsMigration, profileMigration, identityMigration);
+                applyMigrations(
+                        statement, version, ftsMigration, profileMigration, identityMigration, embeddingMigration);
                 validateStoredSchema(SCHEMA_VERSION);
                 statement.execute("COMMIT");
             } catch (SQLException | RuntimeException | Error failure) {
@@ -232,6 +248,10 @@ final class SqliteSchemaInitializer {
         if (version >= 4) {
             identities.validate(connection);
         }
+
+        if (version >= 5) {
+            embeddings.validate(connection);
+        }
     }
 
     private void createInitialSchema(Statement statement, String schema) throws SQLException {
@@ -249,7 +269,12 @@ final class SqliteSchemaInitializer {
     }
 
     private void applyMigrations(
-            Statement statement, int version, String ftsMigration, String profileMigration, String identityMigration)
+            Statement statement,
+            int version,
+            String ftsMigration,
+            String profileMigration,
+            String identityMigration,
+            String embeddingMigration)
             throws SQLException {
         if (version < 2) {
             statement.executeUpdate(ftsMigration);
@@ -264,6 +289,11 @@ final class SqliteSchemaInitializer {
         if (version < 4) {
             statement.executeUpdate(identityMigration);
             identities.validate(connection);
+        }
+
+        if (version < 5) {
+            statement.executeUpdate(embeddingMigration);
+            embeddings.validate(connection);
         }
 
         if (version < SCHEMA_VERSION) {

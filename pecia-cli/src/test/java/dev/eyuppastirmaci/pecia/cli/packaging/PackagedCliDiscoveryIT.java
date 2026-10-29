@@ -49,7 +49,9 @@ class PackagedCliDiscoveryIT {
         assertTrue(defaults.contains("\nexclude = ["));
         assertTrue(defaults.contains("max_file_bytes = 5242880\n"));
         assertTrue(defaults.contains("[chunk]\nmax_tokens = 256\noverlap_tokens = 32\n"));
+        assertTrue(defaults.contains("[semantic]\nenabled = false"));
         assertTrue(defaults.contains("[embed]\nconcurrency = 2\n"));
+        assertTrue(defaults.contains("[search]\nmode = \"auto\""));
         assertTrue(defaults.contains("[store]\npath = \".pecia/index.db\"\n"));
         byte[] customized = "# Preserve my settings and line endings.\r\n[index]\r\ninclude = [\"**/*.md\"]\r\n"
                 .getBytes(StandardCharsets.UTF_8);
@@ -77,6 +79,7 @@ class PackagedCliDiscoveryIT {
         assertSuccess(result);
         assertEquals("""
             config: defaults (no .pecia.toml found)
+            semantic: disabled
             3 file(s) would be indexed:
               Dockerfile
               Main.JS
@@ -110,7 +113,8 @@ class PackagedCliDiscoveryIT {
 
         assertSuccess(result);
         assertEquals(
-                "config: " + project.resolve(".pecia.toml") + "\n" + "1 file(s) would be indexed:\n  keep.md\n",
+                "config: " + project.resolve(".pecia.toml")
+                        + "\nsemantic: disabled\n1 file(s) would be indexed:\n  keep.md\n",
                 result.out());
         assertEquals(config, Files.readString(project.resolve(".pecia.toml")));
         assertEquals(before, cli.projectEntries());
@@ -161,7 +165,8 @@ class PackagedCliDiscoveryIT {
 
         assertEquals(1, result.exitCode());
         assertEquals(
-                "config: defaults (no .pecia.toml found)\n" + "1 file(s) would be indexed:\n  good.md\n", result.out());
+                "config: defaults (no .pecia.toml found)\nsemantic: disabled\n1 file(s) would be indexed:\n  good.md\n",
+                result.out());
         assertTrue(result.err().startsWith("warning: " + invalidIgnore + ": "), result.err());
         assertTrue(
                 result.err().endsWith("pecia index: incomplete scan; listed files are only partial results\n"),
