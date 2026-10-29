@@ -217,6 +217,25 @@ final class PackagedCoreRunner {
         return run(scenario, project, Duration.ofSeconds(30), offline, evidence -> evidence.verifyEmbedding(CONSUMER));
     }
 
+    /** Runs a semantic query offline; see {@link OfflineSandbox.Run#verifySemanticQuery}. */
+    Result runOfflineSemanticQuery(String scenario, Path project, OfflineSandbox offline, Path placedLibrary)
+            throws IOException, InterruptedException {
+        Objects.requireNonNull(offline, "offline");
+        return run(
+                scenario,
+                project,
+                Duration.ofSeconds(30),
+                offline,
+                evidence -> evidence.verifySemanticQuery(CONSUMER, placedLibrary));
+    }
+
+    /** Runs a scenario offline that must write nothing; see {@link OfflineSandbox.Run#verifyNothingWritten}. */
+    Result runOfflineWithoutWrites(String scenario, Path project, OfflineSandbox offline)
+            throws IOException, InterruptedException {
+        Objects.requireNonNull(offline, "offline");
+        return run(scenario, project, Duration.ofSeconds(30), offline, OfflineSandbox.Run::verifyNothingWritten);
+    }
+
     /**
      * Runs a scenario offline that is expected to try one model download and be denied; see {@link
      * OfflineSandbox.Run#verifyDeniedDownload}.

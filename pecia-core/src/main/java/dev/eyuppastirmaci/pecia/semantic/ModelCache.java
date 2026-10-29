@@ -15,6 +15,7 @@ import java.nio.channels.FileLock;
 import java.nio.channels.FileLockInterruptionException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
@@ -23,6 +24,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -37,7 +39,7 @@ import java.util.function.Supplier;
  * A file lock in the model's directory serializes runs across processes; a download goes to a temporary file that is
  * moved into place only after its size and SHA-256 match, so the model's name never holds an unverified file.
  */
-public final class ModelCache implements ModelProvider {
+public final class ModelCache implements ModelProvider, ModelLookup {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration STALL_TIMEOUT = Duration.ofSeconds(60);
@@ -56,7 +58,7 @@ public final class ModelCache implements ModelProvider {
 
     /**
      * Creates a cache for all-MiniLM-L6-v2 in the user's cache directory. Nothing is resolved, created, or contacted
-     * until {@link #ensure()} runs.
+     * until {@link #ensure()} or {@link #find()} runs.
      */
     public ModelCache() {
         this(SemanticModel.MINILM, CacheDirectory::resolve, ModelCache::defaultClient, STALL_TIMEOUT);
@@ -107,6 +109,29 @@ public final class ModelCache implements ModelProvider {
         synchronized (MONITORS.computeIfAbsent(target, path -> new Object())) {
             return ensureUnderFileLock(target, listener);
         }
+    }
+
+    /**
+     * Returns the model file if it is cached and matches its pinned size and SHA-256. Takes no lock and writes
+     * nothing: a download moves only a verified file into place, so the model's name never holds a partial one.
+     *
+     * @throws ModelException if the cache cannot be read
+     */
+    @Override
+    public Optional<ModelOutcome> find() throws ModelException {
+        Path target = model.cachedFile(cacheRoot.get());
+
+        try {
+            if (Files.isRegularFile(target) && verified(target)) {
+                return Optional.of(new ModelOutcome(ModelOutcome.Status.CACHED, model, target));
+            }
+        } catch (NoSuchFileException deleted) {
+            // Another run deleted a damaged copy after the check, before downloading the model again.
+        } catch (IOException failure) {
+            throw cacheUnavailable(target.getParent(), failure);
+        }
+
+        return Optional.empty();
     }
 
     private ModelOutcome ensureUnderFileLock(Path target, DownloadListener listener) throws ModelException {

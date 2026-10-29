@@ -237,6 +237,42 @@ public final class OfflineSandbox {
             }
         }
 
+        /**
+         * Validates a semantic query offline: no network attempt, ONNX Runtime initialized, and nothing written except
+         * the runtime's native extraction directory and, on first use, the vector extension's copy in Pecia's cache.
+         *
+         * @param placedLibrary the extension's path relative to Pecia's cache directory if this run must place it in
+         *     an empty cache, or null if it must reuse an earlier copy
+         */
+        public void verifySemanticQuery(String requiredClass, Path placedLibrary) throws IOException {
+            Set<Path> additions = new LinkedHashSet<>();
+
+            if (placedLibrary != null) {
+                Path entry = environment.peciaCache();
+                additions.add(entry);
+
+                for (Path part : placedLibrary) {
+                    entry = entry.resolve(part);
+                    additions.add(entry);
+                }
+            }
+
+            assertNoNetworkAttempts();
+            environment.assertOnlyRuntimeExtraction(before, additions);
+            for (String className :
+                    List.of(requiredClass, NetworkGuard.class.getName(), "ai.onnxruntime.OrtEnvironment")) {
+                if (!OfflineEnvironment.initialized(initializationLog(), className)) {
+                    throw new AssertionError(className + " was not initialized in the semantic query JVM");
+                }
+            }
+        }
+
+        /** Validates a run that may initialize semantic classes but neither reaches the network nor writes anything. */
+        public void verifyNothingWritten() throws IOException {
+            assertNoNetworkAttempts();
+            environment.assertUnchanged(before);
+        }
+
         /** Validates network, cache and initialized-class evidence after the child has exited. */
         public void verifyLexical(String requiredClass) throws IOException {
             assertNoNetworkAttempts();

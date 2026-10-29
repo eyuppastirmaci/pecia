@@ -19,6 +19,8 @@ public final class PackagedCoreConsumer {
             "semantic-embedding",
             "semantic-index",
             "lexical-after-semantic",
+            "semantic-query",
+            "semantic-query-uncached",
             "lexical-lifecycle",
             "lexical-reopen",
             "lexical-determinism",
@@ -67,6 +69,8 @@ public final class PackagedCoreConsumer {
             case "semantic-embedding" -> EmbeddingScenario.verifyEmbedding(root);
             case "semantic-index" -> EmbeddingScenario.indexSemantically(root);
             case "lexical-after-semantic" -> EmbeddingScenario.verifyLexicalAfterSemantic(root);
+            case "semantic-query" -> EmbeddingScenario.querySemantically(root);
+            case "semantic-query-uncached" -> EmbeddingScenario.verifyUncachedSemanticQuery(root);
             case "lexical-lifecycle" -> new LexicalLifecycleScenario(root).runLifecycle();
             case "lexical-reopen" -> new LexicalLifecycleScenario(root).verifyReopened();
             // The dump precedes the success marker on standard output for the packaging test to compare.

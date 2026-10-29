@@ -14,4 +14,10 @@ public final class VectorExtensionAccess {
                 cacheRoot,
                 VectorExtension.class::getResourceAsStream);
     }
+
+    /** Returns where the current platform's library is kept, relative to Pecia's cache directory. */
+    public static Path cachedLibrary() {
+        return VectorExtension.cachedLibrary(System.getProperty("os.name"), System.getProperty("os.arch"))
+                .orElseThrow(() -> new IllegalStateException("No sqlite-vec library is bundled for this platform"));
+    }
 }

@@ -1,9 +1,11 @@
 package dev.eyuppastirmaci.pecia.search;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
+import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +31,14 @@ class QueryResultTest {
                 UnsupportedOperationException.class, () -> result.warnings().clear());
         assertThrows(NullPointerException.class, () -> new QueryResult(null, List.of()));
         assertThrows(NullPointerException.class, () -> new QueryResult(List.of(), null));
+    }
+
+    @Test
+    void onlySemanticResultsCarryEmbeddingCoverage() {
+        EmbeddingCoverage coverage = new EmbeddingCoverage(3, 0, 1);
+
+        assertNull(new QueryResult(List.of(), List.of()).embeddingCoverage());
+        assertEquals(coverage, new QueryResult(List.of(), List.of(), coverage).embeddingCoverage());
     }
 
     @Test

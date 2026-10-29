@@ -165,22 +165,23 @@ class QueryCommandTest {
         assertFalse(Files.exists(root.resolve(".pecia")));
     }
 
-    @ParameterizedTest(name = "file {0}, flag {1} -> exit {2}")
+    // The lexical index has no embeddings, so semantic queries fail before they look for the model.
+    @ParameterizedTest(name = "file {0}, flag {1} -> exit {2} {3}")
     @CsvSource(
             nullValues = "none",
             value = {
-                "none, none, 0",
-                "none, lexical, 0",
-                "none, auto, 0",
-                "none, semantic, 1",
-                "none, hybrid, 1",
-                "semantic, none, 1",
-                "semantic, lexical, 0",
-                "semantic, auto, 0",
-                "lexical, semantic, 1",
-                "hybrid, auto, 0"
+                "none, none, 0, none",
+                "none, lexical, 0, none",
+                "none, auto, 0, none",
+                "none, semantic, 1, EMBEDDINGS_MISSING",
+                "none, hybrid, 1, SEMANTIC_UNAVAILABLE",
+                "semantic, none, 1, EMBEDDINGS_MISSING",
+                "semantic, lexical, 0, none",
+                "semantic, auto, 0, none",
+                "lexical, semantic, 1, EMBEDDINGS_MISSING",
+                "hybrid, auto, 0, none"
             })
-    void modeFlagOverridesTheConfiguredMode(String file, String flag, int exitCode) throws Exception {
+    void modeFlagOverridesTheConfiguredMode(String file, String flag, int exitCode, String reason) throws Exception {
         if (file != null) {
             Files.writeString(root.resolve(".pecia.toml"), "[search]\nmode = \"" + file + "\"\n");
         }
@@ -199,7 +200,7 @@ class QueryCommandTest {
             assertEquals("", err.toString());
         } else {
             assertEquals("", out.toString());
-            assertTrue(err.toString().startsWith("pecia query: SEMANTIC_UNAVAILABLE: "), err.toString());
+            assertTrue(err.toString().startsWith("pecia query: " + reason + ": "), err.toString());
         }
     }
 

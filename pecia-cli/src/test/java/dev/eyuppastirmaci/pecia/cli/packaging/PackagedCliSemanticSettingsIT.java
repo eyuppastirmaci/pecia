@@ -61,7 +61,7 @@ class PackagedCliSemanticSettingsIT {
 
     @Test
     void modeFlagOverridesAConfiguredModeThatIsNotAvailable() throws Exception {
-        Files.writeString(config, "[search]\nmode = \"semantic\"\n");
+        Files.writeString(config, "[search]\nmode = \"hybrid\"\n");
         assertSuccess(cli.run(project, "index"));
         Path database = project.resolve(".pecia/index.db");
         List<Path> entries = cli.projectEntries();
@@ -72,7 +72,7 @@ class PackagedCliSemanticSettingsIT {
         assertEquals(1, configured.exitCode());
         assertEquals("", configured.out());
         assertEquals(
-                "pecia query: SEMANTIC_UNAVAILABLE: semantic search is not available yet; use the lexical or auto mode\n",
+                "pecia query: SEMANTIC_UNAVAILABLE: hybrid search is not available yet; use the lexical or auto mode\n",
                 configured.err());
         assertEquals(entries, cli.projectEntries());
         assertArrayEquals(before, Files.readAllBytes(database));

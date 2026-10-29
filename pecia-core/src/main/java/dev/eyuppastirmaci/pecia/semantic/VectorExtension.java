@@ -9,6 +9,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 
 /**
@@ -59,7 +60,7 @@ public final class VectorExtension {
                     null);
         }
 
-        Path target = cacheRoot.resolve(Path.of("native", "sqlite-vec", VERSION, platform, library.file()));
+        Path target = cacheRoot.resolve(cachedLibrary(platform, library));
 
         try {
             if (Files.isRegularFile(target) && library.sha256().equals(sha256(Files.readAllBytes(target)))) {
@@ -98,6 +99,17 @@ public final class VectorExtension {
             throw new VectorExtensionException(
                     "Could not place the sqlite-vec library in " + target.getParent(), failure);
         }
+    }
+
+    /** Returns where the platform's library is kept, relative to the cache directory, or empty if none is bundled. */
+    static Optional<Path> cachedLibrary(String osName, String osArch) {
+        return RuntimePlatform.platform(osName, osArch)
+                .filter(LIBRARIES::containsKey)
+                .map(platform -> cachedLibrary(platform, LIBRARIES.get(platform)));
+    }
+
+    private static Path cachedLibrary(String platform, Library library) {
+        return Path.of("native", "sqlite-vec", VERSION, platform, library.file());
     }
 
     private static String sha256(byte[] bytes) {

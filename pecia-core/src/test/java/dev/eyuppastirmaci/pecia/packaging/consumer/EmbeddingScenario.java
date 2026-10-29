@@ -4,11 +4,17 @@ import static dev.eyuppastirmaci.pecia.packaging.consumer.ConsumerChecks.check;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.search.QueryOptions;
+import dev.eyuppastirmaci.pecia.search.QueryResult;
 import dev.eyuppastirmaci.pecia.search.QueryService;
+import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.search.SearchScore;
 import dev.eyuppastirmaci.pecia.semantic.Embedder;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
@@ -21,6 +27,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /** Verifies that the packaged core and its runtime dependencies can embed texts with a model file. */
 final class EmbeddingScenario {
@@ -111,6 +118,67 @@ final class EmbeddingScenario {
                                 .hits()
                                 .isEmpty(),
                 "Packaged queries must search an index that holds vectors");
+    }
+
+    /**
+     * Queries the semantically indexed corpus with its shortest chunk's text and the tiny model beside the project:
+     * that chunk comes first with similarity 1, and every chunk could be compared.
+     */
+    static void querySemantically(Path root) throws Exception {
+        ModelOutcome tiny =
+                new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, root.resolveSibling(MODEL_FILE));
+        Map<String, String> chunks = chunks(root.resolve(".pecia/index.db"));
+        String key = chunks.keySet().stream()
+                .min((first, second) -> Integer.compare(
+                        chunks.get(first).length(), chunks.get(second).length()))
+                .orElseThrow();
+
+        QueryResult result = QueryService.withModelLookup(
+                        new PeciaConfigLoader(new PeciaConfigParser()), () -> Optional.of(tiny))
+                .query(root, new SearchRequest(chunks.get(key)), QueryOptions.mode(SearchMode.SEMANTIC));
+        SearchHit first = result.hits().getFirst();
+
+        check(
+                result.embeddingCoverage() != null
+                        && result.embeddingCoverage().embedded() == chunks.size()
+                        && result.embeddingCoverage().chunks() == chunks.size(),
+                "A packaged semantic query must compare every embedded chunk");
+        check(
+                (first.sourcePath().toString().replace('\\', '/') + "#" + first.chunkIndex()).equals(key)
+                        && first.score().kind() == SearchScore.Kind.COSINE_SIMILARITY
+                        && Math.abs(first.score().value() - 1) < 1e-5,
+                "A packaged semantic query with a chunk's text must find that chunk first");
+    }
+
+    /** Queries semantically with the user's empty model cache, which must fail without downloading anything. */
+    static void verifyUncachedSemanticQuery(Path root) throws Exception {
+        try {
+            new QueryService(new PeciaConfigLoader(new PeciaConfigParser()))
+                    .query(root, new SearchRequest("refunds"), QueryOptions.mode(SearchMode.SEMANTIC));
+            throw new AssertionError("A packaged semantic query must fail without a cached model");
+        } catch (QueryException failure) {
+            check(
+                    failure.reason() == QueryException.Reason.MODEL_NOT_CACHED,
+                    "A packaged semantic query must report the uncached model");
+        }
+    }
+
+    /** Maps each stored chunk, as {@code path#index}, to its content. */
+    private static Map<String, String> chunks(Path database) throws SQLException {
+        Map<String, String> chunks = new LinkedHashMap<>();
+
+        try (Connection connection = ConsumerChecks.openDatabase(database);
+                var statement = connection.createStatement();
+                var result = statement.executeQuery("""
+                    SELECT f.source_path || '#' || c.chunk_index, c.content FROM chunks c
+                    JOIN files f ON f.id = c.file_id ORDER BY f.source_path, c.chunk_index
+                    """)) {
+            while (result.next()) {
+                chunks.put(result.getString(1), result.getString(2));
+            }
+        }
+
+        return chunks;
     }
 
     /** Maps each stored vector's chunk, as {@code path#index}, to the vector's bytes in hexadecimal. */
