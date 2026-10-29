@@ -1,6 +1,7 @@
 package dev.eyuppastirmaci.pecia.storage.sqlite;
 
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
+import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
 import java.nio.ByteBuffer;
@@ -75,6 +76,68 @@ final class SqliteEmbeddingRepository {
                 if (insert.executeUpdate() != 1) {
                     throw new SQLException("Chunk embedding insertion returned no row");
                 }
+            }
+        }
+    }
+
+    /**
+     * Fails if the index holds embeddings of a profile other than the one with this fingerprint, so vectors of two
+     * profiles are never stored together.
+     */
+    void requireOnlyProfile(String fingerprint) throws SQLException {
+        try (var query = connection.prepareStatement("""
+                SELECT 1 FROM chunk_embeddings
+                WHERE profile_id IN (SELECT id FROM embedding_profiles WHERE fingerprint != ?) LIMIT 1
+                """)) {
+            query.setString(1, fingerprint);
+
+            try (var result = query.executeQuery()) {
+                if (result.next()) {
+                    throw new IllegalStateException(
+                            "The index holds embeddings of another profile; discard them before storing new ones");
+                }
+            }
+        }
+    }
+
+    /** Deletes embeddings of every other profile and the profile rows they leave unused, returning the count. */
+    long discardOtherProfiles(String fingerprint) throws SQLException {
+        long discarded;
+
+        try (var vectors = connection.prepareStatement("""
+                DELETE FROM chunk_embeddings
+                WHERE profile_id IN (SELECT id FROM embedding_profiles WHERE fingerprint != ?)
+                """)) {
+            vectors.setString(1, fingerprint);
+            discarded = vectors.executeUpdate();
+        }
+
+        try (var profiles = connection.prepareStatement("DELETE FROM embedding_profiles WHERE fingerprint != ?")) {
+            profiles.setString(1, fingerprint);
+            profiles.executeUpdate();
+        }
+
+        return discarded;
+    }
+
+    /** Counts stored chunks by whether they have an embedding of this profile, of another, or none. */
+    EmbeddingCoverage coverage(String fingerprint) throws SQLException {
+        try (var query = connection.prepareStatement("""
+                SELECT
+                    count(*) FILTER (WHERE p.fingerprint = ?),
+                    count(*) FILTER (WHERE p.fingerprint != ?),
+                    count(*) FILTER (WHERE e.chunk_id IS NULL)
+                FROM chunks c
+                LEFT JOIN chunk_embeddings e ON e.chunk_id = c.id
+                LEFT JOIN embedding_profiles p ON p.id = e.profile_id
+                """)) {
+            query.setString(1, fingerprint);
+            query.setString(2, fingerprint);
+
+            try (var result = query.executeQuery()) {
+                result.next();
+
+                return new EmbeddingCoverage(result.getLong(1), result.getLong(2), result.getLong(3));
             }
         }
     }

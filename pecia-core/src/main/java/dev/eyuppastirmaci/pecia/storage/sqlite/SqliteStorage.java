@@ -12,6 +12,7 @@ import dev.eyuppastirmaci.pecia.index.IndexDecision;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
+import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
@@ -380,6 +381,10 @@ public final class SqliteStorage implements AutoCloseable {
         List<ChunkId> chunkIds = replacement.stream().map(generator::generate).toList();
 
         return inScope(() -> {
+            if (profile != null) {
+                new SqliteEmbeddingRepository(connection).requireOnlyProfile(profile.fingerprint());
+            }
+
             SavedReplacement saved = saveReplacement(document, replacement);
             chunks().saveIdentities(saved.chunks(), chunkIds);
 
@@ -435,9 +440,36 @@ public final class SqliteStorage implements AutoCloseable {
 
         return inScope(() -> {
             SqliteEmbeddingRepository repository = new SqliteEmbeddingRepository(connection);
+            repository.requireOnlyProfile(profile.fingerprint());
 
             return repository.saveIfUnchanged(targets, repository.profileId(profile), embeddings);
         });
+    }
+
+    /**
+     * Deletes every embedding of a profile other than the given one, and the profile rows left unused, as one atomic
+     * operation. Chunks and full-text rows are not touched, so the deleted embeddings can be made again from storage.
+     *
+     * @return how many embeddings were deleted
+     * @throws SQLException if deletion fails, with nothing deleted when rollback succeeds; an outer transaction remains
+     *     caller-owned
+     * @throws NullPointerException if profile is null
+     */
+    public long discardIncompatibleEmbeddings(EmbeddingProfile profile) throws SQLException {
+        String fingerprint = profile.fingerprint();
+
+        return inScope(() -> new SqliteEmbeddingRepository(connection).discardOtherProfiles(fingerprint));
+    }
+
+    /**
+     * Counts stored chunks by whether they have an embedding of the given profile, of another profile, or none, in one
+     * read. This method never writes data.
+     *
+     * @throws SQLException if reading fails
+     * @throws NullPointerException if profile is null
+     */
+    public EmbeddingCoverage embeddingCoverage(EmbeddingProfile profile) throws SQLException {
+        return new SqliteEmbeddingRepository(connection).coverage(profile.fingerprint());
     }
 
     /**

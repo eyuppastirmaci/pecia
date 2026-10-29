@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
+import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
 import dev.eyuppastirmaci.pecia.tokenization.TokenizerCompatibility;
@@ -95,17 +96,22 @@ class SqliteEmbeddingStorageTest {
             replace(storage, "second.md", PROFILE);
         }
 
+        String profileCounts = """
+            SELECT p.fingerprint, count(e.chunk_id) FROM embedding_profiles p
+            LEFT JOIN chunk_embeddings e ON e.profile_id = p.id
+            GROUP BY p.id ORDER BY p.id
+            """;
+
         try (SqliteStorage storage = SqliteStorage.open(database, root)) {
             replace(storage, "third.md", PROFILE);
+
+            assertEquals(List.of(List.of(PROFILE.fingerprint(), 6L)), rows(storage.connection(), profileCounts));
+
+            // Another profile is stored only after the first one's embeddings are discarded.
+            storage.discardIncompatibleEmbeddings(OTHER_PROFILE);
             replace(storage, "fourth.md", OTHER_PROFILE);
 
-            assertEquals(
-                    List.of(List.of(PROFILE.fingerprint(), 6L), List.of(OTHER_PROFILE.fingerprint(), 2L)),
-                    rows(storage.connection(), """
-                        SELECT p.fingerprint, count(e.chunk_id) FROM embedding_profiles p
-                        LEFT JOIN chunk_embeddings e ON e.profile_id = p.id
-                        GROUP BY p.id ORDER BY p.id
-                        """));
+            assertEquals(List.of(List.of(OTHER_PROFILE.fingerprint(), 2L)), rows(storage.connection(), profileCounts));
         }
     }
 
@@ -388,6 +394,113 @@ class SqliteEmbeddingStorageTest {
             assertEquals(Map.of(), vectorKeys(storage.connection()));
             assertEquals(pending, storage.findUnembeddedChunks(fileId(storage)));
         }
+    }
+
+    @Test
+    void discardingRemovesOnlyOtherProfilesEmbeddingsAndTheirRows() throws Exception {
+        try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
+            replace(storage, "current.md", PROFILE);
+            Document older = document("older.md", "olderbody");
+            long olderId = storage.replaceFile(older, chunks(older), IDENTITY).id();
+            // Vectors of an earlier profile, as an index written before a model change holds them.
+            storeUnderAnotherProfile(storage.connection(), olderId);
+            List<List<Object>> chunksBefore = rows(storage.connection(), "SELECT id, content FROM chunks ORDER BY id");
+            List<SqliteFtsTestSupport.FtsRow> searchBefore = SqliteFtsTestSupport.rows(storage.connection());
+
+            assertEquals(2, storage.discardIncompatibleEmbeddings(PROFILE));
+
+            assertEquals(Map.of("current.md#0", 4, "current.md#1", 4), vectorKeys(storage.connection()));
+            assertEquals(
+                    List.of(List.of(PROFILE.fingerprint())),
+                    rows(storage.connection(), "SELECT fingerprint FROM embedding_profiles"));
+            assertEquals(chunksBefore, rows(storage.connection(), "SELECT id, content FROM chunks ORDER BY id"));
+            assertEquals(searchBefore, SqliteFtsTestSupport.rows(storage.connection()));
+            assertEquals(0, storage.discardIncompatibleEmbeddings(PROFILE));
+        }
+    }
+
+    @Test
+    void discardingForANewProfileRemovesEveryEmbedding() throws Exception {
+        try (SqliteStorage storage = SqliteStorage.open(root.resolve("index.db"), root)) {
+            replace(storage, "guide.md", PROFILE);
+
+            assertEquals(2, storage.discardIncompatibleEmbeddings(OTHER_PROFILE));
+
+            assertEquals(Map.of(), vectorKeys(storage.connection()));
+            assertEquals(List.of(), rows(storage.connection(), "SELECT fingerprint FROM embedding_profiles"));
+        }
+    }
+
+    @Test
+    void embeddingsOfASecondProfileAreRefusedUntilTheFirstAreDiscarded() throws Exception {
+        Path database = root.resolve("index.db");
+        Document lexical = document("lexical.md", "lexicalbody");
+        long lexicalId;
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            replace(storage, "guide.md", PROFILE);
+            lexicalId = storage.replaceFile(lexical, chunks(lexical), IDENTITY).id();
+        }
+
+        byte[] before = Files.readAllBytes(database);
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            List<UnembeddedChunk> pending = storage.findUnembeddedChunks(lexicalId);
+            Document changed = document("guide.md", "changedbody");
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> storage.replaceFile(changed, chunks(changed), IDENTITY, OTHER_PROFILE, vectors(2, 2)));
+            assertThrows(
+                    IllegalStateException.class, () -> storage.storeEmbeddings(OTHER_PROFILE, pending, vectors(2, 2)));
+        }
+
+        assertArrayEquals(before, Files.readAllBytes(database));
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            storage.discardIncompatibleEmbeddings(OTHER_PROFILE);
+
+            assertEquals(
+                    2, storage.storeEmbeddings(OTHER_PROFILE, storage.findUnembeddedChunks(lexicalId), vectors(2, 2)));
+        }
+    }
+
+    @Test
+    void coverageCountsChunksByTheirEmbeddingsProfile() throws Exception {
+        Path database = root.resolve("index.db");
+
+        try (SqliteStorage storage = SqliteStorage.open(database, root)) {
+            assertEquals(new EmbeddingCoverage(0, 0, 0), storage.embeddingCoverage(PROFILE));
+
+            replace(storage, "embedded.md", PROFILE);
+            Document lexical = document("lexical.md", "lexicalbody");
+            storage.replaceFile(lexical, chunks(lexical), IDENTITY);
+        }
+
+        byte[] before = Files.readAllBytes(database);
+
+        try (SqliteStorage storage = SqliteStorage.openReadOnly(database, root)) {
+            assertEquals(new EmbeddingCoverage(2, 0, 2), storage.embeddingCoverage(PROFILE));
+            assertEquals(new EmbeddingCoverage(0, 2, 2), storage.embeddingCoverage(OTHER_PROFILE));
+            assertEquals(4, storage.embeddingCoverage(PROFILE).chunks());
+        }
+
+        assertArrayEquals(before, Files.readAllBytes(database));
+        assertThrows(IllegalArgumentException.class, () -> new EmbeddingCoverage(-1, 0, 0));
+    }
+
+    /** Stores four-dimensional vectors for a file's chunks under a profile written directly, bypassing the guard. */
+    private static void storeUnderAnotherProfile(Connection connection, long fileId) throws SQLException {
+        execute(connection, """
+                INSERT INTO embedding_profiles(model_id, model_revision, model_sha256, dimensions, tokenizer_algorithm,
+                    vocabulary_sha256, max_input_tokens, pooling, normalization, input, fingerprint)
+                VALUES ('test/model', 'old', ?, 4, 'wordpiece-v2', ?, 256, 'mean', 'l2', 'chunk-content', ?)
+                """, "b".repeat(64), "c".repeat(64), "e".repeat(64));
+        execute(connection, """
+                INSERT INTO chunk_embeddings(chunk_id, profile_id, vector)
+                SELECT id, (SELECT id FROM embedding_profiles WHERE fingerprint = ?), zeroblob(16) FROM chunks
+                WHERE file_id = ?
+                """, "e".repeat(64), fileId);
     }
 
     private static long fileId(SqliteStorage storage) throws SQLException {
