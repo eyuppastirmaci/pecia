@@ -17,7 +17,8 @@ public abstract class HybridSearch {
      * Returns chunks ranked by reciprocal rank fusion of their lexical and semantic ranks, best first. Each side
      * contributes its first 100 candidates whatever the limit, both read from one index snapshot, so a smaller limit
      * always returns a prefix of a larger one. Scores are of kind {@link SearchScore.Kind#RECIPROCAL_RANK_FUSION} and
-     * each hit carries its {@link FusedRanks}. Text without searchable characters, or with more parts than lexical
+     * each hit carries its {@link FusedRanks}. The ranks are weighted by the text's {@link QueryShape}: identifier-like
+     * text keeps the lexical order, followed by chunks only semantic search found. Text without searchable characters, or with more parts than lexical
      * search accepts, has no lexical candidates, which leaves the semantic order; chunks without an embedding of the
      * profile can still come from the lexical side.
      *
@@ -35,7 +36,8 @@ public abstract class HybridSearch {
         SemanticSearch.requireFinite(queryEmbedding);
         Candidates candidates = retrieve(matchExpression, queryEmbedding.clone(), RankFusion.CANDIDATE_DEPTH);
 
-        return RankFusion.fuse(candidates.lexical(), candidates.semantic(), request.limit());
+        return RankFusion.fuse(
+                candidates.lexical(), candidates.semantic(), request.limit(), QueryShape.of(request.query()));
     }
 
     /**
