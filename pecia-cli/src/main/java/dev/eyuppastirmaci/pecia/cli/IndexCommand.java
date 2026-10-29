@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.cli;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
+import dev.eyuppastirmaci.pecia.index.Cancellation;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.index.IndexException;
 import dev.eyuppastirmaci.pecia.index.IndexOptions;
@@ -16,10 +17,13 @@ import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -46,14 +50,26 @@ public class IndexCommand implements Callable<Integer> {
                     "Enable or disable semantic indexing for this run, overriding semantic.enabled in .pecia.toml.")
     Boolean semantic;
 
+    // The shell's exit status for a process stopped by SIGINT: 128 plus the signal number.
+    static final int INTERRUPTED = 130;
+
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
+    // How long Ctrl+C waits for the run to stop and print its summary before the JVM exits anyway.
+    private static final Duration STOP_TIMEOUT = Duration.ofSeconds(10);
+
     private final IndexService indexService;
+    private final InterruptHandlers interrupts;
 
     /** Creates a command using the supplied non-null indexing service. */
     public IndexCommand(IndexService indexService) {
+        this(indexService, InterruptHandlers.shutdownHooks());
+    }
+
+    IndexCommand(IndexService indexService, InterruptHandlers interrupts) {
         this.indexService = Objects.requireNonNull(indexService, "indexService");
+        this.interrupts = Objects.requireNonNull(interrupts, "interrupts");
     }
 
     /**
@@ -62,21 +78,62 @@ public class IndexCommand implements Callable<Integer> {
      * this run, and the preview reports the resolved choice. A semantic run announces a model download on stderr when
      * one starts and reports the model, the embeddings of an earlier profile it discarded, the chunks embedded with
      * changed files, and the stored chunks whose missing embeddings it made in its summary. Every summary also counts
-     * the indexed files whose unchanged content was chunked again for new settings.
+     * the indexed files whose unchanged content was chunked again for new settings. Ctrl+C stops the run before its
+     * next file, batch, or page and prints what it finished; the files it indexed stay, and the next run continues.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan, an unavailable model or
-     *     embedder, an embedding failure, or storage failure
+     *     embedder, an embedding failure, or storage failure, 130 when Ctrl+C stopped the run
      */
     @Override
     public Integer call() {
+        if (dryRun) {
+            return execute(null);
+        }
+
+        Cancellation cancellation = new Cancellation();
+        CountDownLatch reported = new CountDownLatch(1);
+
+        InterruptHandlers.Registration hook = interrupts.register(() -> stop(cancellation, reported));
+
+        try {
+            return execute(cancellation);
+        } finally {
+            hook.close();
+            // Picocli's writers flush every line, so the summary is out once the hook is released.
+            reported.countDown();
+        }
+    }
+
+    /** Cancels the run and waits until its summary is printed, since the JVM exits as soon as this returns. */
+    private static void stop(Cancellation cancellation, CountDownLatch reported) {
+        cancellation.cancel();
+
+        try {
+            reported.await(STOP_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Indexes or previews; {@code cancellation} is null for a preview. */
+    private Integer execute(Cancellation cancellation) {
         try {
             IndexOptions options = semantic == null ? IndexOptions.configured() : IndexOptions.semantic(semantic);
             options = options.withDownloadListener(this::announceDownload);
 
             if (!dryRun) {
-                IndexResult result = indexService.index(path, options);
+                IndexResult result = indexService.index(path, options.withCancellation(cancellation));
                 WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
                 reportIndex(result);
+
+                if (result.status() == IndexResult.Status.CANCELLED) {
+                    spec.commandLine()
+                            .getErr()
+                            .println("pecia index: cancelled; the files indexed so far are kept, and the next run"
+                                    + " continues from there");
+
+                    return INTERRUPTED;
+                }
 
                 return result.status() == IndexResult.Status.COMPLETE ? 0 : 1;
             }
