@@ -104,6 +104,8 @@ tasks.withType<Test>().configureEach {
 tasks.named<Test>("test") {
     // Unit tests follow the *Test convention; packaged acceptance tests (*IT) run in integrationTest.
     include("**/*Test.class")
+    // Unit tests never use the user's cache: a semantic query places the vector extension in whatever cache it finds.
+    environment("PECIA_CACHE_DIR", layout.buildDirectory.dir("test-cache").get().asFile.absolutePath)
 }
 
 // Gradle skips a test task whose filter matches no class files, so check explicitly that acceptance tests exist.

@@ -9,6 +9,7 @@ import dev.eyuppastirmaci.pecia.search.QueryResult;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.search.SearchScore;
 import java.io.PrintWriter;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
@@ -114,7 +115,7 @@ public class QueryCommand implements Callable<Integer> {
         }
 
         out.println(location);
-        out.println("  BM25: " + hit.score().value());
+        out.println("  " + scoreLabel(hit.score().kind()) + ": " + hit.score().value());
 
         if (!hit.metadata().headingPath().isEmpty()) {
             out.println("  heading: " + String.join(" > ", hit.metadata().headingPath()));
@@ -122,6 +123,14 @@ public class QueryCommand implements Callable<Integer> {
 
         hit.snippet().lines().forEach(line -> out.println("  " + line));
         out.println();
+    }
+
+    /** Names the score's kind, since BM25 scores are better when lower and cosine similarities when higher. */
+    private static String scoreLabel(SearchScore.Kind kind) {
+        return switch (kind) {
+            case SQLITE_BM25 -> "BM25";
+            case COSINE_SIMILARITY -> "cosine";
+        };
     }
 
     private static String launcherJar() {

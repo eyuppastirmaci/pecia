@@ -51,8 +51,8 @@ jobs:
         run: .\gradlew.bat check --profile
 
       # Only the next three steps use the real model, comparing its embeddings with the committed sentence-transformers
-      # references. The packaged CLI indexes a project semantically with the cached model, downloading it on a cache miss
-      # and verifying its SHA-256; the test tasks above never download it.
+      # references and checking its retrieval. The packaged CLI indexes a project semantically with the cached model,
+      # downloading it on a cache miss and verifying its SHA-256, then queries it; the test tasks above never download it.
       - name: Restore the semantic model
         id: semantic-model
         uses: actions/cache@v6
@@ -61,7 +61,7 @@ jobs:
           # SemanticModel.java holds the pinned revision and SHA-256, so any change to the pin starts a new cache.
           key: semantic-model-${{ hashFiles('pecia-core/src/main/java/dev/eyuppastirmaci/pecia/semantic/SemanticModel.java') }}
 
-      - name: Index semantically with the packaged CLI
+      - name: Index and query semantically with the packaged CLI
         shell: bash
         env:
           PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
@@ -74,8 +74,12 @@ jobs:
           java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-index.txt"
           grep -qx 'embedded: 0' "$RUNNER_TEMP/semantic-index.txt"
           grep -qx 'backfilled: 1' "$RUNNER_TEMP/semantic-index.txt"
+          # Queries never download; this one loads the cached model and the bundled vector extension.
+          java -jar pecia-cli/build/libs/pecia.jar query --mode semantic --root "$project" "embedding a single passage" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-query.txt"
+          head -n 1 "$RUNNER_TEMP/semantic-query.txt" | grep -qx 'readme.md:1-1'
+          grep -q '^  cosine: ' "$RUNNER_TEMP/semantic-query.txt"
 
-      - name: Compare embeddings with the references
+      - name: Check embeddings and retrieval against the references
         env:
           PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
         run: ${{ runner.os == 'Windows' && '.\gradlew.bat' || './gradlew' }} referenceTest

@@ -9,11 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
+import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -26,6 +30,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,6 +88,44 @@ class QueryCommandTest {
         assertEquals(0, run("needle", "--root", root.toString(), "--limit", "1"));
         assertTrue(out.toString().startsWith(expected.getFirst().sourcePath().toString() + ":"));
         assertEquals(1, out.toString().split("  BM25:", -1).length - 1);
+    }
+
+    @Test
+    void semanticQueriesPrintCosineSimilaritiesInRankedOrder() throws Exception {
+        String refunds = "Refunds are issued to the original card within five days.";
+        Files.writeString(root.resolve("refunds.txt"), refunds + "\n");
+        Files.writeString(root.resolve("shipping.txt"), "Parcels leave the warehouse every weekday morning.\n");
+        Files.writeString(root.resolve("accounts.txt"), "Users reset forgotten passwords from the sign-in page.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+        QueryService semantic = QueryService.withModelLookup(loader, () -> Optional.of(TinyModel.cached()));
+        List<SearchHit> expected = semantic.query(
+                        root, new SearchRequest(refunds), QueryOptions.mode(SearchMode.SEMANTIC))
+                .hits();
+
+        assertEquals(0, run(semantic, refunds, "--root", root.toString(), "--mode", "semantic"));
+
+        assertEquals("", err.toString());
+        assertTrue(out.toString().startsWith("refunds.txt:1-1" + System.lineSeparator()), out.toString());
+        assertEquals(
+                expected.stream().map(hit -> "  cosine: " + hit.score().value()).toList(),
+                out.toString()
+                        .lines()
+                        .filter(line -> line.startsWith("  cosine: "))
+                        .toList());
+        assertEquals(3, expected.size());
+        assertFalse(out.toString().contains("BM25"));
+    }
+
+    @Test
+    void aSemanticQueryWithoutTheCachedModelSaysSoAndNeverDownloadsIt() throws Exception {
+        Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+
+        // The test task points PECIA_CACHE_DIR at an empty build directory, which never holds the model.
+        assertEquals(1, run("refunds", "--root", root.toString(), "--mode", "semantic"));
+
+        assertEquals("", out.toString());
+        assertTrue(err.toString().startsWith("pecia query: MODEL_NOT_CACHED: The semantic model "), err.toString());
     }
 
     @Test
@@ -367,7 +410,11 @@ class QueryCommandTest {
     }
 
     private int run(String... args) {
-        CommandLine command = new CommandLine(new QueryCommand(new QueryService(loader)));
+        return run(new QueryService(loader), args);
+    }
+
+    private int run(QueryService service, String... args) {
+        CommandLine command = new CommandLine(new QueryCommand(service));
         command.setOut(new PrintWriter(out));
         command.setErr(new PrintWriter(err));
 
