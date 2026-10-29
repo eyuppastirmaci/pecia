@@ -130,6 +130,7 @@ public class QueryCommand implements Callable<Integer> {
         return switch (kind) {
             case SQLITE_BM25 -> "BM25";
             case COSINE_SIMILARITY -> "cosine";
+            case RECIPROCAL_RANK_FUSION -> "RRF";
         };
     }
 
