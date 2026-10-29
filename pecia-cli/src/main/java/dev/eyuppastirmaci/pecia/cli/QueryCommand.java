@@ -5,6 +5,7 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.search.FusedRanks;
 import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.search.QueryNotice;
 import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryResult;
 import dev.eyuppastirmaci.pecia.search.QueryService;
@@ -24,10 +25,10 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
-/** Searches a project's existing lexical index and prints ranked source locations. */
+/** Searches a project's existing index and prints ranked source locations. */
 @Command(
         name = "query",
-        description = "Searches the local index using BM25 lexical ranking.",
+        description = "Searches the local index lexically (BM25), semantically, or with both (hybrid).",
         mixinStandardHelpOptions = true)
 public class QueryCommand implements Callable<Integer> {
 
@@ -49,11 +50,15 @@ public class QueryCommand implements Callable<Integer> {
             converter = ModeNames.class,
             completionCandidates = ModeNames.class,
             description = "Search mode for this query (${COMPLETION-CANDIDATES}), overriding search.mode in"
-                    + " .pecia.toml (default: auto).")
+                    + " .pecia.toml (default: auto). Auto searches in hybrid mode when the index has embeddings and"
+                    + " the cached model is usable, and lexically otherwise; queries never download the model.")
     SearchMode mode;
 
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
+
+    /** The exit code when an explicit semantic or hybrid query lacks a semantic prerequisite. */
+    static final int MISSING_SEMANTIC_PREREQUISITE = 3;
 
     private final QueryService queryService;
 
@@ -63,9 +68,10 @@ public class QueryCommand implements Callable<Integer> {
     }
 
     /**
-     * Searches the stored index; returns 0 for successful queries and 1 for core validation/access
-     * failures, including missing semantic prerequisites. Configuration warnings are printed to stderr before
-     * any other output and do not change the exit code.
+     * Searches the stored index; returns 0 for successful queries, {@link #MISSING_SEMANTIC_PREREQUISITE} when an
+     * explicit semantic or hybrid query lacks a semantic prerequisite, and 1 for other core validation or access
+     * failures. Configuration warnings are printed to stderr first, then notes on how the query was searched; neither
+     * changes the exit code.
      */
     @Override
     public Integer call() {
@@ -73,6 +79,7 @@ public class QueryCommand implements Callable<Integer> {
             QueryOptions options = mode == null ? QueryOptions.configured() : QueryOptions.mode(mode);
             QueryResult result = queryService.query(root, new SearchRequest(text, limit), options);
             WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
+            printNotes(spec.commandLine().getErr(), result);
             List<SearchHit> hits = result.hits();
             PrintWriter out = spec.commandLine().getOut();
 
@@ -88,24 +95,61 @@ public class QueryCommand implements Callable<Integer> {
         } catch (QueryException failure) {
             PrintWriter err = spec.commandLine().getErr();
             WarningPrinter.print(err, failure.warnings());
-            String detail = failure.reason() == QueryException.Reason.READ_FAILED && failure.getCause() != null
+            boolean causeHelps =
+                    switch (failure.reason()) {
+                        case READ_FAILED, VECTOR_SEARCH_UNAVAILABLE, EMBEDDER_UNAVAILABLE, EMBEDDING_FAILED -> true;
+                        default -> false;
+                    };
+            String detail = causeHelps
+                            && failure.getCause() != null
+                            && !failure.getMessage().equals(failure.getCause().getMessage())
                     ? ": " + failure.getCause().getMessage()
                     : "";
             err.println("pecia query: " + failure.reason() + ": " + failure.getMessage() + detail);
 
-            if (failure.reason() == QueryException.Reason.INDEX_NOT_FOUND
-                    || failure.reason() == QueryException.Reason.MIGRATION_REQUIRED) {
-                err.println("Run: java -jar "
-                        + shellQuote(launcherJar())
-                        + " index "
-                        + shellQuote(root.toAbsolutePath().normalize().toString()));
-            }
-
-            return 1;
+            return switch (failure.reason()) {
+                case INDEX_NOT_FOUND, MIGRATION_REQUIRED -> {
+                    err.println(indexCommand(""));
+                    yield 1;
+                }
+                case EMBEDDINGS_MISSING, EMBEDDINGS_OUTDATED, MODEL_NOT_CACHED -> {
+                    // Semantic indexing makes the embeddings and downloads the model; queries never do.
+                    err.println(indexCommand(" --semantic"));
+                    yield MISSING_SEMANTIC_PREREQUISITE;
+                }
+                case VECTOR_SEARCH_UNAVAILABLE, EMBEDDER_UNAVAILABLE, EMBEDDING_FAILED -> {
+                    err.println("Use --mode lexical to search without embeddings.");
+                    yield MISSING_SEMANTIC_PREREQUISITE;
+                }
+                default -> 1;
+            };
         } catch (IllegalArgumentException failure) {
             spec.commandLine().getErr().println("pecia query: " + failure.getMessage());
 
             return 1;
+        }
+    }
+
+    private String indexCommand(String options) {
+        return "Run: java -jar "
+                + shellQuote(launcherJar())
+                + " index"
+                + options
+                + " "
+                + shellQuote(root.toAbsolutePath().normalize().toString());
+    }
+
+    /**
+     * Notes why auto searched lexically, unless the index simply has no embeddings, where lexical search is what auto
+     * is expected to do, and anything else about how the query text was used.
+     */
+    private static void printNotes(PrintWriter err, QueryResult result) {
+        result.fallback()
+                .filter(fallback -> fallback.reason() != QueryException.Reason.EMBEDDINGS_MISSING)
+                .ifPresent(fallback -> err.println("note: searched lexically: " + fallback.message()));
+
+        for (QueryNotice notice : result.notices()) {
+            err.println("note: " + notice.message());
         }
     }
 

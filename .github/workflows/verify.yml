@@ -82,6 +82,10 @@ jobs:
           java -jar pecia-cli/build/libs/pecia.jar query --mode hybrid --root "$project" "semantic model" | tr -d '\r' | tee "$RUNNER_TEMP/hybrid-query.txt"
           head -n 1 "$RUNNER_TEMP/hybrid-query.txt" | grep -qx 'readme.md:1-1'
           grep -q '^  RRF: .* (lexical #1, semantic #1)$' "$RUNNER_TEMP/hybrid-query.txt"
+          # Without --mode, auto chooses hybrid search because the index has embeddings and the model is cached.
+          java -jar pecia-cli/build/libs/pecia.jar query --root "$project" "semantic model" 2> "$RUNNER_TEMP/auto-query.err" | tr -d '\r' | tee "$RUNNER_TEMP/auto-query.txt"
+          grep -q '^  RRF: .* (lexical #1, semantic #1)$' "$RUNNER_TEMP/auto-query.txt"
+          test ! -s "$RUNNER_TEMP/auto-query.err"
 
       - name: Check embeddings and retrieval against the references
         env:

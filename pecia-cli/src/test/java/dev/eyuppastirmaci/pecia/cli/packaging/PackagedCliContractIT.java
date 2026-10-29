@@ -48,13 +48,15 @@ class PackagedCliContractIT {
         assertSuccess(result);
         assertEquals("""
             Usage: pecia [-hV] [COMMAND]
-            Indexes documents and source code for offline lexical search.
+            Indexes documents and source code for offline lexical and semantic search.
               -h, --help      Show this help message and exit.
               -V, --version   Print version information and exit.
             Commands:
               init   Writes a .pecia.toml config file at the project root.
-              index  Builds a local lexical index from a folder of text files.
-              query  Searches the local index using BM25 lexical ranking.
+              index  Builds a local index from a folder of text files, with embeddings when
+                       semantic indexing is on.
+              query  Searches the local index lexically (BM25), semantically, or with both
+                       (hybrid).
             """, result.out());
     }
 

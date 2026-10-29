@@ -6,7 +6,7 @@ import picocli.CommandLine.Command;
 /** Root CLI command that groups supported operations and displays usage. */
 @Command(
         name = "pecia",
-        description = "Indexes documents and source code for offline lexical search.",
+        description = "Indexes documents and source code for offline lexical and semantic search.",
         version = "pecia 0.1.0-SNAPSHOT",
         mixinStandardHelpOptions = true,
         subcommands = {InitCommand.class, IndexCommand.class, QueryCommand.class})

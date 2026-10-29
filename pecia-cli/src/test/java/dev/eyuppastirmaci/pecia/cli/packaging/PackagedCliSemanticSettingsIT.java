@@ -69,11 +69,12 @@ class PackagedCliSemanticSettingsIT {
 
         Result configured = cli.run(project, "query", "modeneedle");
 
-        assertEquals(1, configured.exitCode());
+        assertEquals(3, configured.exitCode());
         assertEquals("", configured.out());
         assertEquals(
                 "pecia query: EMBEDDINGS_MISSING: The index has no embeddings for semantic search; index the project"
-                        + " semantically first\n",
+                        + " semantically first\nRun: java -jar '" + cli.executableJar() + "' index --semantic '"
+                        + project + "'\n",
                 configured.err());
         assertEquals(entries, cli.projectEntries());
         assertArrayEquals(before, Files.readAllBytes(database));

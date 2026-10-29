@@ -664,7 +664,8 @@ class IndexCommandTest {
     @Test
     void helpAndUsageErrorsDoNotOpenStorage() {
         assertEquals(0, run(root.toString(), "--help"));
-        assertTrue(out.toString().contains("local lexical index"));
+        // The usage message wraps long descriptions.
+        assertTrue(out.toString().replaceAll("\\s+", " ").contains("with embeddings when semantic indexing is on"));
         assertTrue(out.toString().contains("--[no-]semantic"));
         assertFalse(out.toString().contains("embeds"));
         assertFalse(Files.exists(root.resolve(".pecia")));

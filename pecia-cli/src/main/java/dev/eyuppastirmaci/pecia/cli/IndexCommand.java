@@ -28,7 +28,7 @@ import picocli.CommandLine.Parameters;
 /** Builds a folder's lexical index or previews candidate discovery. */
 @Command(
         name = "index",
-        description = "Builds a local lexical index from a folder of text files.",
+        description = "Builds a local index from a folder of text files, with embeddings when semantic indexing is on.",
         mixinStandardHelpOptions = true)
 public class IndexCommand implements Callable<Integer> {
 
