@@ -20,6 +20,10 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -198,21 +202,21 @@ class IndexCommandTest {
         assertEquals(0, run(root.toString(), "--semantic"));
         List<String> summary = out.toString().lines().toList();
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 1", "backfilled: 0"),
-                summary.subList(summary.size() - 3, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 1", "backfilled: 0"),
+                summary.subList(summary.size() - 4, summary.size()));
         assertEquals("", err.toString());
 
         // The same project indexed from scratch without semantic indexing prints the rest of the summary unchanged.
         deleteIndex();
         assertSuccessfulIndex(1, 1, 0, 0, 1);
         assertEquals(
-                summary.subList(0, summary.size() - 3), out.toString().lines().toList());
+                summary.subList(0, summary.size() - 4), out.toString().lines().toList());
 
         deleteIndex();
         out.getBuffer().setLength(0);
         assertEquals(0, run(root.toString(), "--no-semantic"));
         assertEquals(
-                summary.subList(0, summary.size() - 3), out.toString().lines().toList());
+                summary.subList(0, summary.size() - 4), out.toString().lines().toList());
     }
 
     @Test
@@ -237,11 +241,46 @@ class IndexCommandTest {
         assertEquals(0, run(root.toString(), "--semantic"));
 
         List<String> summary = out.toString().lines().toList();
-        assertEquals(List.of("indexed: 0", "unchanged: 2"), summary.subList(2, 4));
+        assertEquals(List.of("indexed: 0", "rechunked: 0", "unchanged: 2"), summary.subList(2, 5));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0", "backfilled: 2"),
-                summary.subList(summary.size() - 3, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 2"),
+                summary.subList(summary.size() - 4, summary.size()));
         assertEquals("", err.toString());
+    }
+
+    @Test
+    void embeddingsOfAnEarlierProfileAreDiscardedAndMadeAgain() throws Exception {
+        Files.writeString(root.resolve("a.txt"), "needle");
+        Files.writeString(root.resolve("b.txt"), "haystack");
+        assertEquals(0, run(root.toString(), "--semantic"));
+        moveEmbeddingsToAnEarlierProfile(root.resolve(".pecia/index.db"));
+        out.getBuffer().setLength(0);
+
+        assertEquals(0, run(root.toString(), "--semantic"));
+
+        List<String> summary = out.toString().lines().toList();
+        assertEquals(List.of("indexed: 0", "rechunked: 0", "unchanged: 2"), summary.subList(2, 5));
+        assertEquals(
+                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 2", "embedded: 0", "backfilled: 2"),
+                summary.subList(summary.size() - 4, summary.size()));
+    }
+
+    /** Rewrites the stored embeddings under another profile, as an index written before a model update holds them. */
+    private static void moveEmbeddingsToAnEarlierProfile(Path database) throws SQLException {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+                Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                INSERT INTO embedding_profiles(model_id, model_revision, model_sha256, dimensions, tokenizer_algorithm,
+                    vocabulary_sha256, max_input_tokens, pooling, normalization, input, fingerprint)
+                SELECT model_id, 'earlier-revision', model_sha256, dimensions, tokenizer_algorithm, vocabulary_sha256,
+                    max_input_tokens, pooling, normalization, input, printf('%064d', 0)
+                FROM embedding_profiles
+                """);
+            statement.executeUpdate("""
+                UPDATE chunk_embeddings SET profile_id = (SELECT id FROM embedding_profiles WHERE model_revision =
+                    'earlier-revision')
+                """);
+        }
     }
 
     @Test
@@ -254,10 +293,10 @@ class IndexCommandTest {
         assertEquals(1, run(root.toString(), "--semantic"));
 
         List<String> summary = out.toString().lines().toList();
-        assertEquals("unchanged: 1", summary.get(3));
+        assertEquals("unchanged: 1", summary.get(4));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0", "backfilled: 0"),
-                summary.subList(summary.size() - 3, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 0"),
+                summary.subList(summary.size() - 4, summary.size()));
         assertEquals(
                 List.of(
                         "pecia index: EMBEDDING_FAILED: INVALID_OUTPUT: The model returned token embeddings whose"
@@ -291,8 +330,8 @@ class IndexCommandTest {
         List<String> summary = out.toString().lines().toList();
         assertEquals("indexed: 0", summary.get(2));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "embedded: 0", "backfilled: 0"),
-                summary.subList(summary.size() - 3, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 0"),
+                summary.subList(summary.size() - 4, summary.size()));
         assertEquals(
                 List.of(
                         "pecia index: EMBEDDING_FAILED: INVALID_OUTPUT: The model returned token embeddings whose"
@@ -318,8 +357,8 @@ class IndexCommandTest {
                 err.toString());
         List<String> summary = out.toString().lines().toList();
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 downloaded (90.4 MB)", "embedded: 1", "backfilled: 0"),
-                summary.subList(summary.size() - 3, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 downloaded (90.4 MB)", "discarded: 0", "embedded: 1", "backfilled: 0"),
+                summary.subList(summary.size() - 4, summary.size()));
     }
 
     @ParameterizedTest
@@ -389,6 +428,7 @@ class IndexCommandTest {
                         "index: " + root.resolve(".pecia/index.db"),
                         "candidates: 2",
                         "indexed: 2",
+                        "rechunked: 0",
                         "unchanged: 0",
                         "deleted: 0",
                         "chunks: 1",
@@ -420,6 +460,7 @@ class IndexCommandTest {
                         "index: " + root.resolve(".pecia/index.db"),
                         "candidates: 2",
                         "indexed: 0",
+                        "rechunked: 0",
                         "unchanged: 2",
                         "deleted: 0",
                         "chunks: 0",
@@ -469,7 +510,8 @@ class IndexCommandTest {
 
         writeChunkConfig(14, 1);
 
-        assertSuccessfulIndex(1, 1, 0, 0, 2);
+        // Only the chunk settings changed, so the file is counted as rechunked.
+        assertSuccessfulIndex(1, 1, 1, 0, 0, 2);
         assertSuccessfulIndex(1, 0, 1, 0, 0);
     }
 
@@ -663,6 +705,11 @@ class IndexCommandTest {
     }
 
     private void assertSuccessfulIndex(int candidates, int indexed, int unchanged, int deleted, int chunks) {
+        assertSuccessfulIndex(candidates, indexed, 0, unchanged, deleted, chunks);
+    }
+
+    private void assertSuccessfulIndex(
+            int candidates, int indexed, int rechunked, int unchanged, int deleted, int chunks) {
         out.getBuffer().setLength(0);
         err.getBuffer().setLength(0);
 
@@ -674,6 +721,7 @@ class IndexCommandTest {
                         "index: " + root.resolve(".pecia/index.db"),
                         "candidates: " + candidates,
                         "indexed: " + indexed,
+                        "rechunked: " + rechunked,
                         "unchanged: " + unchanged,
                         "deleted: " + deleted,
                         "chunks: " + chunks,
