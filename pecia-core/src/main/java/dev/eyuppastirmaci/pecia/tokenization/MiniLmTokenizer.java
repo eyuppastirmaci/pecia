@@ -79,6 +79,30 @@ public final class MiniLmTokenizer implements TokenCounter {
     }
 
     /**
+     * Encodes text as model input: the {@code [CLS]} id, the WordPiece ids, and the {@code [SEP]} id, cut to the
+     * tokenizer's input limit so that {@code [SEP]} stays last.
+     *
+     * @param text exact text to encode
+     * @return between 2 and {@link TokenizerIdentity#maxInputTokens()} vocabulary ids
+     * @throws NullPointerException if text is null
+     */
+    public int[] encode(String text) {
+        List<String> pieces = tokenize(text);
+        int content = Math.min(pieces.size(), IDENTITY.maxInputTokens() - IDENTITY.specialTokenCount());
+        int[] ids = new int[content + 2];
+
+        ids[0] = EXPECTED_CLASSIFICATION_TOKEN_ID;
+
+        for (int index = 0; index < content; index++) {
+            ids[index + 1] = vocabulary.get(pieces.get(index));
+        }
+
+        ids[content + 1] = EXPECTED_SEPARATOR_TOKEN_ID;
+
+        return ids;
+    }
+
+    /**
      * Applies BERT basic tokenization before greedily decomposing each token with the pinned
      * vocabulary.
      */

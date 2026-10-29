@@ -1,0 +1,96 @@
+# Written by generate_reference.py; do not edit by hand.
+repository = "sentence-transformers/all-MiniLM-L6-v2"
+revision = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+maxLength = 256
+
+[generator]
+"python" = "3.9.6"
+"sentence-transformers" = "5.1.2"
+"transformers" = "4.57.6"
+"tokenizers" = "0.22.2"
+"torch" = "2.8.0"
+
+[[cases]]
+name = "empty"
+text = ""
+ids = [101, 102]
+
+[[cases]]
+name = "hello"
+text = "hello world"
+ids = [101, 7592, 2088, 102]
+
+[[cases]]
+name = "sentence"
+text = "Payment validation runs before the order is confirmed."
+ids = [101, 7909, 27354, 3216, 2077, 1996, 2344, 2003, 4484, 1012, 102]
+
+[[cases]]
+name = "mixed-case"
+text = "PaYmEnT VALIDATION Runs"
+ids = [101, 7909, 27354, 3216, 102]
+
+[[cases]]
+name = "punctuation"
+text = "Wait... what?! (Really) -- yes; \"quoted\" & 'single'."
+ids = [101, 3524, 1012, 1012, 1012, 2054, 1029, 999, 1006, 2428, 1007, 1011, 1011, 2748, 1025, 1000, 9339, 1000, 1004, 1005, 2309, 1005, 1012, 102]
+
+[[cases]]
+name = "turkish"
+text = "İstanbul'da ödeme doğrulaması çalışıyor; ışık, ğ, ş, ç, ö, ü."
+ids = [101, 9960, 1005, 4830, 24040, 4168, 3899, 6820, 10278, 3022, 11722, 10250, 11722, 2015, 11722, 7677, 2099, 1025, 1104, 2015, 11722, 2243, 1010, 1043, 1010, 1055, 1010, 1039, 1010, 1051, 1010, 1057, 1012, 102]
+
+[[cases]]
+name = "accents"
+text = "café naïve résumé Ångström façade"
+ids = [101, 7668, 15743, 13746, 17076, 15687, 8508, 102]
+
+[[cases]]
+name = "chinese"
+text = "中文分词测试 with English"
+ids = [101, 1746, 1861, 1775, 100, 100, 100, 2007, 2394, 102]
+
+[[cases]]
+name = "emoji"
+text = "deploy 🚀 succeeded ✅"
+ids = [101, 21296, 100, 4594, 100, 102]
+
+[[cases]]
+name = "code"
+text = "public static int count(String text) { return tokenize(text).size(); }"
+ids = [101, 2270, 10763, 20014, 4175, 1006, 5164, 3793, 1007, 1063, 2709, 19204, 4697, 1006, 3793, 1007, 1012, 2946, 1006, 1007, 1025, 1065, 102]
+
+[[cases]]
+name = "numbers"
+text = "Version 1.31.0 shipped on 2026-10-09 with 384 dimensions and 256 tokens."
+ids = [101, 2544, 1015, 1012, 2861, 1012, 1014, 12057, 2006, 16798, 2575, 1011, 2184, 1011, 5641, 2007, 4229, 2549, 9646, 1998, 17273, 19204, 2015, 1012, 102]
+
+[[cases]]
+name = "whitespace"
+text = "  tabs\tand\nnew lines\r\n  around  "
+ids = [101, 21628, 2015, 1998, 2047, 3210, 2105, 102]
+
+[[cases]]
+name = "special-token-text"
+text = "the [SEP] token and [CLS] appear as text"
+ids = [101, 1996, 102, 19204, 1998, 101, 3711, 2004, 3793, 102]
+
+[[cases]]
+name = "unknown-characters"
+text = "control\u0007char, format\u200bchar, private use \ue000 and unassigned \u0378 here"
+ids = [101, 2491, 7507, 2099, 1010, 4289, 7507, 2099, 1010, 2797, 2224, 1998, 14477, 18719, 19225, 100, 2182, 102]
+
+[[cases]]
+name = "separators"
+text = "first\u2028second\u2029third\u3000fourth"
+ids = [101, 2034, 2117, 2353, 2959, 102]
+
+[[cases]]
+name = "cjk-extension"
+text = "ab𫠠cd stays one word while ab𫤠cd splits"
+ids = [101, 100, 12237, 2028, 2773, 2096, 11113, 100, 3729, 19584, 102]
+
+[[cases]]
+name = "long"
+text = "word0 payment validation word1 payment validation word2 payment validation word3 payment validation word4 payment validation word5 payment validation word6 payment validation word7 payment validation word8 payment validation word9 payment validation word10 payment validation word11 payment validation word12 payment validation word13 payment validation word14 payment validation word15 payment validation word16 payment validation word17 payment validation word18 payment validation word19 payment validation word20 payment validation word21 payment validation word22 payment validation word23 payment validation word24 payment validation word25 payment validation word26 payment validation word27 payment validation word28 payment validation word29 payment validation word30 payment validation word31 payment validation word32 payment validation word33 payment validation word34 payment validation word35 payment validation word36 payment validation word37 payment validation word38 payment validation word39 payment validation word40 payment validation word41 payment validation word42 payment validation word43 payment validation word44 payment validation word45 payment validation word46 payment validation word47 payment validation word48 payment validation word49 payment validation word50 payment validation word51 payment validation word52 payment validation word53 payment validation word54 payment validation word55 payment validation word56 payment validation word57 payment validation word58 payment validation word59 payment validation word60 payment validation word61 payment validation word62 payment validation word63 payment validation word64 payment validation word65 payment validation word66 payment validation word67 payment validation word68 payment validation word69 payment validation word70 payment validation word71 payment validation word72 payment validation word73 payment validation word74 payment validation word75 payment validation word76 payment validation word77 payment validation word78 payment validation word79 payment validation word80 payment validation word81 payment validation word82 payment validation word83 payment validation word84 payment validation word85 payment validation word86 payment validation word87 payment validation word88 payment validation word89 payment validation word90 payment validation word91 payment validation word92 payment validation word93 payment validation word94 payment validation word95 payment validation word96 payment validation word97 payment validation word98 payment validation word99 payment validation word100 payment validation word101 payment validation word102 payment validation word103 payment validation word104 payment validation word105 payment validation word106 payment validation word107 payment validation word108 payment validation word109 payment validation word110 payment validation word111 payment validation word112 payment validation word113 payment validation word114 payment validation word115 payment validation word116 payment validation word117 payment validation word118 payment validation word119 payment validation word120 payment validation word121 payment validation word122 payment validation word123 payment validation word124 payment validation word125 payment validation word126 payment validation word127 payment validation word128 payment validation word129 payment validation word130 payment validation word131 payment validation word132 payment validation word133 payment validation word134 payment validation word135 payment validation word136 payment validation word137 payment validation word138 payment validation word139 payment validation word140 payment validation word141 payment validation word142 payment validation word143 payment validation word144 payment validation word145 payment validation word146 payment validation word147 payment validation word148 payment validation word149 payment validation"
+ids = [101, 2773, 2692, 7909, 27354, 2773, 2487, 7909, 27354, 2773, 2475, 7909, 27354, 2773, 2509, 7909, 27354, 2773, 2549, 7909, 27354, 2773, 2629, 7909, 27354, 2773, 2575, 7909, 27354, 2773, 2581, 7909, 27354, 2773, 2620, 7909, 27354, 2773, 2683, 7909, 27354, 2773, 10790, 7909, 27354, 2773, 14526, 7909, 27354, 2773, 12521, 7909, 27354, 2773, 17134, 7909, 27354, 2773, 16932, 7909, 27354, 2773, 16068, 7909, 27354, 2773, 16048, 7909, 27354, 2773, 16576, 7909, 27354, 2773, 15136, 7909, 27354, 2773, 16147, 7909, 27354, 2773, 11387, 7909, 27354, 2773, 17465, 7909, 27354, 2773, 19317, 7909, 27354, 2773, 21926, 7909, 27354, 2773, 18827, 7909, 27354, 2773, 17788, 7909, 27354, 2773, 23833, 7909, 27354, 2773, 22907, 7909, 27354, 2773, 22407, 7909, 27354, 2773, 24594, 7909, 27354, 2773, 14142, 7909, 27354, 2773, 21486, 7909, 27354, 2773, 16703, 7909, 27354, 2773, 22394, 7909, 27354, 2773, 22022, 7909, 27354, 2773, 19481, 7909, 27354, 2773, 21619, 7909, 27354, 2773, 24434, 7909, 27354, 2773, 22025, 7909, 27354, 2773, 23499, 7909, 27354, 2773, 12740, 7909, 27354, 2773, 23632, 7909, 27354, 2773, 20958, 7909, 27354, 2773, 23777, 7909, 27354, 2773, 22932, 7909, 27354, 2773, 19961, 7909, 27354, 2773, 21472, 7909, 27354, 2773, 22610, 7909, 27354, 2773, 18139, 7909, 27354, 2773, 26224, 7909, 27354, 2773, 12376, 7909, 27354, 2773, 22203, 7909, 27354, 2773, 25746, 7909, 27354, 2773, 22275, 7909, 27354, 2773, 27009, 7909, 27354, 2773, 24087, 7909, 27354, 2773, 26976, 7909, 27354, 2773, 28311, 7909, 27354, 2773, 27814, 7909, 27354, 2773, 28154, 7909, 27354, 2773, 16086, 7909, 27354, 2773, 2575, 2487, 7909, 27354, 2773, 2575, 2475, 7909, 27354, 102]
