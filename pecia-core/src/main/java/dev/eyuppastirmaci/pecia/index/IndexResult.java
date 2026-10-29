@@ -5,6 +5,7 @@ import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -18,6 +19,10 @@ import java.util.Objects;
  * @param embeddedChunks embeddings stored with committed replacements; zero when the run did not embed
  * @param backfilledChunks embeddings stored for chunks of unchanged files that had none; zero when the run did not
  *     embed
+ * @param discardedEmbeddings embeddings of another profile removed before this run's, so the index never holds two
+ *     profiles; zero when the run did not embed
+ * @param embeddingCoverage how many chunks have this run's embeddings when the run completed its embedding; null
+ *     when the run did not embed or stopped before
  */
 public record IndexResult(
         ProjectContext context,
@@ -30,7 +35,9 @@ public record IndexResult(
         List<FileIssue> issues,
         ModelOutcome semanticModel,
         long embeddedChunks,
-        long backfilledChunks) {
+        long backfilledChunks,
+        long discardedEmbeddings,
+        EmbeddingCoverage embeddingCoverage) {
 
     /**
      * Copies issues and rejects negative counters, more processed files than candidates, and embeddings beyond the
@@ -57,6 +64,40 @@ public record IndexResult(
         if (backfilledChunks < 0 || (backfilledChunks > 0 && semanticModel == null)) {
             throw new IllegalArgumentException("Invalid backfill counter");
         }
+
+        if (discardedEmbeddings < 0
+                || (semanticModel == null && (discardedEmbeddings > 0 || embeddingCoverage != null))) {
+            throw new IllegalArgumentException("Invalid embedding compatibility counters");
+        }
+    }
+
+    /** Creates an outcome that discarded no embeddings and reports no coverage. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            int unchangedFiles,
+            int deletedFiles,
+            long writtenChunks,
+            List<FileIssue> issues,
+            ModelOutcome semanticModel,
+            long embeddedChunks,
+            long backfilledChunks) {
+        this(
+                context,
+                status,
+                candidateCount,
+                indexedFiles,
+                unchangedFiles,
+                deletedFiles,
+                writtenChunks,
+                issues,
+                semanticModel,
+                embeddedChunks,
+                backfilledChunks,
+                0,
+                null);
     }
 
     /** Creates an outcome that embedded no stored chunks. */
