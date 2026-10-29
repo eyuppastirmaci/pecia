@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -172,6 +173,26 @@ class OfflineEnvironmentTest {
         AssertionError failure = assertThrows(AssertionError.class, () -> isolated.assertUnchanged(before));
 
         assertTrue(failure.getMessage().contains(model.getFileName().toString()));
+    }
+
+    @Test
+    void acceptsExactlyTheExpectedAdditionsAndNothingElse() throws Exception {
+        OfflineEnvironment isolated = OfflineEnvironment.create(sandbox);
+        Path existing = Files.writeString(isolated.cache().resolve("existing.bin"), "kept");
+        Map<Path, String> before = isolated.snapshot();
+        Path directory = Files.createDirectories(isolated.peciaCache().resolve("models"));
+        Path lock = Files.writeString(directory.resolve(".lock"), "");
+        Set<Path> additions = Set.of(isolated.peciaCache(), directory, lock);
+
+        isolated.assertOnlyAdded(before, additions);
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyAdded(before, Set.of(isolated.peciaCache())));
+
+        Path extra = Files.writeString(directory.resolve("model.part"), "partial");
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyAdded(before, additions));
+
+        Files.delete(extra);
+        Files.writeString(existing, "edit");
+        assertThrows(AssertionError.class, () -> isolated.assertOnlyAdded(before, additions));
     }
 
     @Test

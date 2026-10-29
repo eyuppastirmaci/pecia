@@ -4,6 +4,7 @@ import dev.eyuppastirmaci.pecia.content.ContentPath;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -13,6 +14,7 @@ import java.util.Objects;
  * are independent of the current scan's candidate count.
  *
  * @param writtenChunks chunks written by committed replacements, excluding unchanged files
+ * @param semanticModel how the semantic model became available; null when the run did not need it
  */
 public record IndexResult(
         ProjectContext context,
@@ -22,7 +24,8 @@ public record IndexResult(
         int unchangedFiles,
         int deletedFiles,
         long writtenChunks,
-        List<FileIssue> issues) {
+        List<FileIssue> issues,
+        ModelOutcome semanticModel) {
 
     /** Copies issues and rejects negative counters or more processed files than candidates. */
     public IndexResult {
@@ -38,6 +41,19 @@ public record IndexResult(
                 || (long) indexedFiles + unchangedFiles + issues.size() > candidateCount) {
             throw new IllegalArgumentException("Invalid indexing counters");
         }
+    }
+
+    /** Creates an outcome that did not need the semantic model. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            int unchangedFiles,
+            int deletedFiles,
+            long writtenChunks,
+            List<FileIssue> issues) {
+        this(context, status, candidateCount, indexedFiles, unchangedFiles, deletedFiles, writtenChunks, issues, null);
     }
 
     /** Creates an outcome with no unchanged files or deletions for existing indexing callers. */
@@ -75,6 +91,8 @@ public record IndexResult(
         PARTIAL,
         /** Discovery was incomplete, so no indexing was attempted. */
         INCOMPLETE_SCAN,
+        /** Semantic indexing was requested, but its model could not be made available; nothing was indexed. */
+        MODEL_UNAVAILABLE,
         /** A storage operation failed after discovery completed. */
         FAILED
     }

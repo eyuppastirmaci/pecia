@@ -5,6 +5,11 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
+import dev.eyuppastirmaci.pecia.semantic.DownloadListener;
+import dev.eyuppastirmaci.pecia.semantic.ModelCache;
+import dev.eyuppastirmaci.pecia.semantic.ModelException;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.ModelProvider;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -18,15 +23,44 @@ public final class IndexService {
 
     private final ProjectContextResolver contextResolver;
     private final StorageOpener storageOpener;
+    private final ModelProvider models;
 
-    /** Creates an indexing service that opens SQLite storage for each resolved project. */
+    /**
+     * Creates an indexing service that opens SQLite storage for each resolved project and keeps the semantic model in
+     * the user's cache. The cache is created only when a run enables semantic indexing, so lexical runs never touch
+     * it.
+     */
     public IndexService(PeciaConfigLoader configLoader) {
-        this(configLoader, context -> SqliteStorage.open(context.databasePath(), context.projectRoot()));
+        this(configLoader, IndexService::openStorage, userModelCache());
+    }
+
+    /**
+     * Creates an indexing service that obtains the semantic model from the given provider, for callers that manage
+     * the model themselves and for tests.
+     *
+     * @throws NullPointerException if an argument is null
+     */
+    public static IndexService withModelProvider(PeciaConfigLoader configLoader, ModelProvider models) {
+        return new IndexService(configLoader, IndexService::openStorage, models);
+    }
+
+    private static SqliteStorage openStorage(ProjectContext context) throws IOException, SQLException {
+        return SqliteStorage.open(context.databasePath(), context.projectRoot());
     }
 
     IndexService(PeciaConfigLoader configLoader, StorageOpener storageOpener) {
+        this(configLoader, storageOpener, userModelCache());
+    }
+
+    IndexService(PeciaConfigLoader configLoader, StorageOpener storageOpener, ModelProvider models) {
         this.contextResolver = new ProjectContextResolver(configLoader);
         this.storageOpener = Objects.requireNonNull(storageOpener, "storageOpener");
+        this.models = Objects.requireNonNull(models, "models");
+    }
+
+    /** Returns a provider that creates the user's model cache only when a run needs the model. */
+    private static ModelProvider userModelCache() {
+        return listener -> new ModelCache().ensure(listener);
     }
 
     /**
@@ -88,15 +122,19 @@ public final class IndexService {
 
     /**
      * Indexes like {@link #index(Path)} with the caller's choices for this run, which override the project
-     * configuration. Pecia does not build embeddings yet, so a run indexes lexically whatever semantic indexing
-     * resolves to; {@link #preview(Path, IndexOptions)} reports the resolved choice.
+     * configuration. When semantic indexing resolves to enabled, the semantic model is made available after the
+     * configuration and token budget are validated and before storage opens; embeddings are not built yet, so the
+     * index itself stays lexical. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs the
+     * model.
      *
      * @param target directory whose descendants are indexed
      * @param options the caller's choices for this run
      * @throws NullPointerException if target or options is null, before any filesystem access
      * @throws IOException if target/configuration resolution or initial discovery fails, before storage is opened
-     * @throws IllegalArgumentException if configuration, paths, globs or tokenizer budgets are invalid
-     * @throws IndexException if discovery is incomplete or storage fails; includes completed work and the cause
+     * @throws IllegalArgumentException if configuration, paths, globs, tokenizer budgets, or the model cache or proxy
+     *     settings are invalid
+     * @throws IndexException if discovery is incomplete, the semantic model is unavailable, or storage fails;
+     *     includes completed work and the cause
      */
     public IndexResult index(Path target, IndexOptions options) throws IOException, IndexException {
         Objects.requireNonNull(options, "options");
@@ -105,7 +143,10 @@ public final class IndexService {
 
         requireCompleteScan(context, scanResult);
 
-        return indexFiles(context, scanResult);
+        boolean semanticEnabled =
+                options.resolveSemanticEnabled(context.loadedConfig().config());
+
+        return indexFiles(context, scanResult, semanticEnabled ? options : null);
     }
 
     private void requireCompleteScan(ProjectContext context, WalkResult scanResult) throws IndexException {
@@ -119,10 +160,13 @@ public final class IndexService {
         throw new IndexException("Indexing requires a complete scan", null, result, scanResult.issues());
     }
 
-    private IndexResult indexFiles(ProjectContext context, WalkResult scanResult) throws IndexException {
+    /** Indexes the scanned files; {@code semanticOptions} is null when the run does not need the semantic model. */
+    private IndexResult indexFiles(ProjectContext context, WalkResult scanResult, IndexOptions semanticOptions)
+            throws IndexException {
         List<Path> candidates = scanResult.files();
         // Constructing the file pipeline validates the real tokenizer budget before opening storage.
         FileIndexer indexer = new FileIndexer(context);
+        ModelOutcome semanticModel = semanticOptions == null ? null : ensureModel(context, candidates, semanticOptions);
         int indexedFiles = 0;
         int unchangedFiles = 0;
         int deletedFiles = 0;
@@ -164,7 +208,8 @@ public final class IndexService {
                     unchangedFiles,
                     deletedFiles,
                     writtenChunks,
-                    issues);
+                    issues,
+                    semanticModel);
 
             throw new IndexException("Index storage or cleanup operation failed", failure, result, List.of());
         }
@@ -172,7 +217,31 @@ public final class IndexService {
         IndexResult.Status status = issues.isEmpty() ? IndexResult.Status.COMPLETE : IndexResult.Status.PARTIAL;
 
         return new IndexResult(
-                context, status, candidates.size(), indexedFiles, unchangedFiles, deletedFiles, writtenChunks, issues);
+                context,
+                status,
+                candidates.size(),
+                indexedFiles,
+                unchangedFiles,
+                deletedFiles,
+                writtenChunks,
+                issues,
+                semanticModel);
+    }
+
+    private ModelOutcome ensureModel(ProjectContext context, List<Path> candidates, IndexOptions options)
+            throws IndexException {
+        // Semantic classes are reached only here, so lexical runs never initialize them.
+        DownloadListener listener =
+                options.downloadListener() == null ? DownloadListener.NONE : options.downloadListener();
+
+        try {
+            return models.ensure(listener);
+        } catch (ModelException failure) {
+            IndexResult result =
+                    new IndexResult(context, IndexResult.Status.MODEL_UNAVAILABLE, candidates.size(), 0, 0, List.of());
+
+            throw new IndexException("Semantic indexing needs its model", failure, result, List.of());
+        }
     }
 
     private WalkResult scan(ProjectContext context) throws IOException {

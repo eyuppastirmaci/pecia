@@ -5,9 +5,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -196,6 +198,30 @@ public final class OfflineSandbox {
             if (!audit.equals("READY\n")) {
                 throw new AssertionError("Lexical process attempted network access or has an invalid audit: " + audit);
             }
+        }
+
+        /**
+         * Validates a run that tried to download a model and was denied: the audit holds exactly one denial, for the
+         * host's name resolution, and Pecia's cache gained only the directories leading to the model's lock file and
+         * that file.
+         *
+         * @param host the download host, such as {@code huggingface.co}
+         * @param lockFile the lock file's path relative to Pecia's cache directory
+         */
+        public void verifyDeniedDownload(String host, Path lockFile) throws IOException {
+            String audit = Files.readString(auditLog());
+            String expected = "READY\nDENY CONNECT " + host + ":-1\n";
+            if (!audit.equals(expected)) {
+                throw new AssertionError("Expected exactly one denied connection to " + host + ": " + audit);
+            }
+            Set<Path> additions = new LinkedHashSet<>();
+            Path entry = environment.peciaCache();
+            additions.add(entry);
+            for (Path part : lockFile) {
+                entry = entry.resolve(part);
+                additions.add(entry);
+            }
+            environment.assertOnlyAdded(before, additions);
         }
 
         /** Validates network, cache and initialized-class evidence after the child has exited. */

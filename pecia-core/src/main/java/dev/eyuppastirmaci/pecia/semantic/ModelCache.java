@@ -37,7 +37,7 @@ import java.util.function.Supplier;
  * A file lock in the model's directory serializes runs across processes; a download goes to a temporary file that is
  * moved into place only after its size and SHA-256 match, so the model's name never holds an unverified file.
  */
-public final class ModelCache {
+public final class ModelCache implements ModelProvider {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration STALL_TIMEOUT = Duration.ofSeconds(60);
@@ -91,14 +91,25 @@ public final class ModelCache {
      * @throws IllegalArgumentException if the cache directory or proxy setting is invalid
      */
     public ModelOutcome ensure() throws ModelException {
+        return ensure(DownloadListener.NONE);
+    }
+
+    /**
+     * Works like {@link #ensure()} and tells the listener before a download starts.
+     *
+     * @throws NullPointerException if listener is null
+     */
+    @Override
+    public ModelOutcome ensure(DownloadListener listener) throws ModelException {
+        Objects.requireNonNull(listener, "listener");
         Path target = model.cachedFile(cacheRoot.get());
 
         synchronized (MONITORS.computeIfAbsent(target, path -> new Object())) {
-            return ensureUnderFileLock(target);
+            return ensureUnderFileLock(target, listener);
         }
     }
 
-    private ModelOutcome ensureUnderFileLock(Path target) throws ModelException {
+    private ModelOutcome ensureUnderFileLock(Path target, DownloadListener listener) throws ModelException {
         Path directory = target.getParent();
 
         try {
@@ -112,7 +123,7 @@ public final class ModelCache {
             FileLock lock = channel.lock();
 
             try {
-                return ensureLocked(target);
+                return ensureLocked(target, listener);
             } finally {
                 lock.release();
             }
@@ -124,7 +135,7 @@ public final class ModelCache {
         }
     }
 
-    private ModelOutcome ensureLocked(Path target) throws IOException, ModelException {
+    private ModelOutcome ensureLocked(Path target, DownloadListener listener) throws IOException, ModelException {
         deleteLeftovers(target.getParent());
 
         if (Files.isRegularFile(target)) {
@@ -135,6 +146,7 @@ public final class ModelCache {
             Files.delete(target);
         }
 
+        listener.downloading(model, target);
         download(target);
 
         return new ModelOutcome(ModelOutcome.Status.DOWNLOADED, model, target);

@@ -1,6 +1,8 @@
 package dev.eyuppastirmaci.pecia.index;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfig;
+import dev.eyuppastirmaci.pecia.semantic.DownloadListener;
+import java.util.Objects;
 
 /**
  * Choices a caller makes for one indexing run. An explicit choice overrides {@code .pecia.toml}, which in turn
@@ -8,12 +10,13 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfig;
  *
  * @param semanticEnabled whether the run builds embeddings for semantic search; null leaves it to {@code
  *     semantic.enabled}
+ * @param downloadListener told before the semantic model is downloaded; null when nobody listens
  */
-public record IndexOptions(Boolean semanticEnabled) {
+public record IndexOptions(Boolean semanticEnabled, DownloadListener downloadListener) {
 
     /** Returns options that leave every setting to the project configuration. */
     public static IndexOptions configured() {
-        return new IndexOptions(null);
+        return new IndexOptions(null, null);
     }
 
     /**
@@ -22,7 +25,16 @@ public record IndexOptions(Boolean semanticEnabled) {
      * @param enabled whether the run builds embeddings for semantic search
      */
     public static IndexOptions semantic(boolean enabled) {
-        return new IndexOptions(enabled);
+        return new IndexOptions(enabled, null);
+    }
+
+    /**
+     * Returns these options with a listener that hears about a model download before it starts.
+     *
+     * @throws NullPointerException if listener is null
+     */
+    public IndexOptions withDownloadListener(DownloadListener listener) {
+        return new IndexOptions(semanticEnabled, Objects.requireNonNull(listener, "listener"));
     }
 
     /**

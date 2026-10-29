@@ -17,6 +17,8 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
@@ -70,11 +72,17 @@ class LexicalConfigurationTest {
             new LineRange(9, 11),
             new LineRange(11, 12));
 
+    // Semantic runs get the model from a stub, so these tests never download it.
+    private static final ModelOutcome CACHED_MODEL = new ModelOutcome(
+            ModelOutcome.Status.CACHED,
+            SemanticModel.MINILM,
+            Path.of("model.onnx").toAbsolutePath());
+
     @TempDir
     Path root;
 
     private final PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
-    private final IndexService indexService = new IndexService(loader);
+    private final IndexService indexService = IndexService.withModelProvider(loader, listener -> CACHED_MODEL);
     private final QueryService queryService = new QueryService(loader);
     private final MiniLmTokenizer tokenizer = MiniLmTokenizer.bundled();
 

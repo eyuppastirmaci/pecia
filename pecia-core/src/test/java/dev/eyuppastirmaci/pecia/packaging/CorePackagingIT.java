@@ -11,6 +11,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
@@ -120,6 +121,33 @@ class CorePackagingIT {
         assertEquals(
                 "PACKAGED_CORE_OK lexical-reopen",
                 runner.runOffline("lexical-reopen", project, offline).stdout().strip());
+    }
+
+    @Test
+    void semanticIndexingFailsOfflineWithoutDownloadingOrTouchingTheIndex() throws Exception {
+        Path sandbox = Files.createDirectory(fixture.resolve("offline model")).toRealPath();
+        Path project =
+                Files.createDirectory(fixture.resolve("offline model project")).toRealPath();
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+        SemanticModel model = SemanticModel.MINILM;
+        Path lockFile = Path.of("models", model.name(), model.revision(), ".lock");
+
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-offline",
+                runner.runOfflineDeniedDownload(
+                                "semantic-offline",
+                                project,
+                                offline,
+                                model.downloadUri().getHost(),
+                                lockFile)
+                        .stdout()
+                        .strip());
     }
 
     @Test

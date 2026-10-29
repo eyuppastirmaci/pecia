@@ -15,6 +15,7 @@ import java.util.Set;
 public final class PackagedCoreConsumer {
 
     private static final Set<String> SCENARIOS = Set.of(
+            "semantic-offline",
             "lexical-lifecycle",
             "lexical-reopen",
             "lexical-determinism",
@@ -60,6 +61,7 @@ public final class PackagedCoreConsumer {
             }
         }
         switch (scenario) {
+            case "semantic-offline" -> ConfigurationScenario.verifyOfflineModelDownload(root);
             case "lexical-lifecycle" -> new LexicalLifecycleScenario(root).runLifecycle();
             case "lexical-reopen" -> new LexicalLifecycleScenario(root).verifyReopened();
             // The dump precedes the success marker on standard output for the packaging test to compare.

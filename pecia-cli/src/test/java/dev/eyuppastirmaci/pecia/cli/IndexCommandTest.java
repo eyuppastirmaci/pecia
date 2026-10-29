@@ -9,6 +9,8 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -529,7 +531,11 @@ class IndexCommandTest {
     private int run(String... args) {
         PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
 
-        CommandLine commandLine = new CommandLine(new IndexCommand(new IndexService(loader)));
+        // Semantic runs get the model from a stub, so these tests never download it.
+        ModelOutcome cached =
+                new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, root.resolve("model.onnx"));
+        CommandLine commandLine =
+                new CommandLine(new IndexCommand(IndexService.withModelProvider(loader, listener -> cached)));
         commandLine.setOut(new PrintWriter(out));
         commandLine.setErr(new PrintWriter(err));
 

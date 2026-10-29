@@ -153,10 +153,10 @@ final class PackagedCoreRunner {
     }
 
     Result run(String scenario, Path project, Duration timeout) throws IOException, InterruptedException {
-        return run(scenario, project, timeout, null);
+        return run(scenario, project, timeout, null, null);
     }
 
-    private Result run(String scenario, Path project, Duration timeout, OfflineSandbox offline)
+    private Result run(String scenario, Path project, Duration timeout, OfflineSandbox offline, EvidenceCheck check)
             throws IOException, InterruptedException {
         long timeoutMillis = timeout.toMillis();
         if (timeoutMillis <= 0) {
@@ -194,7 +194,7 @@ final class PackagedCoreRunner {
             }
             String error = Files.readString(stderr);
             if (evidence != null) {
-                evidence.verifyLexical(CONSUMER);
+                check.verify(evidence);
                 error = OfflineSandbox.applicationStderr(error);
             }
             return new Result(Files.readString(stdout), error);
@@ -207,7 +207,28 @@ final class PackagedCoreRunner {
 
     Result runOffline(String scenario, Path project, OfflineSandbox offline) throws IOException, InterruptedException {
         Objects.requireNonNull(offline, "offline");
-        return run(scenario, project, Duration.ofSeconds(30), offline);
+        return run(scenario, project, Duration.ofSeconds(30), offline, evidence -> evidence.verifyLexical(CONSUMER));
+    }
+
+    /**
+     * Runs a scenario offline that is expected to try one model download and be denied; see {@link
+     * OfflineSandbox.Run#verifyDeniedDownload}.
+     */
+    Result runOfflineDeniedDownload(String scenario, Path project, OfflineSandbox offline, String host, Path lockFile)
+            throws IOException, InterruptedException {
+        Objects.requireNonNull(offline, "offline");
+        return run(
+                scenario,
+                project,
+                Duration.ofSeconds(30),
+                offline,
+                evidence -> evidence.verifyDeniedDownload(host, lockFile));
+    }
+
+    @FunctionalInterface
+    private interface EvidenceCheck {
+
+        void verify(OfflineSandbox.Run evidence) throws IOException;
     }
 
     private static void terminate(Process process) throws InterruptedException {

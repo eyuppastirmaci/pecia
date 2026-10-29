@@ -87,6 +87,11 @@ public final class OfflineEnvironment {
         return cache;
     }
 
+    /** Returns the directory child processes receive as {@code PECIA_CACHE_DIR}. */
+    public Path peciaCache() {
+        return cache.resolve("pecia");
+    }
+
     public Path temporary() {
         return temporary;
     }
@@ -165,6 +170,33 @@ public final class OfflineEnvironment {
         }
     }
 
+    /**
+     * Fails unless the only differences since {@code before} are the given new entries; nothing may change or
+     * disappear.
+     *
+     * @param additions absolute paths that must have appeared, and nothing else
+     */
+    public void assertOnlyAdded(Map<Path, String> before, Set<Path> additions) throws IOException {
+        Objects.requireNonNull(before, "before");
+        Map<Path, String> after = snapshot();
+        Set<Path> expected = new TreeSet<>();
+        for (Path addition : additions) {
+            expected.add(sandbox.relativize(addition));
+        }
+        Set<Path> added = new TreeSet<>(after.keySet());
+        added.removeAll(before.keySet());
+        Set<Path> changed = new TreeSet<>();
+        for (Map.Entry<Path, String> entry : before.entrySet()) {
+            if (!entry.getValue().equals(after.get(entry.getKey()))) {
+                changed.add(entry.getKey());
+            }
+        }
+        if (!changed.isEmpty() || !added.equals(expected)) {
+            throw new AssertionError("Offline home/cache/tmp changed: expected only " + expected + ", added " + added
+                    + ", changed or" + " removed " + changed);
+        }
+    }
+
     /** Requires a positive initialization record and rejects semantic runtime initialization. */
     public static void assertLexicalInitialization(Path log, String requiredClass) throws IOException {
         String required = normalizedClass(requiredClass);
@@ -210,7 +242,7 @@ public final class OfflineEnvironment {
         values.put("XDG_STATE_HOME", home.resolve("state").toString());
         values.put("XDG_CACHE_HOME", cache.resolve("xdg").toString());
         // Pecia's own override, so a host setting can never point a test at the user's real model cache.
-        values.put("PECIA_CACHE_DIR", cache.resolve("pecia").toString());
+        values.put("PECIA_CACHE_DIR", peciaCache().toString());
         values.put("XDG_RUNTIME_DIR", temporary.resolve("runtime").toString());
         for (String variable : List.of("TMPDIR", "TMP", "TEMP")) {
             values.put(variable, temporary.toString());

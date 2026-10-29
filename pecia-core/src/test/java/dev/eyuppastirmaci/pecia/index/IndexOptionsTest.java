@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import java.io.IOException;
@@ -23,7 +25,14 @@ class IndexOptionsTest {
     @TempDir
     Path sandbox;
 
-    private final IndexService indexService = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
+    // Semantic runs get the model from a stub, so these tests never download it.
+    private static final ModelOutcome CACHED_MODEL = new ModelOutcome(
+            ModelOutcome.Status.CACHED,
+            SemanticModel.MINILM,
+            Path.of("model.onnx").toAbsolutePath());
+
+    private final IndexService indexService =
+            IndexService.withModelProvider(new PeciaConfigLoader(new PeciaConfigParser()), listener -> CACHED_MODEL);
     private Path root;
 
     @BeforeEach

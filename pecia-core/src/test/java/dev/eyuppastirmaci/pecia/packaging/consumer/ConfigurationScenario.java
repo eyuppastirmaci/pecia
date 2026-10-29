@@ -8,6 +8,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
+import dev.eyuppastirmaci.pecia.index.IndexException;
 import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
@@ -16,6 +17,9 @@ import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryResult;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.semantic.ModelException;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -65,15 +69,63 @@ final class ConfigurationScenario {
         verifyArchiveOrigins(coreJar, runtimeDirectory);
         Files.writeString(root.resolve(".pecia.toml"), "[semantic]\nenabled = true\n");
         Files.writeString(root.resolve("guide.md"), "# Guide\n\nsemanticneedle\n");
-        IndexService indexService = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
+        // A stub provides the model, so the unguarded consumer process never downloads it.
+        ModelOutcome cached =
+                new ModelOutcome(ModelOutcome.Status.CACHED, SemanticModel.MINILM, root.resolve("model.onnx"));
+        IndexService indexService =
+                IndexService.withModelProvider(new PeciaConfigLoader(new PeciaConfigParser()), listener -> cached);
 
         check(indexService.preview(root).semanticEnabled(), "Packaged previews must apply semantic.enabled");
         check(
                 !indexService.preview(root, IndexOptions.semantic(false)).semanticEnabled(),
                 "A packaged caller's choice must override semantic.enabled");
+        IndexResult indexed = indexService.index(root, IndexOptions.semantic(true));
         check(
-                indexService.index(root, IndexOptions.semantic(true)).status() == IndexResult.Status.COMPLETE,
-                "Packaged indexing must complete when the caller chooses semantic indexing");
+                indexed.status() == IndexResult.Status.COMPLETE && cached.equals(indexed.semanticModel()),
+                "Packaged indexing must complete with the model when the caller chooses semantic indexing");
+        check(
+                indexService.index(root, IndexOptions.semantic(false)).semanticModel() == null,
+                "Packaged lexical indexing must not ask for the model");
+    }
+
+    /**
+     * Runs in a guarded process with an empty cache: previews, lexical runs, and queries reach for nothing, and
+     * semantic indexing fails with an offline model failure that leaves the lexical index usable.
+     */
+    static void verifyOfflineModelDownload(Path root) throws Exception {
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nofflineneedle\n");
+        PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
+        IndexService indexService = new IndexService(loader);
+        QueryService queryService = new QueryService(loader);
+        SearchRequest request = new SearchRequest("offlineneedle");
+
+        check(
+                indexService.preview(root, IndexOptions.semantic(true)).semanticEnabled(),
+                "A packaged preview must report semantic indexing without the model");
+
+        IndexResult lexical = indexService.index(root);
+
+        check(
+                lexical.status() == IndexResult.Status.COMPLETE && lexical.semanticModel() == null,
+                "Packaged lexical indexing must not need the model");
+        check(queryService.query(root, request).hits().size() == 1, "Packaged queries must not need the model");
+
+        try {
+            indexService.index(root, IndexOptions.semantic(true));
+            throw new AssertionError("Packaged semantic indexing must fail without network access");
+        } catch (IndexException failure) {
+            check(
+                    failure.result().status() == IndexResult.Status.MODEL_UNAVAILABLE,
+                    "A missing packaged model must be classified");
+            check(
+                    failure.getCause() instanceof ModelException model
+                            && model.reason() == ModelException.Reason.OFFLINE,
+                    "A denied packaged download must be reported as offline");
+        }
+
+        check(
+                queryService.query(root, request).hits().size() == 1,
+                "A failed semantic run must leave the packaged lexical index usable");
     }
 
     /** Verifies that search.mode applies to queries and that a caller's mode overrides it. */
