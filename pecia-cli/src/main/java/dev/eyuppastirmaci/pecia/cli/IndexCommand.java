@@ -28,7 +28,7 @@ import picocli.CommandLine.Parameters;
 /** Builds a folder's lexical index or previews candidate discovery. */
 @Command(
         name = "index",
-        description = "Builds a local lexical index from a folder of text files.",
+        description = "Builds a local index from a folder of text files, with embeddings when semantic indexing is on.",
         mixinStandardHelpOptions = true)
 public class IndexCommand implements Callable<Integer> {
 
@@ -60,7 +60,9 @@ public class IndexCommand implements Callable<Integer> {
      * Indexes a folder or previews discovery without processing content. Configuration warnings are printed to stderr
      * before any other output and do not change the exit code. The semantic flags override {@code semantic.enabled} for
      * this run, and the preview reports the resolved choice. A semantic run announces a model download on stderr when
-     * one starts and reports the model and the number of embedded chunks in its summary.
+     * one starts and reports the model, the embeddings of an earlier profile it discarded, the chunks embedded with
+     * changed files, and the stored chunks whose missing embeddings it made in its summary. Every summary also counts
+     * the indexed files whose unchanged content was chunked again for new settings.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file issues, incomplete scan, an unavailable model or
      *     embedder, an embedding failure, or storage failure
@@ -148,6 +150,7 @@ public class IndexCommand implements Callable<Integer> {
         out.println("index: " + result.context().databasePath());
         out.println("candidates: " + result.candidateCount());
         out.println("indexed: " + result.indexedFiles());
+        out.println("rechunked: " + result.rechunkedFiles());
         out.println("unchanged: " + result.unchangedFiles());
         out.println("deleted: " + result.deletedFiles());
         out.println("chunks: " + result.writtenChunks());
@@ -162,7 +165,9 @@ public class IndexCommand implements Callable<Integer> {
                     + (model.status() == ModelOutcome.Status.DOWNLOADED
                             ? " downloaded (" + megabytes(model.model().size()) + ")"
                             : " cached"));
+            out.println("discarded: " + result.discardedEmbeddings());
             out.println("embedded: " + result.embeddedChunks());
+            out.println("backfilled: " + result.backfilledChunks());
         }
 
         for (IndexResult.FileIssue issue : result.issues()) {

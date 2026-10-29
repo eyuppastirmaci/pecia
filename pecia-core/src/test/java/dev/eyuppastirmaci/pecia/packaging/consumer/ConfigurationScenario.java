@@ -115,6 +115,15 @@ final class ConfigurationScenario {
         check(queryService.query(root, request).hits().size() == 1, "Packaged queries must not need the model");
 
         try {
+            queryService.query(root, request, QueryOptions.mode(SearchMode.SEMANTIC));
+            throw new AssertionError("A packaged semantic query of a lexical index must fail");
+        } catch (QueryException failure) {
+            check(
+                    failure.reason() == QueryException.Reason.EMBEDDINGS_MISSING,
+                    "A packaged semantic query must report missing embeddings before reaching for the model");
+        }
+
+        try {
             indexService.index(root, IndexOptions.semantic(true));
             throw new AssertionError("Packaged semantic indexing must fail without network access");
         } catch (IndexException failure) {
@@ -144,11 +153,20 @@ final class ConfigurationScenario {
 
         try {
             queryService.query(root, request);
-            throw new AssertionError("A configured semantic mode must fail in the packaged core");
+            throw new AssertionError("A configured semantic mode must fail on a lexical index in the packaged core");
         } catch (QueryException failure) {
             check(
-                    failure.reason() == QueryException.Reason.SEMANTIC_UNAVAILABLE,
-                    "An unavailable packaged search mode must be classified");
+                    failure.reason() == QueryException.Reason.EMBEDDINGS_MISSING,
+                    "A packaged semantic query of a lexical index must report the missing embeddings");
+        }
+
+        try {
+            queryService.query(root, request, QueryOptions.mode(SearchMode.HYBRID));
+            throw new AssertionError("A packaged hybrid query of a lexical index must fail");
+        } catch (QueryException failure) {
+            check(
+                    failure.reason() == QueryException.Reason.EMBEDDINGS_MISSING,
+                    "A packaged hybrid query of a lexical index must report the missing embeddings");
         }
 
         check(

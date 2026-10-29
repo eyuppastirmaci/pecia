@@ -9,11 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
+import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
+import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
+import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -26,6 +30,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -83,6 +88,131 @@ class QueryCommandTest {
         assertEquals(0, run("needle", "--root", root.toString(), "--limit", "1"));
         assertTrue(out.toString().startsWith(expected.getFirst().sourcePath().toString() + ":"));
         assertEquals(1, out.toString().split("  BM25:", -1).length - 1);
+    }
+
+    @Test
+    void semanticQueriesPrintCosineSimilaritiesInRankedOrder() throws Exception {
+        String refunds = "Refunds are issued to the original card within five days.";
+        Files.writeString(root.resolve("refunds.txt"), refunds + "\n");
+        Files.writeString(root.resolve("shipping.txt"), "Parcels leave the warehouse every weekday morning.\n");
+        Files.writeString(root.resolve("accounts.txt"), "Users reset forgotten passwords from the sign-in page.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+        QueryService semantic = QueryService.withModelLookup(loader, () -> Optional.of(TinyModel.cached()));
+        List<SearchHit> expected = semantic.query(
+                        root, new SearchRequest(refunds), QueryOptions.mode(SearchMode.SEMANTIC))
+                .hits();
+
+        assertEquals(0, run(semantic, refunds, "--root", root.toString(), "--mode", "semantic"));
+
+        assertEquals("", err.toString());
+        assertTrue(out.toString().startsWith("refunds.txt:1-1" + System.lineSeparator()), out.toString());
+        assertEquals(
+                expected.stream().map(hit -> "  cosine: " + hit.score().value()).toList(),
+                out.toString()
+                        .lines()
+                        .filter(line -> line.startsWith("  cosine: "))
+                        .toList());
+        assertEquals(3, expected.size());
+        assertFalse(out.toString().contains("BM25"));
+    }
+
+    @Test
+    void hybridQueriesPrintFusedScoresWithTheSidesThatRankedEachHit() throws Exception {
+        String refunds = "Refunds are issued to the original card within five days.";
+        Files.writeString(root.resolve("refunds.txt"), refunds + "\n");
+        Files.writeString(root.resolve("shipping.txt"), "Parcels leave the warehouse every weekday morning.\n");
+        Files.writeString(root.resolve("accounts.txt"), "Users reset forgotten passwords from the sign-in page.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+        // Indexed lexically afterwards, so this file has no embedding and only the lexical side can rank it.
+        Files.writeString(root.resolve("notes.txt"), refunds + " Ask the bank if it takes longer.\n");
+        new IndexService(loader).index(root);
+        QueryService hybrid = QueryService.withModelLookup(loader, () -> Optional.of(TinyModel.cached()));
+        List<SearchHit> expected = hybrid.query(root, new SearchRequest(refunds), QueryOptions.mode(SearchMode.HYBRID))
+                .hits();
+
+        assertEquals(0, run(hybrid, refunds, "--root", root.toString(), "--mode", "hybrid"));
+
+        assertEquals("", err.toString());
+        List<String> scores = out.toString()
+                .lines()
+                .filter(line -> line.startsWith("  RRF: "))
+                .toList();
+        assertEquals(4, expected.size());
+        assertEquals(
+                List.of(
+                        "  RRF: " + expected.get(0).score().value() + " (lexical #1, semantic #1)",
+                        "  RRF: " + expected.get(1).score().value() + " (semantic #2)",
+                        "  RRF: " + expected.get(2).score().value() + " (lexical #2)",
+                        "  RRF: " + expected.get(3).score().value() + " (semantic #3)"),
+                scores);
+        // Rank 2 on either side scores the same; the tie breaks by path.
+        assertEquals(Path.of("accounts.txt"), expected.get(1).sourcePath());
+        assertEquals(Path.of("notes.txt"), expected.get(2).sourcePath());
+        assertTrue(out.toString().startsWith("refunds.txt:1-1" + System.lineSeparator()), out.toString());
+    }
+
+    @Test
+    void aSemanticQueryWithoutTheCachedModelSaysSoAndNeverDownloadsIt() throws Exception {
+        Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+
+        // The test task points PECIA_CACHE_DIR at an empty build directory, which never holds the model.
+        assertEquals(3, run("refunds", "--root", root.toString(), "--mode", "semantic"));
+
+        assertEquals("", out.toString());
+        List<String> lines = err.toString().lines().toList();
+        assertTrue(lines.get(0).startsWith("pecia query: MODEL_NOT_CACHED: The semantic model "), lines.get(0));
+        assertEquals("Run: java -jar 'pecia-cli/build/libs/pecia.jar' index --semantic '" + root + "'", lines.get(1));
+        assertEquals(2, lines.size());
+    }
+
+    @Test
+    void autoSaysWhyItSearchedLexicallyWhenTheIndexHasEmbeddings() throws Exception {
+        Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+
+        // Without --mode the configured auto mode applies; the test cache never holds the model.
+        assertEquals(0, run("refunds", "--root", root.toString()));
+
+        assertTrue(out.toString().startsWith("refunds.txt:1-1" + System.lineSeparator()), out.toString());
+        assertTrue(out.toString().contains("  BM25: "), out.toString());
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(1, lines.size(), err.toString());
+        assertTrue(lines.get(0).startsWith("note: searched lexically: The semantic model "), lines.get(0));
+    }
+
+    @Test
+    void anEmbedderThatCannotOpenExitsWithTheCauseAndTheLexicalWayOut() throws Exception {
+        Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+        QueryService broken =
+                QueryService.withModelLookup(loader, () -> Optional.of(TinyModel.cached("missing-input")));
+
+        assertEquals(3, run(broken, "refunds", "--root", root.toString(), "--mode", "hybrid"));
+
+        assertEquals("", out.toString());
+        List<String> lines = err.toString().lines().toList();
+        assertEquals(2, lines.size(), err.toString());
+        assertTrue(
+                lines.get(0)
+                        .startsWith("pecia query: EMBEDDER_UNAVAILABLE: Semantic search could not open its embedder: "),
+                lines.get(0));
+        assertEquals("Use --mode lexical to search without embeddings.", lines.get(1));
+    }
+
+    @Test
+    void notesSayWhenOnlyTheSemanticSideRankedTheQuery() throws Exception {
+        Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+        QueryService service = QueryService.withModelLookup(loader, () -> Optional.of(TinyModel.cached()));
+
+        assertEquals(0, run(service, "refunds ".repeat(65).strip(), "--root", root.toString()));
+
+        assertTrue(out.toString().startsWith("refunds.txt:1-1" + System.lineSeparator()), out.toString());
+        assertEquals(
+                List.of("note: The query has more than 64 words, too many for lexical search; only semantic ranking"
+                        + " was used"),
+                err.toString().lines().toList());
     }
 
     @Test
@@ -165,22 +295,24 @@ class QueryCommandTest {
         assertFalse(Files.exists(root.resolve(".pecia")));
     }
 
-    @ParameterizedTest(name = "file {0}, flag {1} -> exit {2}")
+    // The lexical index has no embeddings, so semantic queries fail before they look for the model.
+    @ParameterizedTest(name = "file {0}, flag {1} -> exit {2} {3}")
     @CsvSource(
             nullValues = "none",
             value = {
-                "none, none, 0",
-                "none, lexical, 0",
-                "none, auto, 0",
-                "none, semantic, 1",
-                "none, hybrid, 1",
-                "semantic, none, 1",
-                "semantic, lexical, 0",
-                "semantic, auto, 0",
-                "lexical, semantic, 1",
-                "hybrid, auto, 0"
+                "none, none, 0, none",
+                "none, lexical, 0, none",
+                "none, auto, 0, none",
+                "none, semantic, 3, EMBEDDINGS_MISSING",
+                "none, hybrid, 3, EMBEDDINGS_MISSING",
+                "semantic, none, 3, EMBEDDINGS_MISSING",
+                "semantic, lexical, 0, none",
+                "semantic, auto, 0, none",
+                "lexical, semantic, 3, EMBEDDINGS_MISSING",
+                "hybrid, none, 3, EMBEDDINGS_MISSING",
+                "hybrid, auto, 0, none"
             })
-    void modeFlagOverridesTheConfiguredMode(String file, String flag, int exitCode) throws Exception {
+    void modeFlagOverridesTheConfiguredMode(String file, String flag, int exitCode, String reason) throws Exception {
         if (file != null) {
             Files.writeString(root.resolve(".pecia.toml"), "[search]\nmode = \"" + file + "\"\n");
         }
@@ -199,24 +331,27 @@ class QueryCommandTest {
             assertEquals("", err.toString());
         } else {
             assertEquals("", out.toString());
-            assertTrue(err.toString().startsWith("pecia query: SEMANTIC_UNAVAILABLE: "), err.toString());
+            assertTrue(err.toString().startsWith("pecia query: " + reason + ": "), err.toString());
+            assertTrue(err.toString().contains(" index --semantic "), err.toString());
         }
     }
 
     @Test
-    void unavailableModePrintsWarningsThenTheErrorWithoutAnIndexHint() throws Exception {
+    void missingEmbeddingsPrintWarningsThenTheErrorAndTheSemanticIndexHint() throws Exception {
         Path config = Files.writeString(root.resolve(".pecia.toml"), "[chunk]\nmax_token = 64\n");
+        Files.writeString(root.resolve("guide.md"), "# Guide\n\nneedle\n");
+        new IndexService(loader).index(root);
 
-        assertEquals(1, run("needle", "--root", root.toString(), "--mode", "hybrid"));
+        assertEquals(3, run("needle", "--root", root.toString(), "--mode", "hybrid"));
 
         assertEquals(
                 List.of(
                         typoWarning(config),
-                        "pecia query: SEMANTIC_UNAVAILABLE: hybrid search is not available yet;"
-                                + " use the lexical or auto mode"),
+                        "pecia query: EMBEDDINGS_MISSING: The index has no embeddings for semantic search; index the"
+                                + " project semantically first",
+                        "Run: java -jar 'pecia-cli/build/libs/pecia.jar' index --semantic '" + root + "'"),
                 err.toString().lines().toList());
         assertEquals("", out.toString());
-        assertFalse(Files.exists(root.resolve(".pecia")));
     }
 
     @Test
@@ -336,7 +471,8 @@ class QueryCommandTest {
         assertEquals(0, run("--root", root.toString(), "--help"));
         assertTrue(out.toString().contains("--limit"));
         assertTrue(out.toString().contains("--root"));
-        assertTrue(out.toString().contains("BM25 lexical ranking"));
+        assertTrue(out.toString().contains("lexically (BM25), semantically, or with both (hybrid)"));
+        assertTrue(out.toString().replaceAll("\\s+", " ").contains("queries never download the model."));
         assertTrue(out.toString().contains("default: " + SearchRequest.DEFAULT_LIMIT));
         assertTrue(out.toString().contains("--mode=<mode>"));
         // The usage message wraps long descriptions; collapsing whitespace still catches a break inside a name.
@@ -366,7 +502,11 @@ class QueryCommandTest {
     }
 
     private int run(String... args) {
-        CommandLine command = new CommandLine(new QueryCommand(new QueryService(loader)));
+        return run(new QueryService(loader), args);
+    }
+
+    private int run(QueryService service, String... args) {
+        CommandLine command = new CommandLine(new QueryCommand(service));
         command.setOut(new PrintWriter(out));
         command.setErr(new PrintWriter(err));
 

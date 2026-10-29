@@ -17,6 +17,27 @@ final class LexicalQueryCompiler {
      * @throws NullPointerException if request is null
      * @throws IllegalArgumentException if the text contains more than 64 raw query parts
      */
+    /** Returns whether the text has more raw parts than {@link #compile} accepts. */
+    boolean exceedsPartLimit(SearchRequest request) {
+        String query = request.query();
+        int partCount = 0;
+        boolean inPart = false;
+
+        for (int offset = 0; offset < query.length(); ) {
+            int codePoint = query.codePointAt(offset);
+            boolean whitespace = SearchRequest.isQueryWhitespace(codePoint);
+
+            if (!whitespace && !inPart && ++partCount > MAX_QUERY_PARTS) {
+                return true;
+            }
+
+            inPart = !whitespace;
+            offset += Character.charCount(codePoint);
+        }
+
+        return false;
+    }
+
     Optional<String> compile(SearchRequest request) {
         String query = request.query();
         StringJoiner phrases = new StringJoiner(" AND ");

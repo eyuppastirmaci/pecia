@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.jar.JarFile;
@@ -47,13 +48,15 @@ class PackagedCliContractIT {
         assertSuccess(result);
         assertEquals("""
             Usage: pecia [-hV] [COMMAND]
-            Indexes documents and source code for offline lexical search.
+            Indexes documents and source code for offline lexical and semantic search.
               -h, --help      Show this help message and exit.
               -V, --version   Print version information and exit.
             Commands:
               init   Writes a .pecia.toml config file at the project root.
-              index  Builds a local lexical index from a folder of text files.
-              query  Searches the local index using BM25 lexical ranking.
+              index  Builds a local index from a folder of text files, with embeddings when
+                       semantic indexing is on.
+              query  Searches the local index lexically (BM25), semantically, or with both
+                       (hybrid).
             """, result.out());
     }
 
@@ -149,6 +152,43 @@ class PackagedCliContractIT {
             assertTrue(license.contains("Permission is hereby granted, free of charge"));
             String notices = new String(resource(jar, "ThirdPartyNotices.txt"), StandardCharsets.UTF_8);
             assertTrue(notices.startsWith("THIRD PARTY SOFTWARE NOTICES AND INFORMATION"));
+        }
+    }
+
+    @Test
+    void executableJarCarriesTheVectorExtensionForEachSemanticPlatformUnchanged() throws Exception {
+        String directory = "dev/eyuppastirmaci/pecia/semantic/sqlite-vec/";
+
+        try (JarFile jar = new JarFile(cli.executableJar().toFile())) {
+            String notice = new String(resource(jar, directory + "NOTICE.txt"), StandardCharsets.UTF_8);
+            List<String> libraries =
+                    List.of("linux-x64/vec0.so", "linux-aarch64/vec0.so", "osx-aarch64/vec0.dylib", "win-x64/vec0.dll");
+            List<String> expected = new ArrayList<>(List.of("NOTICE.txt"));
+            expected.addAll(libraries);
+
+            assertEquals(
+                    expected.stream().sorted().toList(),
+                    jar.stream()
+                            .filter(entry -> entry.getName().startsWith(directory) && !entry.isDirectory())
+                            .map(entry -> entry.getName().substring(directory.length()))
+                            .sorted()
+                            .toList());
+
+            // The notice pins each library's SHA-256, so the JAR must carry the release's bytes unchanged.
+            for (String library : libraries) {
+                String sha256 = HexFormat.of()
+                        .formatHex(MessageDigest.getInstance("SHA-256").digest(resource(jar, directory + library)));
+
+                assertTrue(
+                        notice.lines().anyMatch(line -> line.startsWith(library + " ") && line.endsWith(sha256)),
+                        library);
+            }
+
+            assertTrue(new String(resource(jar, "META-INF/licenses/sqlite-vec-LICENSE-MIT.txt"), StandardCharsets.UTF_8)
+                    .contains("Copyright (c) 2024 Alex Garcia"));
+            assertTrue(
+                    new String(resource(jar, "META-INF/licenses/sqlite-vec-LICENSE-APACHE.txt"), StandardCharsets.UTF_8)
+                            .contains("Apache License"));
         }
     }
 

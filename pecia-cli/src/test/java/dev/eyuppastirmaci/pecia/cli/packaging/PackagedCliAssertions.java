@@ -29,6 +29,12 @@ final class PackagedCliAssertions {
     }
 
     static void assertIndexSummary(Result result, Path database, int candidates, int indexed, int deleted, int chunks) {
+        assertIndexSummary(result, database, candidates, indexed, 0, deleted, chunks);
+    }
+
+    /** Checks a summary in which {@code rechunked} of the indexed files were rebuilt for new chunking settings. */
+    static void assertIndexSummary(
+            Result result, Path database, int candidates, int indexed, int rechunked, int deleted, int chunks) {
         assertSuccess(result);
         assertEquals(
                 "index: "
@@ -37,6 +43,8 @@ final class PackagedCliAssertions {
                         + candidates
                         + "\nindexed: "
                         + indexed
+                        + "\nrechunked: "
+                        + rechunked
                         + "\nunchanged: "
                         + (candidates - indexed)
                         + "\ndeleted: "

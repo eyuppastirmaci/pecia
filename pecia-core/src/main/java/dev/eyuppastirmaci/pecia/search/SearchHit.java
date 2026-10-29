@@ -15,6 +15,7 @@ import java.util.Optional;
  * @param chunkId the SQLite row locator, which may change when the file is replaced
  * @param stableId the project-local identity, absent for legacy or invalidated processing state;
  *     identifies a position and chunking profile, not content freshness
+ * @param fusedRanks for a hybrid hit, the lexical and semantic ranks its score fuses; empty for every other hit
  */
 public record SearchHit(
         long chunkId,
@@ -25,7 +26,8 @@ public record SearchHit(
         ChunkMetadata metadata,
         SearchScore score,
         String snippet,
-        Optional<ChunkId> stableId) {
+        Optional<ChunkId> stableId,
+        Optional<FusedRanks> fusedRanks) {
     /**
      * Caps previews at 400 Unicode code points to balance useful context and concise terminal output.
      */
@@ -35,7 +37,8 @@ public record SearchHit(
      * Validates the match identity, required values, and preview length.
      *
      * @throws NullPointerException if a reference component is null
-     * @throws IllegalArgumentException if the ID, position, path or snippet length is invalid
+     * @throws IllegalArgumentException if the ID, position, path or snippet length is invalid, or fused ranks are
+     *     present without a reciprocal rank fusion score or missing with one
      */
     public SearchHit {
         if (chunkId <= 0) {
@@ -52,11 +55,40 @@ public record SearchHit(
         Objects.requireNonNull(metadata, "metadata");
         Objects.requireNonNull(score, "score");
         Objects.requireNonNull(stableId, "stableId");
+        Objects.requireNonNull(fusedRanks, "fusedRanks");
+
+        if (fusedRanks.isPresent() != (score.kind() == SearchScore.Kind.RECIPROCAL_RANK_FUSION)) {
+            throw new IllegalArgumentException("Only a reciprocal rank fusion score carries fused ranks");
+        }
 
         if (snippet.codePointCount(0, snippet.length()) > MAX_SNIPPET_CODE_POINTS) {
             throw new IllegalArgumentException(
                     "snippet must contain at most " + MAX_SNIPPET_CODE_POINTS + " code points");
         }
+    }
+
+    /** Creates a lexical or semantic search hit, which has no fused ranks. */
+    public SearchHit(
+            long chunkId,
+            int chunkIndex,
+            Path sourcePath,
+            DocumentType documentType,
+            SourceLocation sourceLocation,
+            ChunkMetadata metadata,
+            SearchScore score,
+            String snippet,
+            Optional<ChunkId> stableId) {
+        this(
+                chunkId,
+                chunkIndex,
+                sourcePath,
+                documentType,
+                sourceLocation,
+                metadata,
+                score,
+                snippet,
+                stableId,
+                Optional.empty());
     }
 
     /** Creates a search hit whose deterministic identity is unknown. */

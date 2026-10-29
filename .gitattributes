@@ -23,3 +23,8 @@ gradle/wrapper/gradle-wrapper.jar binary
 
 # ONNX models are binary test fixtures.
 *.onnx binary
+
+# Native libraries bundled for the vector search extension.
+*.so binary
+*.dylib binary
+*.dll binary

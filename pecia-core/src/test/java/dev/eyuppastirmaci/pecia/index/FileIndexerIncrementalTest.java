@@ -105,7 +105,9 @@ class FileIndexerIncrementalTest {
             Files.setLastModifiedTime(file, originalTime);
             var changed = indexer.index(SOURCE, storage);
 
+            assertFalse(first.rechunked(), "A new file is not rechunked");
             assertFalse(changed.unchanged());
+            assertFalse(changed.rechunked(), "Changed bytes are a content change, not new settings");
             assertEquals(first.file().id(), changed.file().id());
             assertEquals(hash("newneedle"), changed.file().contentHash());
             assertEquals(1, changed.chunkCount());
@@ -183,6 +185,7 @@ class FileIndexerIncrementalTest {
             var changed = indexer.index(SOURCE, storage);
 
             assertFalse(changed.unchanged());
+            assertTrue(changed.rechunked(), "Identical bytes rebuilt for new settings are rechunked");
             assertEquals(first.file(), changed.file());
             assertEquals(
                     updated,

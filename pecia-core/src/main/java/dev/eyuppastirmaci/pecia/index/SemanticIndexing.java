@@ -28,12 +28,15 @@ final class SemanticIndexing {
 
     /** Embeds each chunk's stored content, as the profile's {@code chunk-content} input describes. */
     List<float[]> embed(List<Chunk> chunks) throws EmbeddingException {
-        List<float[]> vectors = new ArrayList<>(chunks.size());
+        return embedTexts(chunks.stream().map(Chunk::content).toList());
+    }
 
-        for (int start = 0; start < chunks.size(); start += BATCH_SIZE) {
-            List<String> texts = chunks.subList(start, Math.min(start + BATCH_SIZE, chunks.size())).stream()
-                    .map(Chunk::content)
-                    .toList();
+    /** Embeds stored chunk contents in batches, one embedding per text in order. */
+    List<float[]> embedTexts(List<String> contents) throws EmbeddingException {
+        List<float[]> vectors = new ArrayList<>(contents.size());
+
+        for (int start = 0; start < contents.size(); start += BATCH_SIZE) {
+            List<String> texts = contents.subList(start, Math.min(start + BATCH_SIZE, contents.size()));
             float[][] batch = embedder.embed(texts);
 
             if (batch.length != texts.size()) {

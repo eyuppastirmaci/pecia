@@ -49,7 +49,17 @@ public final class QueryException extends Exception {
         CORRUPT_INDEX,
         /** Project resolution, index access, or result retrieval failed. */
         READ_FAILED,
-        /** The query's search mode needs semantic search, which is not available. */
-        SEMANTIC_UNAVAILABLE
+        /** No stored chunk has an embedding, so a semantic query has nothing to compare. */
+        EMBEDDINGS_MISSING,
+        /** Stored chunks have embeddings only of an earlier model, which cannot be compared with this model's. */
+        EMBEDDINGS_OUTDATED,
+        /** The semantic model is not in the cache; queries never download it. */
+        MODEL_NOT_CACHED,
+        /** The vector search extension could not be placed or loaded on this platform. */
+        VECTOR_SEARCH_UNAVAILABLE,
+        /** The semantic model's embedder could not be opened. */
+        EMBEDDER_UNAVAILABLE,
+        /** The embedder failed to embed the query text. */
+        EMBEDDING_FAILED
     }
 }

@@ -4,20 +4,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.index.IndexService;
-import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,27 +47,29 @@ class QueryOptionsTest {
         assertThrows(NullPointerException.class, () -> QueryOptions.mode(null));
     }
 
-    @ParameterizedTest(name = "file {0}, option {1} -> available {2}")
+    // The lexical index has no embeddings, so a semantic query fails before it looks for the model.
+    @ParameterizedTest(name = "file {0}, option {1} -> {2}")
     @CsvSource(
             nullValues = "none",
             value = {
-                "none, none, true",
-                "none, lexical, true",
-                "none, auto, true",
-                "none, semantic, false",
-                "none, hybrid, false",
-                "lexical, none, true",
-                "lexical, auto, true",
-                "lexical, semantic, false",
-                "lexical, hybrid, false",
-                "semantic, none, false",
-                "semantic, lexical, true",
-                "semantic, auto, true",
-                "semantic, hybrid, false",
-                "hybrid, none, false",
-                "hybrid, lexical, true"
+                "none, none, hits",
+                "none, lexical, hits",
+                "none, auto, hits",
+                "none, semantic, EMBEDDINGS_MISSING",
+                "none, hybrid, EMBEDDINGS_MISSING",
+                "lexical, none, hits",
+                "lexical, auto, hits",
+                "lexical, semantic, EMBEDDINGS_MISSING",
+                "lexical, hybrid, EMBEDDINGS_MISSING",
+                "semantic, none, EMBEDDINGS_MISSING",
+                "semantic, lexical, hits",
+                "semantic, auto, hits",
+                "semantic, hybrid, EMBEDDINGS_MISSING",
+                "hybrid, none, EMBEDDINGS_MISSING",
+                "hybrid, lexical, hits",
+                "hybrid, semantic, EMBEDDINGS_MISSING"
             })
-    void anExplicitModeOverridesTheFileWhichOverridesTheDefault(String file, String option, boolean available)
+    void anExplicitModeOverridesTheFileWhichOverridesTheDefault(String file, String option, String outcome)
             throws Exception {
         if (file != null) {
             Files.writeString(root.resolve(".pecia.toml"), "[search]\nmode = \"" + file + "\"\n");
@@ -81,11 +80,11 @@ class QueryOptionsTest {
                 ? QueryOptions.configured()
                 : QueryOptions.mode(SearchMode.fromConfigValue(option).orElseThrow());
 
-        assertOutcome(available, () -> service.query(root, REQUEST, options).hits());
+        assertOutcome(outcome, () -> service.query(root, REQUEST, options).hits());
 
         if (option == null) {
-            assertOutcome(available, () -> service.query(root, REQUEST).hits());
-            assertOutcome(available, () -> service.search(root, REQUEST));
+            assertOutcome(outcome, () -> service.query(root, REQUEST).hits());
+            assertOutcome(outcome, () -> service.search(root, REQUEST));
         }
     }
 
@@ -93,50 +92,31 @@ class QueryOptionsTest {
     @EnumSource(
             value = SearchMode.class,
             names = {"SEMANTIC", "HYBRID"})
-    void unavailableModesExplainThemselvesAndKeepTheWarnings(SearchMode mode) throws Exception {
+    void modesThatNeedEmbeddingsFailOnALexicalIndexAndKeepTheWarnings(SearchMode mode) throws Exception {
         String config = "[search]\nmode = \"" + mode.configValue() + "\"\n\n[chunk]\nmax_token = 1\n";
         Files.writeString(root.resolve(".pecia.toml"), config);
         new IndexService(loader).index(root);
 
         QueryException failure = assertThrows(QueryException.class, () -> service.query(root, REQUEST));
 
-        assertEquals(QueryException.Reason.SEMANTIC_UNAVAILABLE, failure.reason());
-        assertEquals(
-                mode.configValue() + " search is not available yet; use the lexical or auto mode",
-                failure.getMessage());
+        assertEquals(QueryException.Reason.EMBEDDINGS_MISSING, failure.reason());
         assertNull(failure.getCause());
         assertEquals(
                 List.of("unknown key chunk.max_token (did you mean chunk.max_tokens?)"),
                 failure.warnings().stream().map(Warning::message).toList());
     }
 
-    @Test
-    void unavailableModesFailBeforeOpeningTheIndexAndWithoutOne() throws Exception {
-        new IndexService(loader).index(root);
-        AtomicBoolean opened = new AtomicBoolean();
-        QueryService tracking = new QueryService(loader, context -> {
-            opened.set(true);
-
-            return SqliteStorage.openReadOnly(context.databasePath(), context.projectRoot());
-        });
-
-        QueryException failure = assertThrows(
-                QueryException.class, () -> tracking.query(root, REQUEST, QueryOptions.mode(SearchMode.SEMANTIC)));
-
-        assertEquals(QueryException.Reason.SEMANTIC_UNAVAILABLE, failure.reason());
-        assertFalse(opened.get());
-        assertEquals(
-                1,
-                tracking.query(root, REQUEST, QueryOptions.mode(SearchMode.LEXICAL))
-                        .hits()
-                        .size());
-        assertTrue(opened.get());
-
+    @ParameterizedTest
+    @EnumSource(
+            value = SearchMode.class,
+            names = {"SEMANTIC", "HYBRID"})
+    void modesThatNeedEmbeddingsNeverCreateAnIndex(SearchMode mode) throws Exception {
         Path unindexed = Files.createDirectories(sandbox.resolve("unindexed")).toRealPath();
-        QueryException withoutIndex = assertThrows(
-                QueryException.class, () -> service.query(unindexed, REQUEST, QueryOptions.mode(SearchMode.HYBRID)));
 
-        assertEquals(QueryException.Reason.SEMANTIC_UNAVAILABLE, withoutIndex.reason());
+        QueryException failure =
+                assertThrows(QueryException.class, () -> service.query(unindexed, REQUEST, QueryOptions.mode(mode)));
+
+        assertEquals(QueryException.Reason.INDEX_NOT_FOUND, failure.reason());
 
         try (Stream<Path> files = Files.list(unindexed)) {
             assertEquals(0, files.count());
@@ -173,14 +153,14 @@ class QueryOptionsTest {
         assertThrows(NullPointerException.class, () -> service.query(missing, REQUEST, null));
     }
 
-    private static void assertOutcome(boolean available, HitsCall query) throws Exception {
-        if (available) {
+    private static void assertOutcome(String outcome, HitsCall query) throws Exception {
+        if (outcome.equals("hits")) {
             assertEquals(1, query.hits().size());
             return;
         }
 
         QueryException failure = assertThrows(QueryException.class, query::hits);
-        assertEquals(QueryException.Reason.SEMANTIC_UNAVAILABLE, failure.reason());
+        assertEquals(QueryException.Reason.valueOf(outcome), failure.reason());
     }
 
     @FunctionalInterface

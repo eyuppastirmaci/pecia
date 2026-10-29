@@ -12,6 +12,7 @@ import dev.eyuppastirmaci.pecia.chunking.ChunkIdGenerator;
 import dev.eyuppastirmaci.pecia.chunking.ChunkingIdentity;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
@@ -137,7 +138,9 @@ class QueryServiceTest {
             return storage;
         });
 
-        assertThrows(IllegalArgumentException.class, () -> tracking.search(root, new SearchRequest("a ".repeat(65))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> tracking.query(root, new SearchRequest("a ".repeat(65)), QueryOptions.mode(SearchMode.LEXICAL)));
         assertThrows(IllegalArgumentException.class, () -> tracking.search(root, new SearchRequest(" ")));
         assertThrows(IllegalArgumentException.class, () -> tracking.search(root, new SearchRequest("a", 0)));
         assertThrows(NullPointerException.class, () -> tracking.search(root, null));

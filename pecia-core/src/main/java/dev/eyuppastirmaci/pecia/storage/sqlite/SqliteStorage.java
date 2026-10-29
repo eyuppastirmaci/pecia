@@ -10,10 +10,14 @@ import dev.eyuppastirmaci.pecia.content.ExtractionRequest;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.IndexDecision;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
+import dev.eyuppastirmaci.pecia.search.HybridSearch;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
+import dev.eyuppastirmaci.pecia.search.SemanticSearch;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
+import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
+import dev.eyuppastirmaci.pecia.storage.model.UnembeddedChunk;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -27,11 +31,13 @@ import java.util.Objects;
 import java.util.Optional;
 import org.sqlite.JDBC;
 import org.sqlite.SQLiteConfig;
+import org.sqlite.SQLiteConnection;
 
 /** Owns a SQLite index connection and exposes repositories and lexical search for its lifetime. */
 public final class SqliteStorage implements AutoCloseable {
 
     private final Connection connection;
+    private boolean vectorExtensionLoaded;
 
     private SqliteStorage(Connection connection) {
         this.connection = connection;
@@ -153,6 +159,64 @@ public final class SqliteStorage implements AutoCloseable {
 
     Connection connection() {
         return connection;
+    }
+
+    /**
+     * Loads the sqlite-vec extension from a verified library file into this storage's connection, so its vector
+     * functions can be used, and turns extension loading off again so no SQL can load another one. Lexical storage
+     * never calls this.
+     *
+     * @param library the platform's library, as {@code VectorExtension.library()} returns it
+     * @throws SQLException if SQLite cannot load the library
+     * @throws NullPointerException if library is null
+     */
+    public void loadVectorExtension(Path library) throws SQLException {
+        String path = library.toAbsolutePath().toString();
+        var database = connection.unwrap(SQLiteConnection.class).getDatabase();
+        database.enable_load_extension(true);
+
+        try (var load = connection.prepareStatement("SELECT load_extension(?)")) {
+            load.setString(1, path);
+            load.executeQuery().close();
+        } finally {
+            database.enable_load_extension(false);
+        }
+
+        vectorExtensionLoaded = true;
+    }
+
+    /**
+     * Returns nearest-neighbor search over this storage's embeddings of the given profile, borrowing the existing
+     * connection. Only that profile's embeddings are compared with a query.
+     *
+     * @throws IllegalStateException if the vector extension has not been loaded with {@link #loadVectorExtension}
+     * @throws NullPointerException if profile is null
+     */
+    public SemanticSearch semanticSearch(EmbeddingProfile profile) {
+        Objects.requireNonNull(profile, "profile");
+        requireVectorExtension();
+
+        return new SqliteSemanticSearch(new SqliteVectorRetriever(this), profile);
+    }
+
+    /**
+     * Returns hybrid search over this storage's lexical index and its embeddings of the given profile, borrowing the
+     * existing connection. Both sides' candidates are read in one snapshot.
+     *
+     * @throws IllegalStateException if the vector extension has not been loaded with {@link #loadVectorExtension}
+     * @throws NullPointerException if profile is null
+     */
+    public HybridSearch hybridSearch(EmbeddingProfile profile) {
+        Objects.requireNonNull(profile, "profile");
+        requireVectorExtension();
+
+        return new SqliteHybridSearch(this, new SqliteLexicalRetriever(this), new SqliteVectorRetriever(this), profile);
+    }
+
+    private void requireVectorExtension() {
+        if (!vectorExtensionLoaded) {
+            throw new IllegalStateException("Semantic search needs the vector extension; load it first");
+        }
     }
 
     /**
@@ -358,7 +422,7 @@ public final class SqliteStorage implements AutoCloseable {
         List<Chunk> replacement = validateChunks(document, chunks);
 
         return replaceIdentified(
-                document, replacement, identity, profile, validateVectors(replacement, profile, vectors));
+                document, replacement, identity, profile, validateVectors(replacement.size(), profile, vectors));
     }
 
     /** Writes chunks, IDs, optional vectors, and finally the chunking profile; {@code profile} is null without vectors. */
@@ -379,6 +443,10 @@ public final class SqliteStorage implements AutoCloseable {
         List<ChunkId> chunkIds = replacement.stream().map(generator::generate).toList();
 
         return inScope(() -> {
+            if (profile != null) {
+                new SqliteEmbeddingRepository(connection).requireOnlyProfile(profile.fingerprint());
+            }
+
             SavedReplacement saved = saveReplacement(document, replacement);
             chunks().saveIdentities(saved.chunks(), chunkIds);
 
@@ -391,6 +459,89 @@ public final class SqliteStorage implements AutoCloseable {
 
             return saved.file();
         });
+    }
+
+    /**
+     * Returns a file's stored chunks that have no embedding, in position order, with the content an embedding would be
+     * made from. This method never writes data.
+     *
+     * @param fileId the positive manifest ID; an unknown file has no chunks
+     * @throws IllegalArgumentException if fileId is not positive
+     * @throws SQLException if reading fails
+     */
+    public List<UnembeddedChunk> findUnembeddedChunks(long fileId) throws SQLException {
+        if (fileId <= 0) {
+            throw new IllegalArgumentException("fileId must be positive: " + fileId);
+        }
+
+        return new SqliteEmbeddingRepository(connection).findUnembedded(fileId);
+    }
+
+    /**
+     * Stores embeddings for stored chunks atomically under the given profile. A vector is stored only for a chunk that
+     * still exists with the content it was made from and still has no embedding, so a chunk changed or deleted
+     * meanwhile, or embedded by another run, never receives a vector for other content; such chunks are skipped.
+     *
+     * @param chunks the chunks the vectors were made from, as returned by {@link #findUnembeddedChunks(long)}
+     * @param vectors one vector per chunk, in chunk order, each with the profile's dimensions and only finite values
+     * @return how many vectors were stored; the others were skipped
+     * @throws SQLException if persistence fails, with no vector of this call stored when rollback succeeds; an outer
+     *     transaction remains caller-owned
+     * @throws IllegalArgumentException if the vectors do not match the chunks and profile
+     * @throws NullPointerException if any argument, chunk, or vector is null
+     */
+    public int storeEmbeddings(EmbeddingProfile profile, List<UnembeddedChunk> chunks, List<float[]> vectors)
+            throws SQLException {
+        Objects.requireNonNull(profile, "profile");
+        List<UnembeddedChunk> targets = List.copyOf(chunks);
+        List<float[]> embeddings = validateVectors(targets.size(), profile, vectors);
+
+        if (targets.isEmpty()) {
+            return 0;
+        }
+
+        return inScope(() -> {
+            SqliteEmbeddingRepository repository = new SqliteEmbeddingRepository(connection);
+            repository.requireOnlyProfile(profile.fingerprint());
+
+            return repository.saveIfUnchanged(targets, repository.profileId(profile), embeddings);
+        });
+    }
+
+    /**
+     * Deletes every embedding of a profile other than the given one, and the profile rows left unused, as one atomic
+     * operation. Chunks and full-text rows are not touched, so the deleted embeddings can be made again from storage.
+     *
+     * @return how many embeddings were deleted
+     * @throws SQLException if deletion fails, with nothing deleted when rollback succeeds; an outer transaction remains
+     *     caller-owned
+     * @throws NullPointerException if profile is null
+     */
+    public long discardIncompatibleEmbeddings(EmbeddingProfile profile) throws SQLException {
+        String fingerprint = profile.fingerprint();
+
+        return inScope(() -> new SqliteEmbeddingRepository(connection).discardOtherProfiles(fingerprint));
+    }
+
+    /**
+     * Returns whether any chunk has an embedding, of any profile. Needs no embedding profile, so callers can decide
+     * whether semantic search is worth preparing without touching the semantic model's classes.
+     *
+     * @throws SQLException if reading fails
+     */
+    public boolean hasEmbeddings() throws SQLException {
+        return new SqliteEmbeddingRepository(connection).any();
+    }
+
+    /**
+     * Counts stored chunks by whether they have an embedding of the given profile, of another profile, or none, in one
+     * read. This method never writes data.
+     *
+     * @throws SQLException if reading fails
+     * @throws NullPointerException if profile is null
+     */
+    public EmbeddingCoverage embeddingCoverage(EmbeddingProfile profile) throws SQLException {
+        return new SqliteEmbeddingRepository(connection).coverage(profile.fingerprint());
     }
 
     /**
@@ -452,12 +603,12 @@ public final class SqliteStorage implements AutoCloseable {
         return replacement;
     }
 
-    private static List<float[]> validateVectors(List<Chunk> chunks, EmbeddingProfile profile, List<float[]> vectors) {
+    private static List<float[]> validateVectors(int chunks, EmbeddingProfile profile, List<float[]> vectors) {
         List<float[]> embeddings = List.copyOf(vectors);
 
-        if (embeddings.size() != chunks.size()) {
+        if (embeddings.size() != chunks) {
             throw new IllegalArgumentException(
-                    "Expected one vector per chunk: " + chunks.size() + " chunks, " + embeddings.size() + " vectors");
+                    "Expected one vector per chunk: " + chunks + " chunks, " + embeddings.size() + " vectors");
         }
 
         for (float[] vector : embeddings) {

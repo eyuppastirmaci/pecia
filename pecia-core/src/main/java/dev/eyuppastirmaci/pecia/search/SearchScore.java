@@ -21,7 +21,11 @@ public record SearchScore(double value, Kind kind) {
     /** Score interpretations currently supported by retrieval. */
     public enum Kind {
         /** Raw SQLite FTS5 bm25() output; numerically lower scores are better. */
-        SQLITE_BM25(true);
+        SQLITE_BM25(true),
+        /** Cosine similarity between query and chunk embeddings, from -1 to 1; higher scores are better. */
+        COSINE_SIMILARITY(false),
+        /** Reciprocal rank fusion of the lexical and semantic ranks, above 0; higher scores are better. */
+        RECIPROCAL_RANK_FUSION(false);
 
         private final boolean lowerIsBetter;
 

@@ -98,6 +98,13 @@ final class FileIndexer {
             return new Result(unchanged.orElseThrow(), 0, true);
         }
 
+        // Same path and bytes but not unchanged: the stored chunks were made under other processing settings. A
+        // different
+        // document type for the same path can only come from changed detection rules, which are such settings too.
+        boolean rechunked = storage.files()
+                .findByPath(request.sourcePath())
+                .filter(stored -> stored.contentHash().equals(content.contentHash()))
+                .isPresent();
         Document document = extraction.extract(request, content);
 
         if (!document.contentHash().equals(content.contentHash())
@@ -109,17 +116,22 @@ final class FileIndexer {
         List<Chunk> chunks = chunkers.getChunker(document).chunk(document);
 
         if (semantic == null) {
-            return new Result(storage.replaceFile(document, chunks, identity), chunks.size(), false, 0);
+            return new Result(storage.replaceFile(document, chunks, identity), chunks.size(), false, rechunked, 0);
         }
 
         List<float[]> vectors = semantic.embed(chunks);
         StoredFile file = storage.replaceFile(document, chunks, identity, semantic.profile(), vectors);
 
-        return new Result(file, chunks.size(), false, vectors.size());
+        return new Result(file, chunks.size(), false, rechunked, vectors.size());
     }
 
-    /** Chunk and embedding counts describe writes in this operation; unchanged files always report zero. */
-    record Result(StoredFile file, int chunkCount, boolean unchanged, int embeddedChunks) {
+    /**
+     * Chunk and embedding counts describe writes in this operation; unchanged files always report zero.
+     *
+     * @param rechunked whether the file's content was unchanged but its chunks were rebuilt, because its stored chunks
+     *     were made under other extraction, tokenizer, or chunking settings or have no complete chunking profile
+     */
+    record Result(StoredFile file, int chunkCount, boolean unchanged, boolean rechunked, int embeddedChunks) {
 
         Result {
             Objects.requireNonNull(file, "file");
@@ -128,13 +140,17 @@ final class FileIndexer {
                 throw new IllegalArgumentException("chunkCount must be non-negative and zero for unchanged files");
             }
 
+            if (unchanged && rechunked) {
+                throw new IllegalArgumentException("An unchanged file is not rechunked");
+            }
+
             if (embeddedChunks < 0 || embeddedChunks > chunkCount) {
                 throw new IllegalArgumentException("embeddedChunks must be between zero and chunkCount");
             }
         }
 
         Result(StoredFile file, int chunkCount, boolean unchanged) {
-            this(file, chunkCount, unchanged, 0);
+            this(file, chunkCount, unchanged, false, 0);
         }
     }
 }

@@ -12,6 +12,7 @@ import dev.eyuppastirmaci.pecia.semantic.ModelCache;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.semantic.ModelProvider;
+import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -19,6 +20,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /** Coordinates project discovery and per-file extraction, chunking, and storage replacement. */
 public final class IndexService {
@@ -27,6 +29,7 @@ public final class IndexService {
     private final StorageOpener storageOpener;
     private final ModelProvider models;
     private final TextEmbedder.Opener embedders;
+    private final Supplier<EmbeddingProfile> profiles;
 
     /**
      * Creates an indexing service that opens SQLite storage for each resolved project and keeps the semantic model in
@@ -64,10 +67,21 @@ public final class IndexService {
             StorageOpener storageOpener,
             ModelProvider models,
             TextEmbedder.Opener embedders) {
+        // A lambda rather than a method reference, so the profile's class is reached only when a semantic run calls it.
+        this(configLoader, storageOpener, models, embedders, () -> EmbeddingProfile.minilm());
+    }
+
+    IndexService(
+            PeciaConfigLoader configLoader,
+            StorageOpener storageOpener,
+            ModelProvider models,
+            TextEmbedder.Opener embedders,
+            Supplier<EmbeddingProfile> profiles) {
         this.contextResolver = new ProjectContextResolver(configLoader);
         this.storageOpener = Objects.requireNonNull(storageOpener, "storageOpener");
         this.models = Objects.requireNonNull(models, "models");
         this.embedders = Objects.requireNonNull(embedders, "embedders");
+        this.profiles = Objects.requireNonNull(profiles, "profiles");
     }
 
     /** Returns a provider that creates the user's model cache only when a run needs the model. */
@@ -135,10 +149,12 @@ public final class IndexService {
     /**
      * Indexes like {@link #index(Path)} with the caller's choices for this run, which override the project
      * configuration. When semantic indexing resolves to enabled, the semantic model is made available and its
-     * embedder opened after the configuration and token budget are validated and before storage opens; each new or
-     * changed file's chunks are then embedded and stored with their vectors in the file's replacement. Unchanged files
-     * keep whatever vectors they have. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs
-     * the model.
+     * embedder opened after the configuration and token budget are validated and before storage opens. Embeddings of
+     * another embedding profile, such as an earlier model revision, are discarded first; each new or changed file's
+     * chunks are then embedded and stored with their vectors in the file's replacement. After cleanup,
+     * the stored chunks of unchanged files that have no embedding are embedded from storage in pages that commit on
+     * their own, so an interrupted run leaves only the rest for the next one; the progress listener hears how far this
+     * has come. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs the model.
      *
      * @param target directory whose descendants are indexed
      * @param options the caller's choices for this run
@@ -182,25 +198,41 @@ public final class IndexService {
         ModelOutcome semanticModel = semanticOptions == null ? null : ensureModel(context, candidates, semanticOptions);
         // Semantic classes are created only for a semantic run; the profile comes first so nothing can fail between
         // opening the embedder and the try block that closes it.
-        EmbeddingProfile profile = semanticModel == null ? null : EmbeddingProfile.minilm();
+        EmbeddingProfile profile = semanticModel == null ? null : profiles.get();
         TextEmbedder embedder = semanticModel == null ? null : openEmbedder(context, candidates, semanticModel);
         SemanticIndexing semantic = embedder == null ? null : new SemanticIndexing(embedder, profile);
         int indexedFiles = 0;
+        int rechunkedFiles = 0;
         int unchangedFiles = 0;
         int deletedFiles = 0;
         long writtenChunks = 0;
         long embeddedChunks = 0;
+        long discardedEmbeddings = 0;
+        EmbeddingCoverage coverage = null;
+        EmbeddingBackfill backfill = null;
+        List<Long> unchanged = new ArrayList<>();
         List<IndexResult.FileIssue> issues = new ArrayList<>();
 
         try (embedder;
                 SqliteStorage storage = storageOpener.open(context)) {
+            if (semantic != null) {
+                // Embeddings of another profile cannot be compared with this run's; the backfill below makes them
+                // again from the stored chunks, so the index never holds two profiles.
+                discardedEmbeddings = storage.discardIncompatibleEmbeddings(profile);
+            }
+
             for (Path candidate : candidates) {
                 try {
                     FileIndexer.Result result = indexer.index(candidate, storage, semantic);
                     if (result.unchanged()) {
                         unchangedFiles++;
+                        unchanged.add(result.file().id());
                     } else {
                         indexedFiles++;
+
+                        if (result.rechunked()) {
+                            rechunkedFiles++;
+                        }
                     }
 
                     writtenChunks += result.chunkCount();
@@ -220,6 +252,13 @@ public final class IndexService {
                 // Recheck absence and scope immediately before applying the batch.
                 deletedFiles = storage.deleteFiles(planner.plan(scanResult, missing));
             }
+
+            if (semantic != null) {
+                // Unchanged files' chunks match their content and chunking, so they are embedded from storage.
+                backfill = new EmbeddingBackfill(storage, semantic, semanticOptions.progressListener());
+                backfill.run(unchanged);
+                coverage = storage.embeddingCoverage(profile);
+            }
         } catch (IOException | SQLException failure) {
             IndexResult result = new IndexResult(
                     context,
@@ -231,22 +270,31 @@ public final class IndexService {
                     writtenChunks,
                     issues,
                     semanticModel,
-                    embeddedChunks);
+                    embeddedChunks,
+                    backfilled(backfill),
+                    discardedEmbeddings,
+                    null,
+                    rechunkedFiles);
 
             throw new IndexException("Index storage or cleanup operation failed", failure, result, List.of());
         } catch (EmbeddingException failure) {
-            // Cleanup is skipped like after any other aborted run; the failing file was not written.
+            // A failing file is not written; a failure while embedding stored chunks keeps the committed pages and the
+            // cleanup that ran before it.
             IndexResult result = new IndexResult(
                     context,
                     IndexResult.Status.EMBEDDING_FAILED,
                     candidates.size(),
                     indexedFiles,
                     unchangedFiles,
-                    0,
+                    deletedFiles,
                     writtenChunks,
                     issues,
                     semanticModel,
-                    embeddedChunks);
+                    embeddedChunks,
+                    backfilled(backfill),
+                    discardedEmbeddings,
+                    null,
+                    rechunkedFiles);
 
             throw new IndexException("Semantic indexing could not embed a file's chunks", failure, result, List.of());
         }
@@ -263,7 +311,15 @@ public final class IndexService {
                 writtenChunks,
                 issues,
                 semanticModel,
-                embeddedChunks);
+                embeddedChunks,
+                backfilled(backfill),
+                discardedEmbeddings,
+                coverage,
+                rechunkedFiles);
+    }
+
+    private static long backfilled(EmbeddingBackfill backfill) {
+        return backfill == null ? 0 : backfill.stored();
     }
 
     private TextEmbedder openEmbedder(ProjectContext context, List<Path> candidates, ModelOutcome model)

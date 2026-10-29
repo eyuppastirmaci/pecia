@@ -12,6 +12,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
+import dev.eyuppastirmaci.pecia.semantic.VectorExtensionAccess;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
@@ -150,6 +151,54 @@ class CorePackagingIT {
                         .stdout()
                         .strip());
         // The second process is lexical: no network attempt, no storage change, and no semantic class initialized.
+        assertEquals(
+                "PACKAGED_CORE_OK lexical-after-semantic",
+                runner.runOffline("lexical-after-semantic", project, offline)
+                        .stdout()
+                        .strip());
+    }
+
+    @Test
+    void queriesSemanticallyOfflineWithATinyModelUsingOnlyThePackagedCore() throws Exception {
+        Path sandbox = Files.createDirectory(fixture.resolve("semantic query")).toRealPath();
+        Path parent =
+                Files.createDirectory(fixture.resolve("semantic query parent")).toRealPath();
+        Path project = Files.createDirectory(parent.resolve("project"));
+        try (InputStream model = CorePackagingIT.class.getResourceAsStream("/semantic/tiny/tiny.onnx")) {
+            Files.copy(model, parent.resolve("tiny.onnx"));
+        }
+        PackagedCoreRunner runner = PackagedCoreRunner.prepare(
+                requiredPath("pecia.it.jar"),
+                requiredPath("pecia.it.runtimeDirectory"),
+                requiredPath("pecia.it.testClasses"),
+                sandbox);
+        OfflineSandbox offline = OfflineSandbox.create(Files.createDirectory(sandbox.resolve("offline")));
+        offline.verifyNetworkDenied();
+
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-index",
+                runner.runOfflineEmbedding("semantic-index", project, offline)
+                        .stdout()
+                        .strip());
+        // The user's empty cache has no model, so the query fails before the extension or the runtime is touched.
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-query-uncached",
+                runner.runOfflineWithoutWrites("semantic-query-uncached", project, offline)
+                        .stdout()
+                        .strip());
+        // The first query places the extension in the cache; the second reuses that copy.
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-query",
+                runner.runOfflineSemanticQuery(
+                                "semantic-query", project, offline, VectorExtensionAccess.cachedLibrary())
+                        .stdout()
+                        .strip());
+        assertEquals(
+                "PACKAGED_CORE_OK semantic-query",
+                runner.runOfflineSemanticQuery("semantic-query", project, offline, null)
+                        .stdout()
+                        .strip());
+        // Lexical runs afterwards load neither the extension nor the runtime, and write nothing outside the project.
         assertEquals(
                 "PACKAGED_CORE_OK lexical-after-semantic",
                 runner.runOffline("lexical-after-semantic", project, offline)
@@ -358,7 +407,13 @@ class CorePackagingIT {
                     "META-INF/licenses/commonmark-LICENSE.txt",
                     "Copyright (c) 2015, Atlassian Pty Ltd",
                     "META-INF/licenses/onnxruntime-LICENSE.txt",
-                    "Copyright (c) Microsoft Corporation");
+                    "Copyright (c) Microsoft Corporation",
+                    "META-INF/licenses/sqlite-vec-LICENSE-MIT.txt",
+                    "Copyright (c) 2024 Alex Garcia",
+                    "META-INF/licenses/sqlite-vec-LICENSE-APACHE.txt",
+                    "Apache License",
+                    "dev/eyuppastirmaci/pecia/semantic/sqlite-vec/NOTICE.txt",
+                    "sqlite-vec 0.1.9 loadable extension");
 
             for (var notice : requiredNotices.entrySet()) {
                 String text = new String(readEntry(jar, notice.getKey()), StandardCharsets.UTF_8);

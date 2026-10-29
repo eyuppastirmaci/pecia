@@ -51,8 +51,8 @@ jobs:
         run: .\gradlew.bat check --profile
 
       # Only the next three steps use the real model, comparing its embeddings with the committed sentence-transformers
-      # references. The packaged CLI indexes a project semantically with the cached model, downloading it on a cache miss
-      # and verifying its SHA-256; the test tasks above never download it.
+      # references and checking its retrieval. The packaged CLI indexes a project semantically with the cached model,
+      # downloading it on a cache miss and verifying its SHA-256, then queries it; the test tasks above never download it.
       - name: Restore the semantic model
         id: semantic-model
         uses: actions/cache@v6
@@ -61,7 +61,7 @@ jobs:
           # SemanticModel.java holds the pinned revision and SHA-256, so any change to the pin starts a new cache.
           key: semantic-model-${{ hashFiles('pecia-core/src/main/java/dev/eyuppastirmaci/pecia/semantic/SemanticModel.java') }}
 
-      - name: Index semantically with the packaged CLI
+      - name: Index and query semantically with the packaged CLI
         shell: bash
         env:
           PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
@@ -69,10 +69,25 @@ jobs:
           project="$RUNNER_TEMP/semantic-index"
           mkdir -p "$project"
           echo "Indexes one chunk with the semantic model." > "$project/readme.md"
+          # A lexical index first, so the semantic run embeds the stored chunk instead of a changed file.
+          java -jar pecia-cli/build/libs/pecia.jar index --no-semantic "$project"
           java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-index.txt"
-          grep -qx 'embedded: 1' "$RUNNER_TEMP/semantic-index.txt"
+          grep -qx 'embedded: 0' "$RUNNER_TEMP/semantic-index.txt"
+          grep -qx 'backfilled: 1' "$RUNNER_TEMP/semantic-index.txt"
+          # Queries never download; this one loads the cached model and the bundled vector extension.
+          java -jar pecia-cli/build/libs/pecia.jar query --mode semantic --root "$project" "embedding a single passage" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-query.txt"
+          head -n 1 "$RUNNER_TEMP/semantic-query.txt" | grep -qx 'readme.md:1-1'
+          grep -q '^  cosine: ' "$RUNNER_TEMP/semantic-query.txt"
+          # Both sides rank the only chunk, which contains the query's words.
+          java -jar pecia-cli/build/libs/pecia.jar query --mode hybrid --root "$project" "semantic model" | tr -d '\r' | tee "$RUNNER_TEMP/hybrid-query.txt"
+          head -n 1 "$RUNNER_TEMP/hybrid-query.txt" | grep -qx 'readme.md:1-1'
+          grep -q '^  RRF: .* (lexical #1, semantic #1)$' "$RUNNER_TEMP/hybrid-query.txt"
+          # Without --mode, auto chooses hybrid search because the index has embeddings and the model is cached.
+          java -jar pecia-cli/build/libs/pecia.jar query --root "$project" "semantic model" 2> "$RUNNER_TEMP/auto-query.err" | tr -d '\r' | tee "$RUNNER_TEMP/auto-query.txt"
+          grep -q '^  RRF: .* (lexical #1, semantic #1)$' "$RUNNER_TEMP/auto-query.txt"
+          test ! -s "$RUNNER_TEMP/auto-query.err"
 
-      - name: Compare embeddings with the references
+      - name: Check embeddings and retrieval against the references
         env:
           PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
         run: ${{ runner.os == 'Windows' && '.\gradlew.bat' || './gradlew' }} referenceTest

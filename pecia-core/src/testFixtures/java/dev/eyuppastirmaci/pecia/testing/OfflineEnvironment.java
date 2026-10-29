@@ -206,10 +206,29 @@ public final class OfflineEnvironment {
      * Windows cannot delete libraries that are still loaded at exit.
      */
     public void assertOnlyRuntimeExtraction(Map<Path, String> before) throws IOException {
+        assertOnlyRuntimeExtraction(before, Set.of());
+    }
+
+    /**
+     * Fails like {@link #assertOnlyRuntimeExtraction(Map)}, except that the given new entries must also have appeared.
+     *
+     * @param additions absolute paths that must have appeared besides the runtime extraction
+     */
+    public void assertOnlyRuntimeExtraction(Map<Path, String> before, Set<Path> additions) throws IOException {
         Objects.requireNonNull(before, "before");
         Map<Path, String> after = snapshot();
         Path temporaryRoot = sandbox.relativize(temporary);
         Set<Path> unexpected = new TreeSet<>();
+        Set<Path> expected = new TreeSet<>();
+
+        for (Path addition : additions) {
+            Path entry = sandbox.relativize(addition);
+            expected.add(entry);
+
+            if (before.containsKey(entry) || !after.containsKey(entry)) {
+                unexpected.add(entry);
+            }
+        }
 
         for (Map.Entry<Path, String> entry : after.entrySet()) {
             Path path = entry.getKey();
@@ -219,7 +238,7 @@ public final class OfflineEnvironment {
                             .matcher(path.getName(temporaryRoot.getNameCount()).toString())
                             .matches();
 
-            if (!extraction && !entry.getValue().equals(before.get(path))) {
+            if (!extraction && !expected.contains(path) && !entry.getValue().equals(before.get(path))) {
                 unexpected.add(path);
             }
         }

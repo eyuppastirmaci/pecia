@@ -12,6 +12,41 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LexicalQueryCompilerTest {
     private final LexicalQueryCompiler compiler = new LexicalQueryCompiler();
 
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "one",
+                "  leading and trailing  ",
+                "?! ... ---",
+                "\u3000ideographic\u3000space\u3000parts",
+                "tab\tand\nnewline",
+                "64",
+                "65",
+                "65 punctuation",
+                "64 with surrounding whitespace"
+            })
+    void thePartLimitCheckAgreesWithCompilation(String text) {
+        String query =
+                switch (text) {
+                    case "64" -> "w ".repeat(64);
+                    case "65" -> "w ".repeat(65);
+                    case "65 punctuation" -> "? ".repeat(65);
+                    case "64 with surrounding whitespace" -> "  " + "w  ".repeat(64) + "\t";
+                    default -> text;
+                };
+        SearchRequest request = new SearchRequest(query);
+        boolean refused;
+
+        try {
+            compiler.compile(request);
+            refused = false;
+        } catch (IllegalArgumentException tooManyParts) {
+            refused = true;
+        }
+
+        assertEquals(refused, compiler.exceedsPartLimit(request), text);
+    }
+
     @Test
     void combinesWordsAsIndependentLiteralPhrases() {
         assertExpression("authentication middleware", "\"authentication\" AND \"middleware\"");

@@ -142,7 +142,8 @@ class PackagedCliLifecycleIT {
         assertTrue(changedPreview.out().contains("1 file(s) would be indexed:\n  docs/calendar.txt\n"));
         // Preview and query must leave the old chunks intact until a real index run.
         assertEquals(original.out(), assertCalendarQuery(docs, large).out());
-        assertIndexSummary(cli.run(project, "index"), database, 1, 1, 4);
+        // Only the chunk settings changed, so the file is counted as rechunked.
+        assertIndexSummary(cli.run(project, "index"), database, 1, 1, 1, 0, 4);
         Result smaller = assertCalendarQuery(docs, small);
         Result july = cli.runReadOnly(project, "query", "july", "--root", docs.toString());
         assertEquals(List.of("docs/calendar.txt:7-9"), hitLocations(july));
@@ -150,7 +151,7 @@ class PackagedCliLifecycleIT {
         assertEquals(smaller.out(), assertCalendarQuery(docs, small).out());
 
         writeCalendarConfig(26, 1);
-        assertIndexSummary(cli.run(project, "index"), database, 1, 1, 2);
+        assertIndexSummary(cli.run(project, "index"), database, 1, 1, 1, 0, 2);
         Result larger = assertCalendarQuery(docs, large);
         assertEquals(
                 List.of("docs/calendar.txt:7-12"),

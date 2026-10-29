@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -16,13 +18,17 @@ import java.net.ServerSocket;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -110,6 +116,44 @@ class ModelCacheTest {
         assertEquals(ModelOutcome.Status.DOWNLOADED, outcome.status());
         assertArrayEquals(PAYLOAD, Files.readAllBytes(file));
         assertEquals(2, requests.get());
+    }
+
+    @Test
+    void findingReturnsOnlyAVerifiedCachedFileAndNeverDownloadsOrWrites() throws Exception {
+        assertEquals(Optional.empty(), cache().find());
+        assertFalse(Files.exists(cacheRoot.resolve("models")), "Finding must not create the cache");
+
+        Path file = cache().ensure().file();
+        assertEquals(Optional.of(new ModelOutcome(ModelOutcome.Status.CACHED, model, file)), cache().find());
+
+        byte[] damaged = PAYLOAD.clone();
+        damaged[0] ^= 1;
+        Files.write(file, damaged);
+        List<String> before = entries();
+
+        assertEquals(Optional.empty(), cache().find());
+        Files.write(file, Arrays.copyOf(PAYLOAD, PAYLOAD.length - 1));
+        assertEquals(Optional.empty(), cache().find());
+        assertEquals(before, entries());
+        assertEquals(1, requests.get());
+    }
+
+    @Test
+    void findingFailsWhenTheCachedModelCannotBeRead() throws Exception {
+        Path file = cache().ensure().file();
+        assumeTrue(Files.getFileStore(file).supportsFileAttributeView(PosixFileAttributeView.class));
+        Files.setPosixFilePermissions(file, Set.of());
+
+        try {
+            assumeFalse(Files.isReadable(file), "The permission change has no effect for this user");
+
+            ModelException failure = assertThrows(ModelException.class, () -> cache().find());
+
+            assertEquals(ModelException.Reason.CACHE_UNAVAILABLE, failure.reason());
+        } finally {
+            Files.setPosixFilePermissions(
+                    file, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        }
     }
 
     @Test

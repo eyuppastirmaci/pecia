@@ -11,37 +11,45 @@ final class RuntimePlatform {
     private RuntimePlatform() {}
 
     /**
-     * Returns the resource path of the runtime's native library for a platform, detecting the operating system and
-     * architecture as ONNX Runtime does, or nothing for a platform it does not recognize.
+     * Returns the platform's name as ONNX Runtime names its native directories, such as {@code osx-aarch64}, detecting
+     * the operating system and architecture as ONNX Runtime does, or nothing for a platform it does not recognize.
      */
-    static Optional<String> nativeLibrary(String osName, String osArch) {
+    static Optional<String> platform(String osName, String osArch) {
         String os = osName.toLowerCase(Locale.ENGLISH);
         String arch = osArch.toLowerCase(Locale.ENGLISH);
-        String directory;
-        String library;
+        String system;
 
         if (os.contains("mac") || os.contains("darwin")) {
-            directory = "osx";
-            library = "libonnxruntime.dylib";
+            system = "osx";
         } else if (os.contains("win")) {
-            directory = "win";
-            library = "onnxruntime.dll";
+            system = "win";
         } else if (os.contains("nux")) {
-            directory = "linux";
-            library = "libonnxruntime.so";
+            system = "linux";
         } else {
             return Optional.empty();
         }
 
         if (arch.startsWith("amd64") || arch.startsWith("x86_64")) {
-            directory += "-x64";
+            return Optional.of(system + "-x64");
         } else if (arch.startsWith("aarch64")) {
-            directory += "-aarch64";
-        } else {
-            return Optional.empty();
+            return Optional.of(system + "-aarch64");
         }
 
-        return Optional.of("ai/onnxruntime/native/" + directory + "/" + library);
+        return Optional.empty();
+    }
+
+    /** Returns the resource path of the runtime's native library for a platform it recognizes. */
+    static Optional<String> nativeLibrary(String osName, String osArch) {
+        return platform(osName, osArch).map(platform -> {
+            String library =
+                    switch (platform.substring(0, platform.indexOf('-'))) {
+                        case "osx" -> "libonnxruntime.dylib";
+                        case "win" -> "onnxruntime.dll";
+                        default -> "libonnxruntime.so";
+                    };
+
+            return "ai/onnxruntime/native/" + platform + "/" + library;
+        });
     }
 
     /** Returns whether the runtime on the classpath carries its native library for the platform. */

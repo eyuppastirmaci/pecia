@@ -13,12 +13,14 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfig;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
+import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.index.IndexException;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
 import dev.eyuppastirmaci.pecia.search.QueryException;
+import dev.eyuppastirmaci.pecia.search.QueryOptions;
 import dev.eyuppastirmaci.pecia.search.QueryService;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
@@ -205,10 +207,14 @@ class HostileInputCorpusTest {
         Path root = project();
 
         if (queryCase.message() != null) {
-            // Without an index, a validation failure proves the query was rejected before the index was opened.
+            // Without an index, a validation failure proves the query was rejected before the index was opened. Only
+            // lexical search refuses the recorded queries; auto decides its mode after opening the index.
             IllegalArgumentException failure = assertThrows(
                     IllegalArgumentException.class,
-                    () -> queryService.search(root, new SearchRequest(queryCase.query(), queryCase.limit())));
+                    () -> queryService.query(
+                            root,
+                            new SearchRequest(queryCase.query(), queryCase.limit()),
+                            QueryOptions.mode(SearchMode.LEXICAL)));
             assertTrue(failure.getMessage().contains(queryCase.message()), failure.getMessage());
             return;
         }
