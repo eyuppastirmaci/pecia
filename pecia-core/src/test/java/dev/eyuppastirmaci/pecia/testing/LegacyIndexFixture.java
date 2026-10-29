@@ -32,6 +32,9 @@ public final class LegacyIndexFixture {
     /** The schema versions that have committed fixtures, oldest first. */
     public static final int[] VERSIONS = {1, 2, 3, 4};
 
+    /** The schema version current code writes, which may be newer than the newest fixture. */
+    public static final int CURRENT_VERSION = 5;
+
     private static final String RESOURCE_DIRECTORY = "/storage/legacy/";
 
     private LegacyIndexFixture() {}
@@ -94,11 +97,9 @@ public final class LegacyIndexFixture {
                                         .toUri()
                                         .toASCIIString()
                                 + "'");
-            case FUTURE_SCHEMA -> execute(database, "PRAGMA user_version = " + (VERSIONS[VERSIONS.length - 1] + 1));
+            case FUTURE_SCHEMA -> execute(database, "PRAGMA user_version = " + (CURRENT_VERSION + 1));
             case FORMAT_MISMATCH ->
-                execute(
-                        database,
-                        "UPDATE index_metadata SET index_format_version = " + (VERSIONS[VERSIONS.length - 1] + 1));
+                execute(database, "UPDATE index_metadata SET index_format_version = " + (CURRENT_VERSION + 1));
         }
 
         return database;

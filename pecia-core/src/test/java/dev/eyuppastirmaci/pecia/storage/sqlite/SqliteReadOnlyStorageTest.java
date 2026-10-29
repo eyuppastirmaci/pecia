@@ -105,7 +105,7 @@ class SqliteReadOnlyStorageTest {
                     storage.lexicalSearch()
                             .search(new SearchRequest("JWT_SECRET"))
                             .size());
-            assertEquals(4, scalar(connection, "PRAGMA user_version"));
+            assertEquals(5, scalar(connection, "PRAGMA user_version"));
         }
 
         assertArrayEquals(before, Files.readAllBytes(database));
@@ -199,7 +199,7 @@ class SqliteReadOnlyStorageTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {0, 5, 99})
+    @ValueSource(ints = {0, 6, 99})
     void rejectsUnsupportedSchemaVersionsWithoutAdoptingOrChangingThem(int version) throws Exception {
         Path database = root.resolve("index.db");
 

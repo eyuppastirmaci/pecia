@@ -311,8 +311,8 @@ class SqliteFtsMigrationTest {
     }
 
     private static void assertCurrentVersion(Connection connection) throws SQLException {
-        assertEquals(4, scalar(connection, "PRAGMA user_version"));
-        assertEquals(4, scalar(connection, "SELECT index_format_version FROM index_metadata"));
+        assertEquals(5, scalar(connection, "PRAGMA user_version"));
+        assertEquals(5, scalar(connection, "SELECT index_format_version FROM index_metadata"));
         assertEquals(1, scalar(connection, "PRAGMA foreign_keys"));
     }
 

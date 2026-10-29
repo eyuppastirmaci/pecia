@@ -160,12 +160,12 @@ final class ConsumerChecks {
             execute(connection, "INSERT INTO chunks_fts(chunks_fts) VALUES ('integrity-check')");
             try (var statement = connection.createStatement();
                     var result = statement.executeQuery("PRAGMA user_version")) {
-                check(result.next() && result.getInt(1) == 4, "Packaged storage must use schema version 4");
+                check(result.next() && result.getInt(1) == 5, "Packaged storage must use schema version 5");
             }
             try (var statement = connection.createStatement();
                     var result = statement.executeQuery(
                             "SELECT index_format_version FROM index_metadata WHERE singleton = 1")) {
-                check(result.next() && result.getInt(1) == 4, "Packaged storage must use index format 4");
+                check(result.next() && result.getInt(1) == 5, "Packaged storage must use index format 5");
             }
         }
     }

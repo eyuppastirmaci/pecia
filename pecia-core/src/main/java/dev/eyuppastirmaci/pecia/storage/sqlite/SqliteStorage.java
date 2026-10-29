@@ -11,6 +11,7 @@ import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.index.IndexDecision;
 import dev.eyuppastirmaci.pecia.index.IndexingProfile;
 import dev.eyuppastirmaci.pecia.search.LexicalSearch;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.storage.model.StoredChunk;
 import dev.eyuppastirmaci.pecia.storage.model.StoredFile;
 import java.io.IOException;
@@ -327,7 +328,47 @@ public final class SqliteStorage implements AutoCloseable {
     public StoredFile replaceFile(Document document, List<Chunk> chunks, ChunkingIdentity identity)
             throws SQLException {
         Objects.requireNonNull(identity, "identity");
+
+        return replaceIdentified(document, validateChunks(document, chunks), identity, null, List.of());
+    }
+
+    /**
+     * Atomically replaces a file like {@link #replaceFile(Document, List, ChunkingIdentity)} and stores one embedding
+     * per chunk under the given profile, in the same transaction, so the file's chunks never appear without their
+     * vectors. The profile's stored row is reused when its fingerprint is already present.
+     *
+     * @param profile how the vectors were made
+     * @param vectors one vector per chunk, in chunk order, each with the profile's dimensions and only finite values
+     * @return the saved manifest entry, preserving an existing file ID
+     * @throws SQLException if persistence fails, with previous content, identities, and vectors restored when
+     *     rollback succeeds; an outer transaction remains caller-owned
+     * @throws IllegalArgumentException if chunks do not match the document or storage contract, or the vectors do not
+     *     match the chunks and profile
+     * @throws NullPointerException if any argument, chunk, or vector is null
+     */
+    public StoredFile replaceFile(
+            Document document,
+            List<Chunk> chunks,
+            ChunkingIdentity identity,
+            EmbeddingProfile profile,
+            List<float[]> vectors)
+            throws SQLException {
+        Objects.requireNonNull(identity, "identity");
+        Objects.requireNonNull(profile, "profile");
         List<Chunk> replacement = validateChunks(document, chunks);
+
+        return replaceIdentified(
+                document, replacement, identity, profile, validateVectors(replacement, profile, vectors));
+    }
+
+    /** Writes chunks, IDs, optional vectors, and finally the chunking profile; {@code profile} is null without vectors. */
+    private StoredFile replaceIdentified(
+            Document document,
+            List<Chunk> replacement,
+            ChunkingIdentity identity,
+            EmbeddingProfile profile,
+            List<float[]> vectors)
+            throws SQLException {
         ChunkIdGenerator generator = new ChunkIdGenerator(identity);
 
         // Empty files still need a path that can participate in deterministic identities.
@@ -340,6 +381,12 @@ public final class SqliteStorage implements AutoCloseable {
         return inScope(() -> {
             SavedReplacement saved = saveReplacement(document, replacement);
             chunks().saveIdentities(saved.chunks(), chunkIds);
+
+            if (profile != null) {
+                SqliteEmbeddingRepository embeddings = new SqliteEmbeddingRepository(connection);
+                embeddings.saveVectors(saved.chunks(), embeddings.profileId(profile), vectors);
+            }
+
             files().saveChunkingIdentity(saved.file().id(), identity);
 
             return saved.file();
@@ -403,6 +450,30 @@ public final class SqliteStorage implements AutoCloseable {
         }
 
         return replacement;
+    }
+
+    private static List<float[]> validateVectors(List<Chunk> chunks, EmbeddingProfile profile, List<float[]> vectors) {
+        List<float[]> embeddings = List.copyOf(vectors);
+
+        if (embeddings.size() != chunks.size()) {
+            throw new IllegalArgumentException(
+                    "Expected one vector per chunk: " + chunks.size() + " chunks, " + embeddings.size() + " vectors");
+        }
+
+        for (float[] vector : embeddings) {
+            if (vector.length != profile.dimensions()) {
+                throw new IllegalArgumentException(
+                        "Vectors must have " + profile.dimensions() + " dimensions, not " + vector.length);
+            }
+
+            for (float value : vector) {
+                if (!Float.isFinite(value)) {
+                    throw new IllegalArgumentException("Vectors must hold only finite values");
+                }
+            }
+        }
+
+        return embeddings;
     }
 
     private SavedReplacement saveReplacement(Document document, List<Chunk> replacement) throws SQLException {

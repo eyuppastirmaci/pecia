@@ -8,12 +8,15 @@ import dev.eyuppastirmaci.pecia.storage.sqlite.SqlitePath;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,10 +24,11 @@ import org.sqlite.JDBC;
 import org.sqlite.SQLiteConfig;
 
 /**
- * A canonical snapshot of a lexical index, comparable between indexes built under different project roots.
+ * A canonical snapshot of an index, comparable between indexes built under different project roots.
  *
  * <p>The dump excludes surrogate keys ({@code files.id}, {@code chunks.id}), FTS rowids, and the absolute project
- * root, so two indexes are equal exactly when their manifest, chunks, FTS rows, and ranked results agree. FTS rows
+ * root, so two indexes are equal exactly when their manifest, chunks, FTS rows, embeddings, and ranked results
+ * agree. FTS rows
  * are keyed by their chunk's path and position, which also covers chunks without a stable ID. It depends only on
  * the JDK, the SQLite driver, and public core APIs, so isolated packaged-core consumers can use it as well.
  */
@@ -33,12 +37,14 @@ public record IndexDump(
         List<FileEntry> files,
         List<ChunkEntry> chunks,
         List<FtsEntry> ftsRows,
+        List<EmbeddingEntry> embeddings,
         List<QueryEntry> queries) {
 
     public IndexDump {
         files = List.copyOf(files);
         chunks = List.copyOf(chunks);
         ftsRows = List.copyOf(ftsRows);
+        embeddings = List.copyOf(embeddings);
         queries = List.copyOf(queries);
     }
 
@@ -53,7 +59,12 @@ public record IndexDump(
         try (Connection connection = openReadOnly(database)) {
             connection.setAutoCommit(false);
             stored = new IndexDump(
-                    formatVersion(connection), files(connection), chunks(connection), ftsRows(connection), List.of());
+                    formatVersion(connection),
+                    files(connection),
+                    chunks(connection),
+                    ftsRows(connection),
+                    embeddings(connection),
+                    List.of());
             connection.rollback();
         }
 
@@ -72,7 +83,13 @@ public record IndexDump(
             }
         }
 
-        return new IndexDump(stored.formatVersion(), stored.files(), stored.chunks(), stored.ftsRows(), results);
+        return new IndexDump(
+                stored.formatVersion(),
+                stored.files(),
+                stored.chunks(),
+                stored.ftsRows(),
+                stored.embeddings(),
+                results);
     }
 
     /**
@@ -84,6 +101,7 @@ public record IndexDump(
         files.forEach(file -> appendLine(text, "file", file));
         chunks.forEach(chunk -> appendLine(text, "chunk", chunk));
         ftsRows.forEach(row -> appendLine(text, "fts", row));
+        embeddings.forEach(embedding -> appendLine(text, "embedding", embedding));
 
         for (QueryEntry query : queries) {
             appendLine(text, "query", query.query());
@@ -230,6 +248,47 @@ public record IndexDump(
         return rows;
     }
 
+    /** Reads vectors, keyed by chunk path and position; indexes from before embeddings have none. */
+    private static List<EmbeddingEntry> embeddings(Connection connection) throws SQLException {
+        List<EmbeddingEntry> embeddings = new ArrayList<>();
+
+        try (var statement = connection.createStatement()) {
+            try (var table = statement.executeQuery(
+                    "SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'chunk_embeddings'")) {
+                if (!table.next() || table.getInt(1) == 0) {
+                    return embeddings;
+                }
+            }
+
+            try (var result = statement.executeQuery("""
+                    SELECT f.source_path, c.chunk_index, p.fingerprint, e.vector
+                    FROM chunk_embeddings e
+                    JOIN chunks c ON c.id = e.chunk_id
+                    JOIN files f ON f.id = c.file_id
+                    JOIN embedding_profiles p ON p.id = e.profile_id
+                    ORDER BY f.source_path, c.chunk_index
+                    """)) {
+                while (result.next()) {
+                    embeddings.add(new EmbeddingEntry(
+                            result.getString(1),
+                            result.getInt(2),
+                            result.getString(3),
+                            HexFormat.of().formatHex(sha256(result.getBytes(4)))));
+                }
+            }
+        }
+
+        return embeddings;
+    }
+
+    private static byte[] sha256(byte[] bytes) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(bytes);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable in this Java runtime", impossible);
+        }
+    }
+
     private static Integer nullableInt(ResultSet result, int column) throws SQLException {
         int value = result.getInt(column);
         return result.wasNull() ? null : value;
@@ -282,6 +341,14 @@ public record IndexDump(
      * @param sourcePath the path indexed in the FTS {@code source_path} column
      */
     public record FtsEntry(String chunkPath, Integer chunkIndex, String content, String headings, String sourcePath) {}
+
+    /**
+     * A stored vector located by its chunk.
+     *
+     * @param profileFingerprint the fingerprint of the profile the vector was made with
+     * @param vectorSha256 the SHA-256 of the vector's stored bytes
+     */
+    public record EmbeddingEntry(String sourcePath, int chunkIndex, String profileFingerprint, String vectorSha256) {}
 
     /** Ranked results for one query, in rank order. */
     public record QueryEntry(String query, List<HitEntry> hits) {

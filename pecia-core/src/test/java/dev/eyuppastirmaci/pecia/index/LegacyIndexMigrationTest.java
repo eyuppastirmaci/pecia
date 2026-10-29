@@ -33,12 +33,15 @@ import org.sqlite.JDBC;
 import org.sqlite.SQLiteConfig;
 
 /**
- * Migrates working copies of indexes written by the code of each earlier schema version. Version 4, the current
- * schema, needs no migration; reindexing rewrites it only when it was written with another tokenizer algorithm.
+ * Migrates working copies of indexes written by the code of each earlier schema version. Fixtures from version 4 on
+ * already store chunk identities, so reindexing rewrites them only when they were written with another tokenizer
+ * algorithm.
  */
 class LegacyIndexMigrationTest {
 
-    private static final int CURRENT_VERSION = 4;
+    private static final int CURRENT_VERSION = LegacyIndexFixture.CURRENT_VERSION;
+    // The first schema version that stores deterministic chunk identities.
+    private static final int IDENTITY_VERSION = 4;
     // The source rows a migration must carry over unchanged, keyed by table in primary-key order.
     private static final List<String> PRESERVED_ROWS = List.of(
             "SELECT id, source_path, document_type, content_hash FROM files ORDER BY id",
@@ -60,13 +63,10 @@ class LegacyIndexMigrationTest {
         Path database = LegacyIndexFixture.install(version, root);
         byte[] before = Files.readAllBytes(database);
 
-        if (version < CURRENT_VERSION) {
-            QueryException failure =
-                    assertThrows(QueryException.class, () -> queryService.search(root, new SearchRequest("payment")));
-            assertEquals(QueryException.Reason.MIGRATION_REQUIRED, failure.reason());
-        } else {
-            assertFalse(queryService.search(root, new SearchRequest("payment")).isEmpty());
-        }
+        // Every fixture is older than the current schema.
+        QueryException failure =
+                assertThrows(QueryException.class, () -> queryService.search(root, new SearchRequest("payment")));
+        assertEquals(QueryException.Reason.MIGRATION_REQUIRED, failure.reason());
 
         assertArrayEquals(before, Files.readAllBytes(database));
     }
@@ -92,10 +92,13 @@ class LegacyIndexMigrationTest {
                 rows(database, "SELECT id, content FROM chunks ORDER BY id"),
                 rows(database, "SELECT rowid, content FROM chunks_fts ORDER BY rowid"),
                 "Full-text rows must mirror the chunks after migration");
-        // Migrated legacy chunks have no identities until reindexing; the current schema already stores them.
+        // Chunks migrated from before identities have none until reindexing; later fixtures already store them.
         assertEquals(
-                version < CURRENT_VERSION ? 0 : count(database, "SELECT count(*) FROM chunks"),
+                version < IDENTITY_VERSION ? 0 : count(database, "SELECT count(*) FROM chunks"),
                 count(database, "SELECT count(*) FROM chunk_identities"));
+        // Every fixture predates embeddings, so migrated indexes start without vectors.
+        assertEquals(0, count(database, "SELECT count(*) FROM embedding_profiles"));
+        assertEquals(0, count(database, "SELECT count(*) FROM chunk_embeddings"));
     }
 
     @ParameterizedTest(name = "schema v{0}")
@@ -110,7 +113,7 @@ class LegacyIndexMigrationTest {
 
             assertFalse(hits.isEmpty(), query);
             assertTrue(
-                    hits.stream().allMatch(hit -> hit.stableId().isPresent() == (version == CURRENT_VERSION)),
+                    hits.stream().allMatch(hit -> hit.stableId().isPresent() == (version >= IDENTITY_VERSION)),
                     "Stable IDs for '" + query + "'");
         }
     }
@@ -121,7 +124,7 @@ class LegacyIndexMigrationTest {
         Path root = Files.createDirectory(sandbox.resolve("project")).toRealPath();
         Path database = LegacyIndexFixture.install(version, root);
         SqliteStorage.open(database, root).close();
-        boolean rewritten = version < CURRENT_VERSION || !usesCurrentTokenizer(database);
+        boolean rewritten = version < IDENTITY_VERSION || !usesCurrentTokenizer(database);
         IndexWriteObserver observer = IndexWriteObserver.start(database);
 
         IndexResult result = indexService.index(root);
