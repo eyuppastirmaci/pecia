@@ -47,10 +47,12 @@ class PackagedCliContractIT {
 
         assertSuccess(result);
         assertEquals("""
-            Usage: pecia [-hV] [COMMAND]
+            Usage: pecia [-hV] [--color=<when>] [COMMAND]
             Indexes documents and source code for offline lexical and semantic search.
-              -h, --help      Show this help message and exit.
-              -V, --version   Print version information and exit.
+                  --color=<when>   When to use colour: auto, always, never (default: auto,
+                                     on terminals that show colour unless NO_COLOR is set).
+              -h, --help           Show this help message and exit.
+              -V, --version        Print version information and exit.
             Commands:
               init   Writes a .pecia.toml config file at the project root.
               index  Builds a local index from a folder of text files, with embeddings when

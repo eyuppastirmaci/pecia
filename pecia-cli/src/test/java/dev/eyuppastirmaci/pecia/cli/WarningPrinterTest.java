@@ -30,7 +30,7 @@ class WarningPrinterTest {
         Warning second = new Warning(Warning.Code.UNKNOWN_CONFIG_KEY, SOURCE, new Warning.Position(3, 1), "second");
 
         try (PrintWriter writer = new PrintWriter(err)) {
-            WarningPrinter.print(writer, List.of(first, second));
+            WarningPrinter.print(new Diagnostics(writer, Terminal.PLAIN, "pecia test"), List.of(first, second));
         }
 
         assertEquals(

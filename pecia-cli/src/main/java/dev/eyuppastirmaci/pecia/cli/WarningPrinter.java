@@ -1,7 +1,6 @@
 package dev.eyuppastirmaci.pecia.cli;
 
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
-import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,20 +12,25 @@ final class WarningPrinter {
     private WarningPrinter() {}
 
     /** Prints each warning on its own line, in the order given. */
-    static void print(PrintWriter err, List<Warning> warnings) {
+    static void print(Diagnostics diagnostics, List<Warning> warnings) {
         for (Warning warning : warnings) {
-            err.println(format(warning));
+            diagnostics.warning(describe(warning));
         }
     }
 
-    /** Formats one warning, omitting the line and column when the warning has no position. */
+    /** Formats one warning as an uncoloured line. */
     static String format(Warning warning) {
+        return "warning: " + describe(warning);
+    }
+
+    /** Describes one warning without its label, omitting the line and column when the warning has no position. */
+    private static String describe(Warning warning) {
         Warning.Position position = warning.position();
         String location = position == null
                 ? warning.source().toString()
                 : warning.source() + ":" + position.line() + ":" + position.column();
 
-        return "warning: " + location + ": " + warning.message();
+        return location + ": " + warning.message();
     }
 
     /** Describes each warning as a JSON object; {@code line} and {@code column} are null without a position. */
