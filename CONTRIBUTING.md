@@ -48,4 +48,6 @@ A hanging test fails after five minutes with a thread dump in its XML report.
 
 ## Releases
 
-Pushing a version tag such as `v0.2.0` runs the release workflow: it builds and checks the four platform packages, publishes the GitHub Release with their checksums, and updates the Homebrew tap and the Scoop bucket. A tag with a suffix, such as `v0.2.0-rc.1`, publishes a pre-release.
+Pushing a version tag such as `v0.2.0` runs the release workflow. It builds and checks the four platform packages, publishes the GitHub Release with their checksums, updates the Homebrew tap and the Scoop bucket, and then installs the release from both on fresh runners. Written notes in `docs/releases/<tag>.md`, when present, open the release description.
+
+A tag with a suffix, such as `v0.2.0-rc.1`, publishes a pre-release. Pre-releases never reach the tap or the bucket; the install check uses the rendered formula and manifest instead. The Channels workflow can also be run by hand to check the published channels.
