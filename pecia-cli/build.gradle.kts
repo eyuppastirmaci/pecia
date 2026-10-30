@@ -225,6 +225,72 @@ val windowsAppImage = tasks.register<Exec>("windowsAppImage") {
             "--dest", output.get().asFile.absolutePath,
         )
     })
+    // jpackage's launcher converts the command line to the ANSI code page, which loses characters such as İ or 漢.
+    // A UTF-8 process code page in its manifest makes that conversion lossless; mt.exe ships with the Windows SDK.
+    val utf8Manifest = layout.projectDirectory.file("src/package/windows/utf8.manifest")
+    inputs.file(utf8Manifest)
+    doLast {
+        val launcher = output.get().file("pecia/pecia.exe").asFile
+        val mt = File("C:/Program Files (x86)/Windows Kits/10/bin").listFiles().orEmpty()
+            .map { it.resolve("x64/mt.exe") }
+            .filter { it.isFile }
+            .maxByOrNull { it.parentFile.parentFile.name }
+            ?: error("mt.exe from the Windows SDK was not found")
+        val resource = "-inputresource:${launcher.absolutePath};#1"
+        val extracted = temporaryDir.resolve("launcher.manifest").apply { delete() }
+        val combined = temporaryDir.resolve("combined.manifest")
+        val embedded = temporaryDir.resolve("embedded.manifest").apply { delete() }
+
+        fun mt(vararg arguments: String): Pair<Int, String> {
+            val process = ProcessBuilder(mt.absolutePath, "-nologo", *arguments).redirectErrorStream(true).start()
+            val printed = process.inputStream.bufferedReader().readText()
+            return process.waitFor() to printed
+        }
+
+        // Add the code page to the launcher's own manifest instead of merging two, which mt.exe rejects when both
+        // declare windowsSettings.
+        val setting = "<activeCodePage xmlns=\"http://schemas.microsoft.com/SMI/2019/WindowsSettings\">" +
+            "UTF-8</activeCodePage>"
+        val (extractStatus, _) = mt(resource, "-out:${extracted.absolutePath}")
+        val original = if (extractStatus == 0 && extracted.isFile) extracted.readText() else ""
+        // jpackage writes the element with a namespace prefix (asmv3:windowsSettings), so match either spelling.
+        val settingsEnd = Regex("</(\\w+:)?windowsSettings>").find(original)
+        combined.writeText(
+            when {
+                settingsEnd != null -> original.replaceRange(settingsEnd.range, setting + settingsEnd.value)
+                original.contains("</assembly>") -> original.replace(
+                    "</assembly>",
+                    "<application xmlns=\"urn:schemas-microsoft-com:asm.v3\"><windowsSettings>$setting" +
+                        "</windowsSettings></application></assembly>",
+                )
+                else -> utf8Manifest.asFile.readText()
+            }
+        )
+        logger.lifecycle("Launcher manifest:\n${combined.readText()}")
+
+        // jpackage copies the launcher read-only from the JDK, and antivirus scanning may hold a new executable for a
+        // moment, so make it writable and retry while access is denied.
+        check(launcher.setWritable(true)) { "Could not make $launcher writable" }
+        var (embedStatus, embedOutput) = 1 to ""
+
+        for (attempt in 1..10) {
+            val result = mt("-manifest", combined.absolutePath, "-outputresource:${launcher.absolutePath};#1")
+            embedStatus = result.first
+            embedOutput = result.second
+
+            if (embedStatus == 0 || !embedOutput.contains("Access is denied")) {
+                break
+            }
+
+            Thread.sleep(500)
+        }
+
+        check(embedStatus == 0) { "mt.exe could not embed the manifest into $launcher:\n$embedOutput" }
+        val (checkStatus, checkOutput) = mt(resource, "-out:${embedded.absolutePath}")
+        check(checkStatus == 0 && embedded.readText().contains("UTF-8</activeCodePage>")) {
+            "The launcher's manifest has no UTF-8 code page after embedding:\n$checkOutput"
+        }
+    }
 }
 
 val packageImage = tasks.register<Sync>("packageImage") {

@@ -222,6 +222,11 @@ class PlatformPackageIT {
             environment.remove(variable);
         }
 
+        // Git Bash's variables make picocli colour even redirected output on Windows; run as cmd and PowerShell do.
+        for (String variable : List.of("TERM", "OSTYPE", "MSYSTEM")) {
+            environment.remove(variable);
+        }
+
         Map<String, String> copy = new HashMap<>(environment);
         String pathKey = copy.keySet().stream()
                 .filter(key -> key.equalsIgnoreCase("PATH"))
