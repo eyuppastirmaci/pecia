@@ -1,5 +1,5 @@
 [versions]
-junit = "5.11.4"
+junit = "5.14.4"
 # 1.9.2 is the newest jqwik release built against JUnit Platform 1.11.
 jqwik = "1.9.2"
 palantir-java-format = "2.98.0"
