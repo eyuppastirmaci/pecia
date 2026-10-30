@@ -22,10 +22,12 @@ dependencies {
 
 // Reference checks need the real model in the cache that PECIA_CACHE_DIR names, so only referenceTest runs them.
 val referenceTag = "reference"
+// Performance measurements take minutes and assert nothing about time, so only performanceTest runs them.
+val performanceTag = "performance"
 
 tasks.named<Test>("test") {
     useJUnitPlatform {
-        excludeTags(referenceTag)
+        excludeTags(referenceTag, performanceTag)
     }
 }
 
@@ -42,6 +44,30 @@ tasks.register<Test>("referenceTest") {
     // from this build or from the build cache.
     outputs.upToDateWhen { false }
     outputs.doNotCacheIf("The model lives outside the build") { true }
+}
+
+tasks.register<Test>("performanceTest") {
+    description = "Measures indexing and query performance on a synthetic corpus and writes a report; never a gate."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags(performanceTag)
+    }
+    // One JVM, so no other test competes for the processors being measured.
+    maxParallelForks = 1
+    // -Ppecia.performance.files=N and -Ppecia.performance.semanticFiles=N change the corpus sizes.
+    listOf("pecia.performance.files", "pecia.performance.semanticFiles").forEach { name ->
+        providers.gradleProperty(name).orNull?.let { systemProperty(name, it) }
+    }
+    systemProperty("junit.jupiter.execution.timeout.default", "30 m")
+    val reports = layout.buildDirectory.dir("reports/performance")
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dpecia.performance.reports=${reports.get().asFile.absolutePath}")
+    })
+    // Timings change from run to run, so a previous result is never reused.
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("Timings change from run to run") { true }
 }
 
 // The retrieval-quality checks write a report per search mode beside Gradle's own test reports.
