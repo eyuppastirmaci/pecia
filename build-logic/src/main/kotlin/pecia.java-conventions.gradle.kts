@@ -8,7 +8,8 @@ plugins {
 }
 
 group = "dev.eyuppastirmaci"
-version = "0.1.0-SNAPSHOT"
+// Release builds pass the version from the tag (-Ppecia.version=0.1.0); everything else is a snapshot.
+version = providers.gradleProperty("pecia.version").getOrElse("0.1.0-SNAPSHOT")
 
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 

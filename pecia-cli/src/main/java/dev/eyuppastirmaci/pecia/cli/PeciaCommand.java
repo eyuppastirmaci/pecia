@@ -8,7 +8,7 @@ import picocli.CommandLine.Option;
 @Command(
         name = "pecia",
         description = "Indexes documents and source code for offline lexical and semantic search.",
-        version = "pecia 0.1.0-SNAPSHOT",
+        versionProvider = PeciaCommand.Version.class,
         mixinStandardHelpOptions = true,
         subcommands = {InitCommand.class, IndexCommand.class, QueryCommand.class})
 public class PeciaCommand implements Runnable {
@@ -31,5 +31,15 @@ public class PeciaCommand implements Runnable {
     @Override
     public void run() {
         spec.commandLine().usage(spec.commandLine().getOut());
+    }
+
+    /** Reads the version the build writes into the JAR's manifest; outside a JAR there is none to read. */
+    static final class Version implements CommandLine.IVersionProvider {
+
+        @Override
+        public String[] getVersion() {
+            String version = PeciaCommand.class.getPackage().getImplementationVersion();
+            return new String[] {"pecia " + (version == null ? "development" : version)};
+        }
     }
 }

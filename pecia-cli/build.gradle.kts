@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("pecia.java-conventions")
     alias(libs.plugins.shadow)
@@ -31,7 +33,7 @@ tasks.compileJava {
 tasks.shadowJar {
     archiveFileName = "pecia.jar"
     manifest {
-        attributes("Main-Class" to "dev.eyuppastirmaci.pecia.Bootstrap")
+        attributes("Main-Class" to "dev.eyuppastirmaci.pecia.Bootstrap", "Implementation-Version" to project.version)
     }
     // Drop dependency signature files; they no longer match once everything is merged into one JAR.
     exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.EC")
@@ -47,7 +49,9 @@ val cliJar = tasks.shadowJar.flatMap { it.archiveFile }
 
 tasks.named<Test>("integrationTest") {
     inputs.file(cliJar).withPropertyName("cliJar")
-    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dpecia.it.jar=${cliJar.get().asFile.absolutePath}") })
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dpecia.it.jar=${cliJar.get().asFile.absolutePath}", "-Dpecia.it.version=${project.version}")
+    })
     useJUnitPlatform {
         excludeTags(referenceTag)
     }
@@ -151,4 +155,109 @@ val runtimeImage = tasks.register<Exec>("runtimeImage") {
             "--output", output.get().asFile.absolutePath,
         )
     })
+}
+
+val packageVersion = project.version.toString()
+val isWindowsPackage = packagePlatform.get().startsWith("win")
+val packageName = "pecia-$packageVersion-${packagePlatform.get()}"
+
+// Third-party licences travel inside the JAR; packages also show them beside it.
+val packageLicenses = tasks.register<Sync>("packageLicenses") {
+    from(zipTree(platformJar.flatMap { it.archiveFile })) {
+        include(
+            "META-INF/licenses/**",
+            "META-INF/maven/org.xerial/sqlite-jdbc/LICENSE",
+            "dev/eyuppastirmaci/pecia/semantic/sqlite-vec/NOTICE.txt",
+            "dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/LICENSE.txt",
+            "dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/NOTICE.txt",
+        )
+        eachFile {
+            name = when {
+                path.startsWith("META-INF/licenses/") -> name
+                path.contains("sqlite-jdbc") -> "sqlite-jdbc-LICENSE.txt"
+                path.contains("sqlite-vec") -> "sqlite-vec-NOTICE.txt"
+                else -> "all-MiniLM-L6-v2-$name"
+            }
+            path = name
+        }
+        includeEmptyDirs = false
+    }
+    into(layout.buildDirectory.dir("package/licenses"))
+}
+
+// On Windows, jpackage's launcher reads the wide command line, so arguments outside the ANSI code page survive.
+val windowsAppImage = tasks.register<Exec>("windowsAppImage") {
+    description = "Builds the Windows launcher and application layout with jpackage."
+    group = "distribution"
+    enabled = isWindowsPackage
+    dependsOn(platformJar, runtimeImage)
+    val jdk = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    val output = layout.buildDirectory.dir("package/jpackage")
+    outputs.dir(output)
+    doFirst {
+        delete(output)
+        executable = jdk.get().metadata.installationPath.file("bin/jpackage.exe").asFile.absolutePath
+    }
+    argumentProviders.add(CommandLineArgumentProvider {
+        listOf(
+            "--type", "app-image", "--name", "pecia", "--win-console",
+            // jpackage accepts only numeric versions, so a pre-release suffix stays in the JAR and the archive name.
+            "--app-version", packageVersion.substringBefore("-"),
+            "--input", platformJar.get().destinationDirectory.get().asFile.absolutePath,
+            "--main-jar", "pecia.jar",
+            "--main-class", "dev.eyuppastirmaci.pecia.Bootstrap",
+            "--runtime-image", layout.buildDirectory.dir("package/runtime").get().asFile.absolutePath,
+            "--java-options", "-Dpecia.command=pecia",
+            "--dest", output.get().asFile.absolutePath,
+        )
+    })
+}
+
+val packageImage = tasks.register<Sync>("packageImage") {
+    description = "Lays out the package for this platform: launcher, Java runtime, JAR, and licences."
+    group = "distribution"
+    into(layout.buildDirectory.dir("package/image/$packageName"))
+    // jlink writes its legal notices read-only, so a second sync could not overwrite them: start from nothing.
+    doFirst { delete(layout.buildDirectory.dir("package/image")) }
+    from(rootProject.file("LICENSE"))
+    from(packageLicenses) { into("licenses") }
+
+    if (isWindowsPackage) {
+        from(windowsAppImage.map { layout.buildDirectory.dir("package/jpackage/pecia") })
+    } else {
+        from(platformJar) { into("lib") }
+        from(runtimeImage) { into("runtime") }
+        // The launcher's source folder is not called bin, which .gitignore reserves for IDE build output.
+        from("src/package/launcher") {
+            into("bin")
+            filePermissions { unix("rwxr-xr-x") }
+        }
+    }
+}
+
+val packageArchive = if (isWindowsPackage) {
+    tasks.register<Zip>("packageArchive") { from(packageImage.map { it.destinationDir.parentFile }) }
+} else {
+    tasks.register<Tar>("packageArchive") {
+        from(packageImage.map { it.destinationDir.parentFile })
+        compression = Compression.GZIP
+        archiveExtension = "tar.gz"
+    }
+}
+
+packageArchive.configure {
+    description = "Archives the package for this platform and writes its SHA-256 beside it."
+    group = "distribution"
+    archiveFileName = packageName + if (isWindowsPackage) ".zip" else ".tar.gz"
+    destinationDirectory = layout.buildDirectory.dir("package/dist")
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    // Gradle normalises permissions by default; the launcher, java, and jspawnhelper must stay executable.
+    useFileSystemPermissions()
+    doLast {
+        val archive = archiveFile.get().asFile
+        val digest = MessageDigest.getInstance("SHA-256").digest(archive.readBytes())
+        archive.resolveSibling(archive.name + ".sha256")
+            .writeText(digest.joinToString("") { "%02x".format(it) } + "  " + archive.name + "\n")
+    }
 }

@@ -1,0 +1,19 @@
+#!/bin/sh
+# Starts Pecia with the Java runtime bundled in this package. Package managers and users may link this script from
+# another directory, so follow the links to find the package itself.
+set -e
+
+script=$0
+
+while [ -L "$script" ]; do
+    target=$(readlink "$script")
+
+    case $target in
+        /*) script=$target ;;
+        *) script=$(dirname "$script")/$target ;;
+    esac
+done
+
+home=$(cd "$(dirname "$script")/.." && pwd -P)
+
+exec "$home/runtime/bin/java" -Dpecia.command=pecia -jar "$home/lib/pecia.jar" "$@"
