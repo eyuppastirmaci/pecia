@@ -33,13 +33,30 @@ Pecia, bir klasördeki belgeleri ve kaynak kodunu aranabilir bir indekse dönü�
 - Paketlenmiş uygulamanın gerçek modelle uçtan uca testleri ve CI'da denetlenen arama kalitesi ölçümleri.
 - macOS, Linux ve Windows için Java çalışma zamanını içeren, Homebrew ya da Scoop ile kurulan paketler.
 
-### Planlananlar
+### v0.2.0 için planlananlar
 
 - Grafik arayüzlü bir masaüstü uygulaması.
+- Terminalde tıklanınca dosyayı açan, destekleyen editörlerde doğrudan bulunan satıra giden sonuç yolları.
+- Komutlar ve seçenekler için kabuk otomatik tamamlama.
+- Bir projenin indeksini özetleyen `pecia status` komutu: dosyalar, chunk'lar, embedding'ler, boyut ve son çalıştırma.
+- Aramayı belirli yollarla ya da dosya türleriyle sınırlayan sorgu filtreleri.
+- Her sonucun çevresinden birkaç satır bağlam.
+- Dosyaya göre gruplanmış sonuçlar; böylece tek bir dosyanın eşleşmeleri listeyi doldurmaz.
+
+### Daha sonra planlananlar
+
 - Kaynak kodunu satır ve girinti yerine fonksiyon ve sınıf sınırlarından bölen, dile duyarlı bölme.
 - JSON, YAML ve reStructuredText gibi daha fazla metin biçimine göre ayarlanmış bölme.
 - Daha fazla dosya türü: PDF, Word ve Excel belgeleri ve resimler.
 - Yapay zekâ agent'larının bir projeyi Pecia üzerinden arayabilmesi için bir MCP sunucusu.
+- Kelime biçimlerini eşleştirme; böylece `refunds` araması `refund` kelimesini de bulur.
+- `PaymentService` gibi kod adlarını arama için kelimelere ayırma.
+- Hiçbir sonuç yeterince iyi eşleşmediğinde bunu belirtme.
+- Dosyalar değiştikçe indeksi güncelleyen bir izleme modu.
+- Terminalde interaktif bir arama ekranı.
+- Türkçe ve diğer dillerde anlamdan aramayı iyileştiren, isteğe bağlı çok dilli bir model.
+- Verilen bir dosyaya en çok benzeyen belgeleri bulma.
+- Herkese açık arama kıyaslamalarında (BEIR, MTEB, CodeSearchNet ve CoIR) alınan sonuçların, referans değerlerinin yanında yayımlanması.
 
 ## Kurulum
 
