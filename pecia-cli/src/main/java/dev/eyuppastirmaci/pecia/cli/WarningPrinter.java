@@ -2,9 +2,12 @@ package dev.eyuppastirmaci.pecia.cli;
 
 import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.List;
 
-/** Prints core warnings as compiler-style lines: {@code warning: <path>:<line>:<column>: <message>}. */
+/**
+ * Shows core warnings as compiler-style lines, {@code warning: <path>:<line>:<column>: <message>}, or as JSON objects.
+ */
 final class WarningPrinter {
 
     private WarningPrinter() {}
@@ -24,5 +27,22 @@ final class WarningPrinter {
                 : warning.source() + ":" + position.line() + ":" + position.column();
 
         return "warning: " + location + ": " + warning.message();
+    }
+
+    /** Describes each warning as a JSON object; {@code line} and {@code column} are null without a position. */
+    static List<Json.JsonObject> json(List<Warning> warnings) {
+        List<Json.JsonObject> objects = new ArrayList<>();
+
+        for (Warning warning : warnings) {
+            Warning.Position position = warning.position();
+            objects.add(new Json.JsonObject()
+                    .put("code", warning.code().name())
+                    .put("source", warning.source().toString())
+                    .put("line", position == null ? null : position.line())
+                    .put("column", position == null ? null : position.column())
+                    .put("message", warning.message()));
+        }
+
+        return objects;
     }
 }
