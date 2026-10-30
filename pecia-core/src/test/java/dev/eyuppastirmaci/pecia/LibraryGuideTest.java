@@ -46,11 +46,10 @@ class LibraryGuideTest {
 
     @Test
     void theGuideShowsExactlyTheTestedExample() throws IOException {
-        Matcher block = Pattern.compile("```java\\n(.*?)```", Pattern.DOTALL)
-                .matcher(Files.readString(GUIDE, StandardCharsets.UTF_8));
+        Matcher block = Pattern.compile("```java\\n(.*?)```", Pattern.DOTALL).matcher(read(GUIDE));
         assertTrue(block.find(), "No java block in " + GUIDE);
 
-        String source = Files.readString(THIS_SOURCE, StandardCharsets.UTF_8);
+        String source = read(THIS_SOURCE);
         // The last markers are the ones in the method; the first are these constants.
         String example = source.substring(source.lastIndexOf(START) + START.length(), source.lastIndexOf(END));
 
@@ -73,6 +72,11 @@ class LibraryGuideTest {
         // guide example end
 
         return found.hits();
+    }
+
+    /** Reads a file with LF line endings, as a Windows checkout may have converted them to CRLF. */
+    private static String read(Path file) throws IOException {
+        return Files.readString(file, StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 
     /** Removes the surrounding blank lines and the indentation all lines share, keeping nested indentation. */
