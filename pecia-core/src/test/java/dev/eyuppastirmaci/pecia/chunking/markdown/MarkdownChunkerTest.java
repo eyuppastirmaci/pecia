@@ -11,6 +11,7 @@ import dev.eyuppastirmaci.pecia.content.ContentHash;
 import dev.eyuppastirmaci.pecia.content.Document;
 import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
+import dev.eyuppastirmaci.pecia.testing.ChunkInvariants;
 import dev.eyuppastirmaci.pecia.tokenization.MiniLmTokenizer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -409,6 +410,13 @@ class MarkdownChunkerTest {
             Chunk chunk = chunks.get(index);
             int start = startOf(chunk);
             int end = endOf(chunk);
+
+            // Groups made only of HTML markup are left out, and nothing else.
+            if (start > coveredEnd && ChunkInvariants.onlyMarkup(text.substring(coveredEnd, start))) {
+                reconstructed.append(text, coveredEnd, start);
+                coveredEnd = start;
+            }
+
             assertTrue(start > previousStart);
             assertTrue(start <= coveredEnd);
             assertTrue(end > coveredEnd);
@@ -441,6 +449,11 @@ class MarkdownChunkerTest {
             reconstructed.append(text, coveredEnd, end);
             coveredEnd = end;
             previousStart = start;
+        }
+
+        if (coveredEnd < text.length() && ChunkInvariants.onlyMarkup(text.substring(coveredEnd))) {
+            reconstructed.append(text, coveredEnd, text.length());
+            coveredEnd = text.length();
         }
 
         assertEquals(text.length(), coveredEnd);

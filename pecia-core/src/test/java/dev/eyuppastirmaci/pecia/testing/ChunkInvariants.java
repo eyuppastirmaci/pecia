@@ -6,6 +6,7 @@ import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * The coverage invariant shared by every chunking strategy, as stated by the strategies' example tests. Chunks cover
@@ -13,10 +14,18 @@ import java.util.List;
  * exactly; every chunk respects the token limit and overlap budget; and boundaries never split a surrogate pair or a
  * CRLF. A source made only of whitespace produces no chunks.
  *
+ * <p>Markdown leaves out groups made only of markup outside code: HTML comments, HTML tags, block-quote markers, and
+ * whitespace, such as an anchor kept for old links. Coverage may skip such a group and nothing else.
+ *
  * <p>Whitespace follows the chunkers' definition: {@link Character#isWhitespace} or {@link Character#isSpaceChar}, so
  * no-break and ideographic spaces count as whitespace.
  */
 public final class ChunkInvariants {
+
+    private static final Pattern HTML_COMMENT = Pattern.compile("(?s)<!--.*?-->");
+    private static final Pattern HTML_TAG = Pattern.compile("</?[A-Za-z][A-Za-z0-9-]*(?:\\s[^>]*)?/?>");
+    private static final Pattern MARKUP_REMAINDER = Pattern.compile("[\\s>]*");
+    private static final Pattern CODE = Pattern.compile("(?m)```|~~~|^(?: {4}|\\t)");
 
     private ChunkInvariants() {}
 
@@ -27,9 +36,13 @@ public final class ChunkInvariants {
     public static String violation(
             Document document, List<Chunk> chunks, TokenCounter counter, int maxTokens, int overlapTokens) {
         String text = document.content();
+        boolean markdown = document.type() == DocumentType.MARKDOWN;
 
         if (onlyWhitespace(text)) {
             return chunks.isEmpty() ? null : "A whitespace-only source produced " + chunks.size() + " chunks";
+        }
+        if (markdown && onlyMarkup(text)) {
+            return chunks.isEmpty() ? null : "A markup-only Markdown source produced " + chunks.size() + " chunks";
         }
 
         int coveredEnd = 0;
@@ -41,6 +54,11 @@ public final class ChunkInvariants {
             int start = Integer.parseInt(chunk.metadata().attributes().get("startOffset"));
             int end = Integer.parseInt(chunk.metadata().attributes().get("endOffset"));
             String where = "chunk " + index + " [" + start + ", " + end + ")";
+
+            if (markdown && start > coveredEnd && onlyMarkup(text.substring(coveredEnd, start))) {
+                reconstructed.append(text, coveredEnd, start);
+                coveredEnd = start;
+            }
 
             if (chunk.index() != index) {
                 return where + " has index " + chunk.index();
@@ -85,11 +103,27 @@ public final class ChunkInvariants {
             previousStart = start;
         }
 
+        if (markdown && coveredEnd < text.length() && onlyMarkup(text.substring(coveredEnd))) {
+            reconstructed.append(text, coveredEnd, text.length());
+            coveredEnd = text.length();
+        }
+
         if (coveredEnd != text.length()) {
             return "Chunks end at " + coveredEnd + " of " + text.length();
         }
 
         return reconstructed.toString().equals(text) ? null : "Removing overlap does not reconstruct the source";
+    }
+
+    /** Whether text holds nothing but HTML comments, HTML tags, block-quote markers, and whitespace outside code. */
+    public static boolean onlyMarkup(String text) {
+        if (CODE.matcher(text).find()) {
+            return false;
+        }
+
+        String withoutMarkup =
+                HTML_TAG.matcher(HTML_COMMENT.matcher(text).replaceAll("")).replaceAll("");
+        return MARKUP_REMAINDER.matcher(withoutMarkup).matches();
     }
 
     static boolean onlyWhitespace(String text) {

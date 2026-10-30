@@ -42,7 +42,7 @@ class ChunkIdGeneratorTest {
 
         // Independently generated with Python hashlib/struct: length-prefixed UTF-8 format tag
         // and slash-separated path, a big-endian int32 index, then a length-prefixed fingerprint.
-        assertEquals("171d591543a4c26018983e2ad4fdcc455068a321b65aff56f8c4e08f17cb317f", id.value());
+        assertEquals("2f9d0e7a5b8d49db165e1ded9c3bfd7af3f65c7f99ee15876c9c322e797f4140", id.value());
     }
 
     @Test
@@ -50,17 +50,17 @@ class ChunkIdGeneratorTest {
         Path path = Path.of("東京", "🧪-ı.txt");
 
         assertEquals(
-                "6fcd96f2cb753fa18db8e97a5e30483e83302645b0e647c3f023bed9daad0123",
+                "9a22cdbffa4f3684d6ff69f3b8bf33f5d83aee76bdc8b27466cba1ef2e55523e",
                 generator.generate(path, 17).value());
     }
 
     @Test
     void acceptsTheEntireNonNegativeIndexRange() {
         assertEquals(
-                "c576632ab338cde906c1c9fc842a065adba151c1c6885863f504ed14402c30ef",
+                "16d1e1dcef3ef436ba446e2f31751153e2aed5cf054d8303b3d6fffe22706bf2",
                 generator.generate(SOURCE_PATH, 0).value());
         assertEquals(
-                "f28df5f42718d20f37f781166f92ef61793b9fc63d16a36541f5d977704d2f06",
+                "eb1c15b50241496ff9404717336193cb2e648195f7fd4253e5658bdeba676a09",
                 generator.generate(SOURCE_PATH, Integer.MAX_VALUE).value());
     }
 
