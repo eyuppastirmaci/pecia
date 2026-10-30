@@ -8,11 +8,11 @@
   <img src="docs/assets/query-demo.png" alt="pecia query &quot;stop a thread pool cleanly&quot; finds the Graceful Shutdown and Cleanup chapter of the Rust book by meaning" width="100%">
 </p>
 
-Pecia is a local command-line tool that turns a folder of documents and source code into a searchable index. It walks a directory, splits text into coherent chunks, and stores them in a single SQLite file next to your project for offline BM25 search. With semantic indexing enabled, it also embeds each chunk with a small model running in the same process, so queries can match by meaning as well as by words.
+Pecia is a local search tool that turns a folder of documents and source code into a searchable index. It walks a directory, splits text into coherent chunks, and stores them in a single SQLite file next to your project for offline BM25 search. With semantic indexing enabled, it also embeds each chunk with a small model running in the same process, so queries can match by meaning as well as by words.
 
 ## Status
 
-**v0.1.0**, the first release. Pecia searches UTF-8 text documents and source code; later versions are meant to add more formats.
+**v0.1**, the first version. Pecia searches UTF-8 text documents and source code; later versions are meant to add more formats.
 
 - Project initialization and TOML configuration.
 - File discovery with `.gitignore`, include/exclude filters, and `--dry-run`.
@@ -30,7 +30,7 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 - Reusable Java core API and runnable JAR with `init`, `index`, and `query` commands.
 - JSON output for indexing, queries, and dry runs, with match ranges for highlighting.
 - Detailed dry runs, live progress, grouped run summaries, and coloured, readable terminal output.
-- End-to-end checks of the packaged CLI with the real model, and retrieval-quality metrics gated in CI.
+- End-to-end checks of the packaged app with the real model, and retrieval-quality metrics gated in CI.
 - Packages for macOS, Linux, and Windows with a bundled Java runtime, installed through Homebrew or Scoop.
 
 ### Planned
@@ -54,7 +54,7 @@ Packages bundle their own Java runtime, so no Java installation is needed.
 
 ### Install from source
 
-With Git and JDK 21, clone the repository and build the CLI JAR:
+With Git and JDK 21, clone the repository and build the Pecia JAR:
 
 ```
 git clone https://github.com/eyuppastirmaci/pecia.git
@@ -93,7 +93,7 @@ Run `index` before `query`. From a source build, use `java -jar pecia-cli/build/
 | `index [folder]` | Indexes the files under the folder (default: current directory) into the index of the project that contains it, found from the nearest `.pecia.toml` or Git root: it adds new and changed files, removes deleted ones, and skips unchanged ones. With semantic indexing on, it also embeds new chunks and stored chunks that have no embedding yet. | `--dry-run`, `--semantic` / `--no-semantic`, `--progress`, `--json` |
 | `query <text>` | Searches the existing index read-only, without rereading source files, and prints the best-matching chunks. Quote text with several words. | `--mode`, `--limit`, `--root`, `--json` |
 
-The [CLI reference](docs/cli.md) covers every option, the output formats, exit codes, failures, configuration, and the model cache. To use Pecia from Java instead, see [Using pecia-core from Java](docs/library.md).
+The [command reference](docs/cli.md) covers every option, the output formats, exit codes, failures, configuration, and the model cache. To use Pecia from Java instead, see [Using pecia-core from Java](docs/library.md).
 
 ## Supported files
 
@@ -164,7 +164,7 @@ Semantic indexing embeds each chunk with [all-MiniLM-L6-v2](https://huggingface.
 
 - **Tokenizer vocabulary.** Offline token counting uses the 30,522-entry `vocab.txt` from [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/tree/1110a243fdf4706b3f48f1d95db1a4f5529b4d41), bundled in the JAR (about 226 KiB), pinned and SHA-256-verified. The [tokenizer asset directory](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/) includes `NOTICE.txt` with the source, revision, and checksum, and `LICENSE.txt`.
 - **sqlite-vec 0.1.9.** The loadable libraries for the supported platforms are bundled unchanged from the [release](https://github.com/asg017/sqlite-vec/releases/tag/v0.1.9); their [`NOTICE.txt`](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/semantic/sqlite-vec/NOTICE.txt) pins each library's SHA-256.
-- **ONNX Runtime 1.28.0**, a runtime dependency of the CLI JAR, runs the model; its native libraries ship inside its JAR.
+- **ONNX Runtime 1.28.0**, a runtime dependency of the Pecia JAR, runs the model; its native libraries ship inside its JAR.
 - **The model itself is not bundled.** The first semantic indexing run downloads it into the user's cache, as described under [Model cache](docs/cli.md#model-cache).
 
 ## Contributing
@@ -173,4 +173,4 @@ Semantic indexing embeds each chunk with [all-MiniLM-L6-v2](https://huggingface.
 
 ## License
 
-Pecia's own code is licensed under [MIT](LICENSE). Bundled third-party components keep their own licenses: the tokenizer vocabulary under [Apache 2.0](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/LICENSE.txt), sqlite-vec under [MIT](pecia-core/src/main/resources/META-INF/licenses/sqlite-vec-LICENSE-MIT.txt) or [Apache 2.0](pecia-core/src/main/resources/META-INF/licenses/sqlite-vec-LICENSE-APACHE.txt), and ONNX Runtime under MIT, whose license and third-party notices are included in the CLI JAR. The all-MiniLM-L6-v2 model, downloaded at runtime, is licensed under Apache 2.0.
+Pecia's own code is licensed under [MIT](LICENSE). Bundled third-party components keep their own licenses: the tokenizer vocabulary under [Apache 2.0](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/LICENSE.txt), sqlite-vec under [MIT](pecia-core/src/main/resources/META-INF/licenses/sqlite-vec-LICENSE-MIT.txt) or [Apache 2.0](pecia-core/src/main/resources/META-INF/licenses/sqlite-vec-LICENSE-APACHE.txt), and ONNX Runtime under MIT, whose license and third-party notices are included in the Pecia JAR. The all-MiniLM-L6-v2 model, downloaded at runtime, is licensed under Apache 2.0.

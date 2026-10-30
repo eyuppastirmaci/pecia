@@ -8,11 +8,11 @@
   <img src="docs/assets/query-demo.png" alt="pecia query &quot;stop a thread pool cleanly&quot; sorgusu Rust kitabının Graceful Shutdown and Cleanup bölümünü anlamından buluyor" width="100%">
 </p>
 
-Pecia, bir klasördeki belgeleri ve kaynak kodunu aranabilir bir indekse dönüştüren yerel bir komut satırı aracıdır. Klasörü dolaşır, metni anlamlı parçalara (chunk) böler ve bunları projenizin yanında duran tek bir SQLite dosyasında saklar; böylece BM25 ile çevrimdışı arama yapılabilir. Semantik indeksleme açıkken her parçayı aynı süreçte çalışan küçük bir modelle vektöre dönüştürür; sorgular kelimelerin yanında anlamdan da eşleşebilir.
+Pecia, bir klasördeki belgeleri ve kaynak kodunu aranabilir bir indekse dönüştüren yerel bir arama aracıdır. Klasörü dolaşır, metni anlamlı parçalara (chunk) böler ve bunları projenizin yanında duran tek bir SQLite dosyasında saklar; böylece BM25 ile çevrimdışı arama yapılabilir. Semantik indeksleme açıkken her parçayı aynı süreçte çalışan küçük bir modelle vektöre dönüştürür; sorgular kelimelerin yanında anlamdan da eşleşebilir.
 
 ## Durum
 
-**v0.1.0**, ilk sürüm. Pecia UTF-8 metin belgelerinde ve kaynak kodunda arama yapar; sonraki sürümlerde başka biçimler eklenmesi planlanıyor.
+**v0.1**, ilk sürüm. Pecia UTF-8 metin belgelerinde ve kaynak kodunda arama yapar; sonraki sürümlerde başka biçimler eklenmesi planlanıyor.
 
 - Proje başlatma ve TOML yapılandırması.
 - `.gitignore`, dahil etme ve hariç tutma filtreleri ve `--dry-run` ile dosya keşfi.
@@ -30,7 +30,7 @@ Pecia, bir klasördeki belgeleri ve kaynak kodunu aranabilir bir indekse dönü�
 - Yeniden kullanılabilir Java core API'si ve `init`, `index`, `query` komutlarıyla çalıştırılabilir JAR.
 - İndeksleme, sorgu ve deneme çalıştırmaları için JSON çıktısı; vurgulama için eşleşme aralıkları.
 - Ayrıntılı deneme çalıştırmaları, canlı ilerleme, gruplanmış özetler ve renkli, okunaklı terminal çıktısı.
-- Paketlenmiş CLI'ın gerçek modelle uçtan uca testleri ve CI'da denetlenen arama kalitesi ölçümleri.
+- Paketlenmiş uygulamanın gerçek modelle uçtan uca testleri ve CI'da denetlenen arama kalitesi ölçümleri.
 - macOS, Linux ve Windows için Java çalışma zamanını içeren, Homebrew ya da Scoop ile kurulan paketler.
 
 ### Planlananlar
@@ -54,7 +54,7 @@ Paketler kendi Java çalışma zamanlarını içerir; Java kurmanız gerekmez.
 
 ### Kaynaktan kurulum
 
-Git ve JDK 21 ile repoyu klonlayıp CLI JAR'ını derleyin:
+Git ve JDK 21 ile repoyu klonlayıp Pecia JAR'ını derleyin:
 
 ```
 git clone https://github.com/eyuppastirmaci/pecia.git
@@ -93,7 +93,7 @@ pecia query "refund policy" --json       # betikler için tek bir JSON belgesi
 | `index [folder]` | Klasördeki dosyaları (varsayılan: bulunulan klasör), en yakın `.pecia.toml` ya da Git kökünden bulunan projenin indeksine ekler: yeni ve değişen dosyaları ekler, silinenleri kaldırır, değişmeyenleri atlar. Semantik indeksleme açıkken yeni chunk'ların ve henüz embedding'i olmayan kayıtlı chunk'ların embedding'lerini de yapar. | `--dry-run`, `--semantic` / `--no-semantic`, `--progress`, `--json` |
 | `query <text>` | Mevcut indeksi kaynak dosyaları yeniden okumadan, salt okunur biçimde arar ve en iyi eşleşen chunk'ları yazar. Birden fazla kelimeyi tırnak içine alın. | `--mode`, `--limit`, `--root`, `--json` |
 
-[CLI reference](docs/cli.md) (İngilizce) her seçeneği, çıktı biçimlerini, çıkış kodlarını, hataları, yapılandırmayı ve model önbelleğini anlatır. Pecia'yı Java'dan kullanmak için bkz. [Using pecia-core from Java](docs/library.md).
+[Command reference](docs/cli.md) (İngilizce) her seçeneği, çıktı biçimlerini, çıkış kodlarını, hataları, yapılandırmayı ve model önbelleğini anlatır. Pecia'yı Java'dan kullanmak için bkz. [Using pecia-core from Java](docs/library.md).
 
 ## Desteklenen dosyalar
 
@@ -164,7 +164,7 @@ Semantik indeksleme her chunk'ı ONNX Runtime ile CPU üzerinde [all-MiniLM-L6-v
 
 - **Tokenizer sözlüğü.** Çevrimdışı token sayımı, [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/tree/1110a243fdf4706b3f48f1d95db1a4f5529b4d41) modelinin 30.522 girdilik `vocab.txt` dosyasını kullanır; dosya JAR'ın içindedir (yaklaşık 226 KiB), sabitlenmiş ve SHA-256 ile doğrulanmıştır. [Tokenizer dosyalarının klasörü](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/) kaynağı, revizyonu ve özeti içeren `NOTICE.txt` ile `LICENSE.txt` dosyalarını içerir.
 - **sqlite-vec 0.1.9.** Desteklenen platformların yüklenebilir kütüphaneleri, [sürümden](https://github.com/asg017/sqlite-vec/releases/tag/v0.1.9) değiştirilmeden pakete eklenmiştir; [`NOTICE.txt`](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/semantic/sqlite-vec/NOTICE.txt) her kütüphanenin SHA-256'sını sabitler.
-- **ONNX Runtime 1.28.0**, CLI JAR'ının çalışma zamanı bağımlılığıdır ve modeli çalıştırır; yerel kütüphaneleri kendi JAR'ının içinde gelir.
+- **ONNX Runtime 1.28.0**, Pecia JAR'ının çalışma zamanı bağımlılığıdır ve modeli çalıştırır; yerel kütüphaneleri kendi JAR'ının içinde gelir.
 - **Modelin kendisi pakette yoktur.** İlk semantik indeksleme onu, [Model cache](docs/cli.md#model-cache) bölümünde anlatıldığı gibi kullanıcının önbelleğine indirir.
 
 ## Katkıda bulunma
@@ -173,4 +173,4 @@ Semantik indeksleme her chunk'ı ONNX Runtime ile CPU üzerinde [all-MiniLM-L6-v
 
 ## Lisans
 
-Pecia'nın kendi kodu [MIT](LICENSE) lisanslıdır. Pakete dahil üçüncü taraf bileşenler kendi lisanslarını korur: tokenizer sözlüğü [Apache 2.0](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/LICENSE.txt), sqlite-vec [MIT](pecia-core/src/main/resources/META-INF/licenses/sqlite-vec-LICENSE-MIT.txt) ya da [Apache 2.0](pecia-core/src/main/resources/META-INF/licenses/sqlite-vec-LICENSE-APACHE.txt), ONNX Runtime ise MIT lisanslıdır; ONNX Runtime'ın lisansı ve üçüncü taraf bildirimleri CLI JAR'ının içindedir. Çalışma sırasında indirilen all-MiniLM-L6-v2 modeli Apache 2.0 lisanslıdır.
+Pecia'nın kendi kodu [MIT](LICENSE) lisanslıdır. Pakete dahil üçüncü taraf bileşenler kendi lisanslarını korur: tokenizer sözlüğü [Apache 2.0](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/tokenization/all-MiniLM-L6-v2/LICENSE.txt), sqlite-vec [MIT](pecia-core/src/main/resources/META-INF/licenses/sqlite-vec-LICENSE-MIT.txt) ya da [Apache 2.0](pecia-core/src/main/resources/META-INF/licenses/sqlite-vec-LICENSE-APACHE.txt), ONNX Runtime ise MIT lisanslıdır; ONNX Runtime'ın lisansı ve üçüncü taraf bildirimleri Pecia JAR'ının içindedir. Çalışma sırasında indirilen all-MiniLM-L6-v2 modeli Apache 2.0 lisanslıdır.
