@@ -1,0 +1,156 @@
+name: Release
+
+# A version tag (v0.1.0, or v0.1.0-rc.1 for a pre-release) builds and checks the four platform packages, publishes
+# them as a GitHub Release, and points the Homebrew tap and the Scoop bucket at them.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: package (${{ matrix.platform }})
+    strategy:
+      # A release needs every package, so one failure stops the others.
+      fail-fast: true
+      matrix:
+        include:
+          - runner: macos-latest
+            platform: osx-aarch64
+          - runner: ubuntu-latest
+            platform: linux-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-aarch64
+          - runner: windows-latest
+            platform: win-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Read the version from the tag
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not v<major>.<minor>.<patch>[-<pre-release>]"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Restore the semantic model
+        id: semantic-model
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/pecia-cache/models
+          key: semantic-model-${{ hashFiles('pecia-core/src/main/java/dev/eyuppastirmaci/pecia/semantic/SemanticModel.java') }}
+
+      - name: Download the semantic model on a cache miss
+        if: steps.semantic-model.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
+        run: |
+          ./gradlew :pecia-cli:shadowJar
+          project="$RUNNER_TEMP/model-download"
+          mkdir -p "$project"
+          echo "A semantic run downloads the model it needs." > "$project/readme.md"
+          java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project"
+
+      # Release checks also download the model with the package's own runtime, proving its TLS support.
+      - name: Build and check the package
+        shell: bash
+        env:
+          PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
+        run: >-
+          ./gradlew -Ppecia.version=${{ steps.version.outputs.version }} -Ppecia.platform=${{ matrix.platform }}
+          -Ppecia.package.download=true :pecia-cli:packageArchive :pecia-cli:packageTest
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.platform }}
+          path: pecia-cli/build/package/dist/
+          retention-days: 7
+
+  release:
+    name: release
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Collect the packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify the checksums
+        working-directory: dist
+        run: |
+          ls -l
+          test "$(ls *.sha256 | wc -l)" -eq 4
+          sha256sum --check *.sha256
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          prerelease=""
+          if [[ "$version" == *-* ]]; then prerelease="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Pecia $version" --generate-notes $prerelease
+
+      - name: Render the Homebrew formula and the Scoop manifest
+        run: >-
+          ./gradlew -Ppecia.version=${GITHUB_REF_NAME#v} -Ppecia.package.checksums=$GITHUB_WORKSPACE/dist
+          :pecia-cli:channelManifests
+
+      # The token belongs to the repository owner and can write only to the tap and the bucket.
+      - name: Update the Homebrew tap and the Scoop bucket
+        env:
+          TOKEN: ${{ secrets.PACKAGE_CHANNELS_TOKEN }}
+        run: |
+          if [[ -z "$TOKEN" ]]; then
+            echo "::error::The PACKAGE_CHANNELS_TOKEN secret is missing, so the tap and the bucket were not updated"
+            exit 1
+          fi
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          publish() {
+            local repository=$1 source=$2 target=$3
+            git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/eyuppastirmaci/${repository}.git" "$RUNNER_TEMP/$repository"
+            mkdir -p "$RUNNER_TEMP/$repository/$(dirname "$target")"
+            cp "$source" "$RUNNER_TEMP/$repository/$target"
+            git -C "$RUNNER_TEMP/$repository" add "$target"
+            git -C "$RUNNER_TEMP/$repository" commit -m "Pecia ${GITHUB_REF_NAME#v}"
+            git -C "$RUNNER_TEMP/$repository" push
+          }
+          publish homebrew-pecia pecia-cli/build/package/channels/pecia.rb Formula/pecia.rb
+          publish scoop-pecia pecia-cli/build/package/channels/pecia.json bucket/pecia.json
