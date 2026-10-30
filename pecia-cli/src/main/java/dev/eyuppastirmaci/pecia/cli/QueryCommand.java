@@ -111,7 +111,7 @@ public class QueryCommand implements Callable<Integer> {
                 out.println("No results.");
             } else {
                 for (SearchHit hit : hits) {
-                    printHit(out, hit, result.queryShape());
+                    printHit(out, hit, result.queryShape(), terminal);
                 }
             }
 
@@ -188,21 +188,33 @@ public class QueryCommand implements Callable<Integer> {
         }
     }
 
-    private static void printHit(PrintWriter out, SearchHit hit, Optional<QueryShape> shape) {
-        String location = FileWalker.portablePath(hit.sourcePath());
+    /**
+     * Prints a hit: its path and line range, its score rounded for reading, its heading path, and its snippet. With
+     * colour, as ripgrep shows matches, the path is bold magenta, the range, score, and heading dim, and the matched
+     * words bold red.
+     */
+    private static void printHit(PrintWriter out, SearchHit hit, Optional<QueryShape> shape, Terminal terminal) {
+        String location =
+                terminal.paint(FileWalker.portablePath(hit.sourcePath()), Terminal.Style.BOLD, Terminal.Style.MAGENTA);
 
         if (hit.sourceLocation() instanceof LineRange lines) {
-            location += ":" + lines.startLine() + "-" + lines.endLine();
+            location += terminal.paint(":" + lines.startLine() + "-" + lines.endLine(), Terminal.Style.DIM);
         }
 
         out.println(location);
-        out.println("  " + scoreLabel(hit.score().kind()) + ": " + hit.score().value() + fusedRanks(hit, shape));
+        out.println("  "
+                + terminal.paint(
+                        scoreLabel(hit.score().kind()) + ": "
+                                + HitText.score(hit.score().value()) + fusedRanks(hit, shape),
+                        Terminal.Style.DIM));
 
         if (!hit.metadata().headingPath().isEmpty()) {
-            out.println("  heading: " + String.join(" > ", hit.metadata().headingPath()));
+            out.println("  "
+                    + terminal.paint(
+                            "heading: " + String.join(" > ", hit.metadata().headingPath()), Terminal.Style.DIM));
         }
 
-        hit.snippet().lines().forEach(line -> out.println("  " + line));
+        HitText.snippetLines(hit.snippet(), hit.matches(), terminal).forEach(line -> out.println("  " + line));
         out.println();
     }
 

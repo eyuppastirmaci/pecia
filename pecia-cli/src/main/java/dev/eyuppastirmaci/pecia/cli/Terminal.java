@@ -113,6 +113,7 @@ record Terminal(boolean color, boolean interactive, int width) {
         GREEN("32"),
         YELLOW("33"),
         BLUE("34"),
+        MAGENTA("35"),
         CYAN("36");
 
         private final String code;

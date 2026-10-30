@@ -110,6 +110,26 @@ class ColorOptionTest {
     }
 
     @Test
+    void searchResultsShowPathsScoresAndMatchesInColour() {
+        assertEquals(0, run("index", root.toString()));
+
+        assertEquals(0, run("--color=always", "query", "needle", "--root", root.toString(), "--mode", "lexical"));
+
+        List<String> lines = out.toString().lines().toList();
+        assertEquals(
+                ESCAPE + "1m" + ESCAPE + "35mguide.md" + ESCAPE + "0m" + ESCAPE + "2m:1-3" + ESCAPE + "0m",
+                lines.get(0));
+        assertTrue(lines.get(1).matches("  \\u001b\\[2mBM25: -?[0-9.]+\\u001b\\[0m"), lines.get(1));
+        assertEquals("  " + ESCAPE + "2mheading: Guide" + ESCAPE + "0m", lines.get(2));
+        assertTrue(lines.contains("  " + ESCAPE + "1m" + ESCAPE + "31mneedle" + ESCAPE + "0m"), out.toString());
+
+        String coloured = out.toString();
+        assertEquals(0, run("--color=never", "query", "needle", "--root", root.toString(), "--mode", "lexical"));
+
+        assertEquals(coloured.replaceAll("\u001b\\[[0-9]+m", ""), out.toString());
+    }
+
+    @Test
     void notesAreCyan() throws Exception {
         IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
 
