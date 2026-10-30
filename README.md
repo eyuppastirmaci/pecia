@@ -1,4 +1,6 @@
-# Pecia
+<p align="center">
+  <img src="docs/assets/banner-dark.png" alt="Pecia: local search for your files" width="100%">
+</p>
 
 Pecia is a local command-line tool that turns a folder of documents and source code into a searchable index. It walks a directory, splits text into coherent chunks, and stores them in a single SQLite file next to your project for offline BM25 search. With semantic indexing enabled, it also embeds each chunk with a small model running in the same process, so queries can match by meaning as well as by words.
 
