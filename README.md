@@ -119,7 +119,7 @@ Pecia selects files using `.gitignore` rules and the include/exclude patterns in
 
 ### ✂️ Extraction and chunking
 
-Supported text files are read with size and UTF-8 validation, then split into chunks within the configured token budget, less 32 tokens kept free for the embedding context line described below (so the default 256-token budget gives chunks of up to 224 tokens). Chunks retain source paths, line ranges, and Markdown heading context where available. A tiny Markdown section, such as a heading with one short line, or a few items of a long list that had to be split, joins a neighbouring section under the same parent heading, so no chunk is too small to say anything on its own.
+Supported text files are read with size and UTF-8 validation, then split into chunks within the configured token budget, less 32 tokens kept free for the embedding context line described below (so the default 256-token budget gives chunks of up to 224 tokens). Chunks retain source paths, line ranges, and Markdown heading context where available. A tiny Markdown section, such as a heading with one short line, or a few items of a long list that had to be split, joins a neighbouring section under the same parent heading, so no chunk is too small to say anything on its own. A block made only of HTML markup, such as an anchor kept for old links, is not indexed at all.
 
 ### 🗃️ Local indexing
 
