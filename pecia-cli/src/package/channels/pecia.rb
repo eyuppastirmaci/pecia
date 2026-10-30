@@ -2,15 +2,16 @@
 class Pecia < Formula
   desc "Offline lexical and semantic search for documents and source code"
   homepage "https://github.com/eyuppastirmaci/pecia"
-  version "${version}"
   license "MIT"
 
   on_macos do
     # ONNX Runtime has no Intel macOS build, so only Apple silicon has a package.
     depends_on arch: :arm64
 
-    url "https://github.com/eyuppastirmaci/pecia/releases/download/v${version}/pecia-${version}-osx-aarch64.tar.gz"
-    sha256 "${sha256_osx_aarch64}"
+    on_arm do
+      url "https://github.com/eyuppastirmaci/pecia/releases/download/v${version}/pecia-${version}-osx-aarch64.tar.gz"
+      sha256 "${sha256_osx_aarch64}"
+    end
   end
 
   on_linux do

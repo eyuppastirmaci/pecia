@@ -1,0 +1,128 @@
+name: Channels
+
+# Installs Pecia the way users do, on fresh runners, and runs it. After a full release it installs from the published
+# Homebrew tap and Scoop bucket. A pre-release never reaches them, so it installs from the rendered formula and
+# manifest that the release run uploaded. It can also be run by hand against the published channels.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version without the leading v, such as 0.1.0 or 0.1.0-rc.2
+        type: string
+        required: true
+      published:
+        description: Whether to install from the published channels instead of this run's rendered files
+        type: boolean
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published version to expect, such as 0.1.0
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  VERSION: ${{ inputs.version }}
+  # A manual run always checks what users get.
+  PUBLISHED: ${{ github.event_name == 'workflow_dispatch' || inputs.published }}
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_ENV_HINTS: '1'
+
+jobs:
+  homebrew:
+    name: homebrew (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Put Homebrew on PATH
+        run: |
+          if ! command -v brew > /dev/null; then
+            echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Collect the rendered formula
+        if: env.PUBLISHED != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: channels
+          path: channels
+
+      - name: Install from the tap
+        if: env.PUBLISHED == 'true'
+        run: brew install eyuppastirmaci/pecia/pecia
+
+      # A local tap holds the rendered formula, because brew installs formulae only from taps.
+      - name: Install from the rendered formula
+        if: env.PUBLISHED != 'true'
+        run: |
+          brew tap-new --no-git eyuppastirmaci/pecia
+          cp channels/pecia.rb "$(brew --repository eyuppastirmaci/pecia)/Formula/pecia.rb"
+          brew install eyuppastirmaci/pecia/pecia
+
+      - name: Audit and test the formula
+        run: |
+          brew audit --strict eyuppastirmaci/pecia/pecia
+          brew test eyuppastirmaci/pecia/pecia
+
+      - name: Run Pecia
+        run: |
+          test "$(pecia --version)" = "pecia $VERSION"
+          project="$RUNNER_TEMP/project"
+          mkdir -p "$project" && cd "$project"
+          printf '# Refunds\n\nMoney goes back to the original card.\n' > refunds.md
+          pecia init
+          pecia index --progress=none
+          pecia query refunds --json | grep -q '"path": *"refunds.md"'
+
+  scoop:
+    name: scoop (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Collect the rendered manifest
+        if: env.PUBLISHED != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: channels
+          path: channels
+
+      # Runners run as administrator, which Scoop's installer refuses unless told otherwise.
+      - name: Install Scoop
+        run: |
+          Invoke-Expression "& {$(Invoke-RestMethod https://get.scoop.sh)} -RunAsAdmin"
+          "$env:USERPROFILE\scoop\shims" >> $env:GITHUB_PATH
+
+      - name: Install from the bucket
+        if: env.PUBLISHED == 'true'
+        run: |
+          scoop bucket add pecia https://github.com/eyuppastirmaci/scoop-pecia
+          scoop install pecia
+
+      - name: Install from the rendered manifest
+        if: env.PUBLISHED != 'true'
+        run: scoop install .\channels\pecia.json
+
+      - name: Run Pecia
+        run: |
+          $version = pecia --version
+          if ($version -ne "pecia $env:VERSION") { throw "Expected pecia $env:VERSION, got $version" }
+          $project = Join-Path $env:RUNNER_TEMP project
+          New-Item -ItemType Directory $project | Out-Null
+          Set-Location $project
+          Set-Content refunds.md "# Refunds`n`nMoney goes back to the original card."
+          pecia init
+          if ($LASTEXITCODE -ne 0) { throw "init failed" }
+          pecia index --progress=none
+          if ($LASTEXITCODE -ne 0) { throw "index failed" }
+          $result = pecia query refunds --json | ConvertFrom-Json
+          if ($result.hits[0].path -ne 'refunds.md') { throw "refunds.md was not found: $($result | ConvertTo-Json -Depth 5)" }
