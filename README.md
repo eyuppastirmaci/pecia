@@ -39,9 +39,7 @@ Packages bundle their own Java runtime, so no Java installation is needed.
 | macOS (Apple silicon), Linux (x64, arm64) | `brew install eyuppastirmaci/pecia/pecia` |
 | Windows (x64) | `scoop bucket add pecia https://github.com/eyuppastirmaci/scoop-pecia`, then `scoop install pecia` |
 
-Without a package manager, download the archive for your system from [Releases](https://github.com/eyuppastirmaci/pecia/releases), extract it, and add its `bin` folder (on Windows, the folder holding `pecia.exe`) to `PATH`. Intel Macs have no package, because ONNX Runtime does not support them.
-
-With Java 21 or newer, the plain `pecia.jar` from a source build also works: `java -jar pecia.jar …`.
+[Installing Pecia](docs/install.md) covers archives from [Releases](https://github.com/eyuppastirmaci/pecia/releases), upgrades, security prompts, and running the JAR with Java 21 or newer. Intel Macs have no package, because ONNX Runtime does not support them.
 
 ## Building and testing
 
