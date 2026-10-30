@@ -14,6 +14,7 @@ import dev.eyuppastirmaci.pecia.content.DocumentType;
 import dev.eyuppastirmaci.pecia.content.LineRange;
 import dev.eyuppastirmaci.pecia.search.FusedRanks;
 import dev.eyuppastirmaci.pecia.search.HybridSearch;
+import dev.eyuppastirmaci.pecia.search.MatchRange;
 import dev.eyuppastirmaci.pecia.search.SearchException;
 import dev.eyuppastirmaci.pecia.search.SearchHit;
 import dev.eyuppastirmaci.pecia.search.SearchRequest;
@@ -87,6 +88,11 @@ class SqliteHybridSearchTest {
                         SearchScore.Kind.RECIPROCAL_RANK_FUSION, hit.score().kind());
                 assertEquals(rank(lexical, hit.chunkId()), ranks.lexical());
                 assertEquals(rank(semantic, hit.chunkId()), ranks.semantic());
+                // Chunks the lexical side found keep its match ranges; the others have none.
+                assertEquals(
+                        ranks.lexical().isPresent() ? List.of(new MatchRange(0, 6)) : List.of(),
+                        hit.matches(),
+                        hit.snippet());
             }
 
             assertEquals(

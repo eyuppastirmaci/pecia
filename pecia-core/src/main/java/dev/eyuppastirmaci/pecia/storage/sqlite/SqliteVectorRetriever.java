@@ -66,8 +66,8 @@ final class SqliteVectorRetriever {
                             content,
                             rows.getInt("start_line"),
                             rows.getInt("end_line"),
-                            // The shared hit builder bounds the snippet, as it does for lexical highlights.
-                            content));
+                            // The shared hit builder bounds the snippet; semantic matches have no ranges.
+                            new HighlightedSnippet(content, List.of())));
                 }
             }
         }

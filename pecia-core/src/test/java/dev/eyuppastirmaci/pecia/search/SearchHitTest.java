@@ -169,4 +169,53 @@ class SearchHitTest {
     private static SearchHit hit(ChunkMetadata metadata, String snippet) {
         return new SearchHit(1, 0, PATH, DocumentType.MARKDOWN, LINES, metadata, SCORE, snippet);
     }
+
+    @Test
+    void matchRangesAreCopiedInOrderAndMayTouch() {
+        List<MatchRange> ranges = new ArrayList<>(List.of(new MatchRange(0, 1), new MatchRange(1, 3)));
+
+        SearchHit hit = withMatches("😀ab", ranges);
+        ranges.clear();
+
+        assertEquals(List.of(new MatchRange(0, 1), new MatchRange(1, 3)), hit.matches());
+        assertEquals(
+                List.of(),
+                new SearchHit(1, 0, PATH, DocumentType.MARKDOWN, LINES, ChunkMetadata.empty(), SCORE, "a").matches());
+    }
+
+    @Test
+    void rejectsOverlappingUnorderedAndOutOfSnippetRanges() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> withMatches("abcdef", List.of(new MatchRange(0, 3), new MatchRange(2, 4))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> withMatches("abcdef", List.of(new MatchRange(3, 4), new MatchRange(0, 1))));
+        // Three code points, although four UTF-16 units.
+        assertThrows(IllegalArgumentException.class, () -> withMatches("😀ab", List.of(new MatchRange(0, 4))));
+        assertThrows(NullPointerException.class, () -> withMatches("abc", null));
+    }
+
+    @Test
+    void matchRangesAreNonEmptyAndStartAtZeroOrLater() {
+        assertEquals(new MatchRange(0, 1), new MatchRange(0, 1));
+        assertThrows(IllegalArgumentException.class, () -> new MatchRange(-1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new MatchRange(2, 2));
+        assertThrows(IllegalArgumentException.class, () -> new MatchRange(3, 2));
+    }
+
+    private static SearchHit withMatches(String snippet, List<MatchRange> matches) {
+        return new SearchHit(
+                1,
+                0,
+                PATH,
+                DocumentType.MARKDOWN,
+                LINES,
+                ChunkMetadata.empty(),
+                SCORE,
+                snippet,
+                Optional.empty(),
+                Optional.empty(),
+                matches);
+    }
 }

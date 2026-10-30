@@ -147,7 +147,9 @@ final class RankFusion {
                 new SearchScore(score, SearchScore.Kind.RECIPROCAL_RANK_FUSION),
                 base.snippet(),
                 base.stableId(),
-                Optional.of(new FusedRanks(lexicalRank, semanticRank)));
+                Optional.of(new FusedRanks(lexicalRank, semanticRank)),
+                // A chunk found by both sides keeps the lexical snippet, whose match ranges are known.
+                base.matches());
     }
 
     private static double contribution(OptionalInt rank, double weight) {
