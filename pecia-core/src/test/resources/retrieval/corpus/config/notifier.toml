@@ -1,0 +1,15 @@
+# Notifier settings.
+
+[email]
+provider = "mailrelay"
+sender = "orders@quillmoor.example"
+# Raised from 2 seconds after the duplicate confirmation incident.
+timeout_seconds = 10
+
+[rate_limit]
+# At most this many emails per recipient per minute; extra messages wait in the queue.
+per_recipient_per_minute = 3
+
+[deduplication]
+# Remember sent messages per order and event type for this long.
+retention_days = 14

@@ -1,0 +1,7 @@
+Ideas parking lot
+
+- Let customers follow an author and get an email when a new book appears.
+- Show "readers also bought" on the book page, computed nightly.
+- Offer a small discount for picking up orders at the partner bookshop.
+- Replace the hand-written sitemap with one generated from the catalog.
+- A reading challenge page with yearly badges.

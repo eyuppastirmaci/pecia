@@ -1,0 +1,8 @@
+Call with our courier partner, 4 March 2026
+
+- They raise prices by 6 percent from July. Volume discount stays if we send more than 2,000 parcels a month.
+- Pickup moves from 16:00 to 14:30 on weekdays. We need to finish packing earlier.
+- Tracking events will arrive by webhook instead of the nightly file.
+- Damaged parcel claims must be filed within seven days of delivery.
+
+Follow-up: Mara updates the shipping page and tells the warehouse about the new pickup time.

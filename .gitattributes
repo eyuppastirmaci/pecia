@@ -13,6 +13,9 @@ pecia-core/src/test/resources/chunking/golden/**/*.input whitespace=-blank-at-eo
 pecia-core/src/test/resources/hostile/** -text
 pecia-core/src/test/resources/hostile/content/** whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 
+# The retrieval-quality corpus keeps its exact bytes, so every platform measures the same text.
+pecia-core/src/test/resources/retrieval/** -text
+
 # Legacy index fixtures are the exact binary output of earlier code and must never be converted or merged.
 pecia-core/src/test/resources/storage/legacy/*.db binary
 
