@@ -46,6 +46,9 @@ tasks.shadowJar {
 // ChannelManifestsTest reads the package-manager templates from the source tree, so they are inputs of the tests.
 tasks.test {
     inputs.dir("src/package/channels").withPropertyName("channelTemplates")
+    // DocumentationTest checks the repository's Markdown files against the CLI.
+    inputs.files(fileTree(layout.projectDirectory.dir("..")) { include("*.md", "docs/**/*.md") })
+        .withPropertyName("documentation")
 }
 
 // Real-model checks need the model in the cache that PECIA_CACHE_DIR names, so only referenceTest runs them.
