@@ -31,6 +31,14 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 - End-to-end checks of the packaged CLI with the real model, and retrieval-quality metrics gated in CI.
 - Packages for macOS, Linux, and Windows with a bundled Java runtime, installed through Homebrew or Scoop.
 
+### Planned
+
+- A desktop app with a graphical interface, built on the same core.
+- Language-aware chunking for source code, splitting at functions and classes instead of lines and indentation.
+- Chunking tuned to more text formats, such as JSON, YAML, and reStructuredText.
+- More file types: PDF, Word and Excel documents, and images.
+- An MCP server, so AI agents can search a project through Pecia.
+
 ## Install
 
 Packages bundle their own Java runtime, so no Java installation is needed.
