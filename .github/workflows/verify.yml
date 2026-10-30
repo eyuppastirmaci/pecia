@@ -77,8 +77,9 @@ jobs:
           PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
         run: ${{ runner.os == 'Windows' && '.\gradlew.bat' || './gradlew' }} referenceTest
 
-      # Test results and Gradle's profile report from every run, so timings can be compared between runs. Artifact names
-      # include the attempt, because a re-run cannot upload an artifact name that its run already has.
+      # Test results, retrieval-quality reports, and Gradle's profile report from every run, so timings and retrieval
+      # metrics can be compared between runs and systems. Artifact names include the attempt, because a re-run cannot
+      # upload an artifact name that its run already has.
       - name: Upload test timings
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -86,6 +87,7 @@ jobs:
           name: test-timings-${{ matrix.os }}-attempt-${{ github.run_attempt }}
           path: |
             **/build/test-results/**/*.xml
+            pecia-core/build/reports/retrieval/
             build/reports/profile/
           retention-days: 7
 
@@ -124,5 +126,6 @@ jobs:
           name: test-timings-core-verify-attempt-${{ github.run_attempt }}
           path: |
             **/build/test-results/**/*.xml
+            pecia-core/build/reports/retrieval/
             build/reports/profile/
           retention-days: 7

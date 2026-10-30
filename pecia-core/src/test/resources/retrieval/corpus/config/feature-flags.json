@@ -1,0 +1,19 @@
+{
+  "flags": {
+    "one-page-checkout": {
+      "description": "The new checkout that collects address and payment on one page.",
+      "enabled_for": "staff",
+      "rollout_percent": 10
+    },
+    "checkout-maintenance-banner": {
+      "description": "Shows a banner that payments may fail while the provider has an outage.",
+      "enabled_for": "nobody",
+      "rollout_percent": 0
+    },
+    "gift-wrapping": {
+      "description": "Lets customers add gift wrapping to an order.",
+      "enabled_for": "everyone",
+      "rollout_percent": 100
+    }
+  }
+}

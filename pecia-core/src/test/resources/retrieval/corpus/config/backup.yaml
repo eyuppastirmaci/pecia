@@ -1,0 +1,12 @@
+# Backup job, run by cron on the operations host.
+schedule: "30 2 * * *"
+databases:
+  - orders
+  - catalog
+target:
+  bucket: quillmoor-backups-eu-west
+  encryption_key: backup-key-2026
+retention:
+  daily: 30
+  monthly: 12
+wal_archive: true

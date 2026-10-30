@@ -42,6 +42,16 @@ tasks.register<Test>("referenceTest") {
     outputs.upToDateWhen { false }
 }
 
+// The retrieval-quality checks write a report per search mode beside Gradle's own test reports.
+val retrievalReports = layout.buildDirectory.dir("reports/retrieval")
+listOf("test", "referenceTest").forEach { name ->
+    tasks.named<Test>(name) {
+        jvmArgumentProviders.add(CommandLineArgumentProvider {
+            listOf("-Dpecia.retrieval.reports=${retrievalReports.get().asFile.absolutePath}")
+        })
+    }
+}
+
 // The packaged-core consumer runs on the core JAR plus exactly these runtime dependencies.
 val itRuntime = tasks.register<Sync>("itRuntime") {
     from(configurations.runtimeClasspath)

@@ -1,0 +1,18 @@
+# Local development stack.
+services:
+  orders-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_PASSWORD: local-only
+    ports:
+      - "5432:5432"
+  broker:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+  fake-psp:
+    image: quillmoor/fake-psp:latest
+    ports:
+      - "9090:9090"

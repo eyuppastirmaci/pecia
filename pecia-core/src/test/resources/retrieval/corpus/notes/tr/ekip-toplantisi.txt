@@ -1,0 +1,12 @@
+Ekip toplantısı, 9 Nisan 2026
+
+Katılanlar: Elif, Mara, Tom
+
+Kararlar
+- Tek sayfalık ödeme ekranı önce personele, ardından müşterilerin yüzde onuna açılacak.
+- Türkiye siparişlerinde kargo çıkış saati 14.30'a çekildi; depo ekibi bilgilendirildi.
+- Aylık satış raporuna iade tutarları da eklenecek.
+
+Yapılacaklar
+- Elif: e-Arşiv entegratörüyle test ortamını kuracak.
+- Tom: iade politikasının Türkçe metnini güncelleyecek.

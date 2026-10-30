@@ -55,8 +55,9 @@ class PackagedCliRealModelIT {
     // Shares no words with the refunds page beyond "money" and "back", so lexical search, which needs every word,
     // finds nothing.
     private static final String PARAPHRASE = "how long until I get my money back";
-    // The interrupted runs index this many generated notes beside the project's four files.
-    private static final int NOTES = 200;
+    // The interrupted runs index this many generated notes beside the project's four files: about 1.5 s of embedding on
+    // a fast machine, far longer than the stop takes to land, and a few seconds on slower CI runners.
+    private static final int NOTES = 100;
     private static final int FILES = NOTES + 4;
 
     @TempDir
@@ -526,7 +527,7 @@ class PackagedCliRealModelIT {
         }
     }
 
-    /** Writes enough Markdown files that embedding them takes several seconds. */
+    /** Writes Markdown notes of three chunks each, so the run is still embedding when it is stopped. */
     private static void writeCorpus(Path directory, int files) throws IOException {
         Files.createDirectories(directory);
         StringBuilder paragraph = new StringBuilder();
@@ -535,10 +536,8 @@ class PackagedCliRealModelIT {
             paragraph.append("Refund policy line ").append(line).append(" explains returns. ");
         }
 
-        String body = (paragraph + "\n\n").repeat(4);
-
         for (int file = 0; file < files; file++) {
-            Files.writeString(directory.resolve("note" + file + ".md"), "# Note " + file + "\n\n" + body);
+            Files.writeString(directory.resolve("note" + file + ".md"), "# Note " + file + "\n\n" + paragraph + "\n");
         }
     }
 

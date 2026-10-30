@@ -1,0 +1,8 @@
+On-call handover, week 23
+
+Open issues
+- The notifier queue had a backlog on Thursday evening; a poison message from a malformed address was moved to the
+  dead-letter queue. Root cause ticket is open.
+- Certificate for the status page renews in nine days; automatic renewal looks healthy.
+
+Quiet otherwise. Two pages in total, both for disk space on the reporting host.

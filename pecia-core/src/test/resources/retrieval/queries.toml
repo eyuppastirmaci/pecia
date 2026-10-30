@@ -1,0 +1,301 @@
+# Labelled queries for the retrieval-quality checks; README.md explains the rules.
+#
+# Each query names the corpus files that answer it (grade 2) and files that are related (grade 1), as paths relative
+# to corpus/. answer_first_in lists the modes in which an answer must rank first: a regression that must never happen.
+
+[[query]]
+id = "payment-retry-policy"
+kind = "identifier"
+text = "PaymentRetryPolicy"
+answers = ["services/orders/src/main/java/com/quillmoor/orders/PaymentRetryPolicy.java"]
+related = [
+    "services/orders/src/test/java/com/quillmoor/orders/PaymentRetryPolicyTest.java",
+    "services/orders/src/main/java/com/quillmoor/orders/OrderService.java",
+    "docs/runbooks/payment-retries.md",
+]
+
+[[query]]
+id = "free-shipping-threshold"
+kind = "identifier"
+text = "FREE_SHIPPING_THRESHOLD"
+answers = ["web/src/checkout/useShippingQuote.ts"]
+related = ["web/src/checkout/CheckoutForm.tsx", "docs/policies/shipping.md"]
+
+[[query]]
+id = "signature-header"
+kind = "identifier"
+text = "X-Quill-Signature"
+answers = ["docs/api/webhooks.md"]
+answer_first_in = ["lexical", "hybrid"]
+
+[[query]]
+id = "declined-card-code"
+kind = "identifier"
+text = "E1042"
+answers = ["docs/api/errors.md"]
+related = ["services/orders/src/test/java/com/quillmoor/orders/PaymentRetryPolicyTest.java"]
+
+[[query]]
+id = "idempotency-filter"
+kind = "identifier"
+text = "IdempotencyKeyFilter"
+answers = ["services/orders/src/main/java/com/quillmoor/orders/IdempotencyKeyFilter.java"]
+related = ["docs/api/orders.md", "web/src/api/client.ts"]
+answer_first_in = ["lexical", "hybrid"]
+
+[[query]]
+id = "reconcile-script"
+kind = "identifier"
+text = "reconcile_payments"
+answers = ["scripts/reconcile_payments.py"]
+
+[[query]]
+id = "retry-setting"
+kind = "identifier"
+text = "max_attempts"
+answers = ["config/orders.yaml"]
+related = [
+    "services/orders/src/main/java/com/quillmoor/orders/PaymentRetryPolicy.java",
+    "services/orders/src/test/java/com/quillmoor/orders/PaymentRetryPolicyTest.java",
+]
+
+[[query]]
+id = "outbox-publisher"
+kind = "identifier"
+text = "OutboxPublisher"
+answers = ["services/orders/src/main/java/com/quillmoor/orders/OutboxPublisher.java"]
+related = ["docs/decisions/0002-event-outbox.md", "docs/runbooks/queue-backlog.md"]
+answer_first_in = ["lexical", "hybrid"]
+
+[[query]]
+id = "backup-restore"
+kind = "keyword"
+text = "nightly backup restore"
+answers = ["docs/runbooks/backups.md"]
+related = ["config/backup.yaml"]
+
+[[query]]
+id = "certificate-expiry"
+kind = "keyword"
+text = "certificate expiry alert"
+answers = ["scripts/check_certificates.py", "docs/runbooks/certificate-renewal.md"]
+related = ["docs/incidents/2026-03-checkout-outage.md", "notes/oncall-handover.txt"]
+
+[[query]]
+id = "duplicate-emails"
+kind = "keyword"
+text = "duplicate confirmation emails"
+answers = ["docs/incidents/2026-05-duplicate-emails.md"]
+related = ["config/notifier.toml", "CHANGELOG.md"]
+
+[[query]]
+id = "home-office"
+kind = "keyword"
+text = "home office stipend"
+answers = ["docs/handbook.md"]
+
+[[query]]
+id = "promote-replica"
+kind = "keyword"
+text = "promote replica"
+answers = ["docs/runbooks/database-failover.md"]
+related = ["docs/decisions/0001-use-postgres.md", "docs/architecture.md"]
+
+[[query]]
+id = "restocking-fee"
+kind = "keyword"
+text = "restocking fee"
+answers = ["services/orders/src/main/java/com/quillmoor/orders/RefundCalculator.java", "docs/policies/refunds.md"]
+related = ["CHANGELOG.md", "docs/tr/iade-politikasi.md"]
+
+[[query]]
+id = "sales-report"
+kind = "keyword"
+text = "monthly sales report"
+answers = ["scripts/export_sales_report.py"]
+related = ["notes/2026-01-planning.txt", "CHANGELOG.md", "notes/tr/ekip-toplantisi.txt"]
+
+[[query]]
+id = "deploy-freeze"
+kind = "keyword"
+text = "deploy freeze"
+answers = ["docs/release-process.md"]
+
+[[query]]
+id = "money-back"
+kind = "paraphrase"
+text = "how long until a customer gets their money back"
+answers = ["docs/policies/refunds.md"]
+related = [
+    "docs/tr/iade-politikasi.md",
+    "services/orders/src/main/java/com/quillmoor/orders/RefundCalculator.java",
+    "docs/policies/returns.md",
+]
+
+[[query]]
+id = "temporary-charge-failure"
+kind = "paraphrase"
+text = "what happens when charging the card fails temporarily"
+answers = [
+    "docs/runbooks/payment-retries.md",
+    "services/orders/src/main/java/com/quillmoor/orders/PaymentRetryPolicy.java",
+]
+related = ["config/orders.yaml", "services/orders/src/main/java/com/quillmoor/orders/OrderService.java"]
+
+[[query]]
+id = "database-down"
+kind = "paraphrase"
+text = "the main database server is down, how do we switch to the standby"
+answers = ["docs/runbooks/database-failover.md"]
+related = ["docs/architecture.md", "docs/decisions/0001-use-postgres.md"]
+
+[[query]]
+id = "same-message-twice"
+kind = "paraphrase"
+text = "why did some shoppers get the same message several times"
+answers = ["docs/incidents/2026-05-duplicate-emails.md"]
+related = ["config/notifier.toml"]
+
+[[query]]
+id = "desk-at-home"
+kind = "paraphrase"
+text = "does the company pay for a desk and chair at home"
+answers = ["docs/handbook.md"]
+
+[[query]]
+id = "free-delivery"
+kind = "paraphrase"
+text = "above what basket value is delivery free"
+answers = ["docs/policies/shipping.md", "web/src/checkout/useShippingQuote.ts"]
+related = ["web/src/checkout/CheckoutForm.tsx"]
+
+[[query]]
+id = "cannot-sign-in"
+kind = "paraphrase"
+text = "a customer cannot remember how to sign in"
+answers = ["web/src/account/PasswordReset.tsx", "docs/policies/security.md"]
+
+[[query]]
+id = "march-payments"
+kind = "paraphrase"
+text = "why could nobody pay for their books in March"
+answers = ["docs/incidents/2026-03-checkout-outage.md"]
+related = ["docs/runbooks/certificate-renewal.md", "scripts/check_certificates.py"]
+
+[[query]]
+id = "retry-policy-delay"
+kind = "mixed"
+text = "PaymentRetryPolicy delay between attempts"
+answers = ["services/orders/src/main/java/com/quillmoor/orders/PaymentRetryPolicy.java"]
+related = [
+    "docs/runbooks/payment-retries.md",
+    "services/orders/src/test/java/com/quillmoor/orders/PaymentRetryPolicyTest.java",
+    "config/orders.yaml",
+]
+
+[[query]]
+id = "declined-card-message"
+kind = "mixed"
+text = "what does E1042 tell the customer"
+answers = ["docs/api/errors.md"]
+
+[[query]]
+id = "verify-signature"
+kind = "mixed"
+text = "how to verify X-Quill-Signature on our side"
+answers = ["docs/api/webhooks.md"]
+
+[[query]]
+id = "scale-orders"
+kind = "mixed"
+text = "scale up orders deployment replicas for a sale"
+answers = ["deploy/k8s/orders-deployment.yaml"]
+related = ["docs/runbooks/queue-backlog.md"]
+
+[[query]]
+id = "status-after-refund"
+kind = "mixed"
+text = "which OrderStatus after a partial refund"
+answers = [
+    "services/orders/src/main/java/com/quillmoor/orders/OrderStatus.java",
+    "services/orders/src/main/java/com/quillmoor/orders/RefundCalculator.java",
+]
+
+[[query]]
+id = "one-page-checkout"
+kind = "mixed"
+text = "turn on one-page-checkout for more customers"
+answers = ["config/feature-flags.json"]
+related = [
+    "docs/decisions/0003-feature-flags.md",
+    "web/src/flags.ts",
+    "web/src/checkout/CheckoutForm.tsx",
+    "notes/tr/ekip-toplantisi.txt",
+]
+
+[[query]]
+id = "notifier-rate-limit"
+kind = "mixed"
+text = "notifier rate_limit per recipient"
+answers = ["config/notifier.toml"]
+related = ["docs/architecture.md"]
+
+[[query]]
+id = "publisher-broker-down"
+kind = "mixed"
+text = "OutboxPublisher when the broker is down"
+answers = ["services/orders/src/main/java/com/quillmoor/orders/OutboxPublisher.java"]
+related = ["docs/runbooks/queue-backlog.md", "docs/decisions/0002-event-outbox.md"]
+
+[[query]]
+id = "fatura-zamani"
+kind = "turkish"
+text = "fatura ne zaman kesilir"
+answers = ["docs/tr/fatura-sureci.md"]
+
+[[query]]
+id = "iade-suresi"
+kind = "turkish"
+text = "iade süresi kaç gün"
+answers = ["docs/tr/iade-politikasi.md"]
+related = ["docs/policies/refunds.md", "docs/policies/returns.md"]
+
+[[query]]
+id = "yillik-izin"
+kind = "turkish"
+text = "yıllık izin kaç gün"
+answers = ["docs/tr/izin-politikasi.md"]
+
+[[query]]
+id = "veri-silme"
+kind = "turkish"
+text = "kişisel verilerimin silinmesini istiyorum"
+answers = ["docs/tr/kvkk-aydinlatma.md"]
+related = ["docs/policies/privacy.md"]
+
+[[query]]
+id = "hasar-bildirimi"
+kind = "turkish"
+text = "kargo firmasına hasar bildirimi"
+answers = ["docs/tr/kargo-anlasmasi.md"]
+related = ["notes/vendor-call-courier.txt"]
+
+[[query]]
+id = "toplanti-kararlari"
+kind = "turkish"
+text = "toplantıda hangi kararlar alındı"
+answers = ["notes/tr/ekip-toplantisi.txt"]
+related = ["notes/2026-01-planning.txt"]
+
+[[query]]
+id = "invoice-in-turkey"
+kind = "turkish"
+text = "electronic invoice for customers in Turkey"
+answers = ["docs/tr/fatura-sureci.md"]
+
+[[query]]
+id = "kart-iadesi"
+kind = "turkish"
+text = "kredi kartına para iadesi ne zaman yansır"
+answers = ["docs/tr/iade-politikasi.md"]
+related = ["docs/policies/refunds.md"]

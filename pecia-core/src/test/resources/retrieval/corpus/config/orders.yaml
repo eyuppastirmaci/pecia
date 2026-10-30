@@ -1,0 +1,17 @@
+# Order service settings. Values here override the defaults compiled into the service.
+server:
+  port: 8080
+database:
+  url: jdbc:postgresql://orders-db:5432/orders
+  pool_size: 20
+payments:
+  provider_timeout_seconds: 8
+  retry:
+    max_attempts: 5
+    first_delay_seconds: 2
+    max_delay_seconds: 60
+reservations:
+  hold_minutes: 15
+outbox:
+  publish_interval_millis: 1000
+  batch_size: 100

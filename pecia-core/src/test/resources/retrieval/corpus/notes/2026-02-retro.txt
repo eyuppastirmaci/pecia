@@ -1,0 +1,13 @@
+Retrospective, 20 February 2026
+
+Went well
+- The outbox shipped without incidents.
+- Code reviews were fast.
+
+Did not go well
+- Two on-call pages for the same flaky disk alert. Tom will tune the threshold.
+- Staging was broken for a day because nobody owned the test data.
+
+Actions
+- Elif writes a short note on who owns staging data.
+- Everyone tries to keep pull requests under 400 lines.

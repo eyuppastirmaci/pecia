@@ -1,0 +1,14 @@
+Planning, 12 January 2026
+
+Present: Mara, Jonas, Elif, Tom
+
+Goals for the quarter
+- Move event publishing to an outbox (Jonas). Too many lost events since the broker upgrade.
+- One-page checkout behind a flag (Elif).
+- Monthly sales report for finance (Tom).
+
+Risks
+- The February sale falls in the same week as the planned database upgrade. Decision: no database upgrade during the
+  sale week; it moves to March.
+
+Next planning on 26 January.
