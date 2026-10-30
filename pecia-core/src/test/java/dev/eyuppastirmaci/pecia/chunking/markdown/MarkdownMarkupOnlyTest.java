@@ -87,6 +87,15 @@ class MarkdownMarkupOnlyTest {
     }
 
     @Test
+    void tagsInsideCodeAreContentAndStay() {
+        for (String code : List.of("    <div></div>\n\n", "```\n<div></div>\n```\n\n")) {
+            List<Chunk> chunks = betweenFullSections(code);
+
+            assertEquals(3, chunks.size(), code + ": " + contents(chunks));
+        }
+    }
+
+    @Test
     void markupInsideAChunkWithTextIsKeptExactly() {
         String text = "# Shutdown\n\nPress <kbd>ctrl</kbd>-<kbd>C</kbd> to stop. <!-- reviewed -->\n";
 
