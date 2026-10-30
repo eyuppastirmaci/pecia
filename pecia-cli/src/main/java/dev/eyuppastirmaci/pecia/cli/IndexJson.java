@@ -5,6 +5,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
+import dev.eyuppastirmaci.pecia.index.IndexTimings;
 import dev.eyuppastirmaci.pecia.index.WalkResult;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
@@ -44,6 +45,8 @@ final class IndexJson {
                                 .put("failed", result.failedFiles()))
                 .put("chunks", new Json.JsonObject().put("written", result.writtenChunks()))
                 .put("embeddings", embeddings(result))
+                .put("durationMillis", result.timings().total().toMillis())
+                .put("phases", phases(result.timings()))
                 .put("issues", result.issues().stream().map(IndexJson::issue).toList())
                 .put("scanIssues", scanIssues(root, result.scanIssues()))
                 .put(
@@ -65,6 +68,8 @@ final class IndexJson {
                 .put("files", null)
                 .put("chunks", null)
                 .put("embeddings", null)
+                .put("durationMillis", null)
+                .put("phases", null)
                 .put("issues", List.of())
                 .put("scanIssues", List.of())
                 .put("semanticIssues", List.of())
@@ -204,6 +209,13 @@ final class IndexJson {
                 .put("backfilled", result.backfilledChunks())
                 .put("discarded", result.discardedEmbeddings())
                 .put("coverage", coverage(result.embeddingCoverage()));
+    }
+
+    /** Describes how long each phase the run reached took, in milliseconds and in run order. */
+    private static Json.JsonObject phases(IndexTimings timings) {
+        Json.JsonObject phases = new Json.JsonObject();
+        timings.phases().forEach((phase, duration) -> phases.put(phase.name(), duration.toMillis()));
+        return phases;
     }
 
     private static Json.JsonObject semanticIssue(IndexResult.SemanticIssue issue) {

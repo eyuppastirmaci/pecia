@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -72,10 +73,16 @@ public class QueryCommand implements Callable<Integer> {
     static final String INVALID_INPUT = "INVALID_INPUT";
 
     private final QueryService queryService;
+    private final Supplier<Terminal.Environment> environment;
 
     /** Creates a command using the supplied non-null query service. */
     public QueryCommand(QueryService queryService) {
+        this(queryService, Terminal.Environment::system);
+    }
+
+    QueryCommand(QueryService queryService, Supplier<Terminal.Environment> environment) {
         this.queryService = Objects.requireNonNull(queryService, "queryService");
+        this.environment = Objects.requireNonNull(environment, "environment");
     }
 
     /**
@@ -87,11 +94,14 @@ public class QueryCommand implements Callable<Integer> {
      */
     @Override
     public Integer call() {
+        Terminal terminal = Terminal.detect(ColorMode.of(spec), environment.get());
+        Diagnostics diagnostics = new Diagnostics(spec.commandLine().getErr(), terminal, "pecia query");
+
         try {
             QueryOptions options = mode == null ? QueryOptions.configured() : QueryOptions.mode(mode);
             QueryResult result = queryService.query(root, new SearchRequest(text, limit), options);
-            WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
-            printNotes(spec.commandLine().getErr(), result);
+            WarningPrinter.print(diagnostics, result.warnings());
+            printNotes(diagnostics, result);
             List<SearchHit> hits = result.hits();
             PrintWriter out = spec.commandLine().getOut();
 
@@ -101,14 +111,13 @@ public class QueryCommand implements Callable<Integer> {
                 out.println("No results.");
             } else {
                 for (SearchHit hit : hits) {
-                    printHit(out, hit, result.queryShape());
+                    printHit(out, hit, result.queryShape(), terminal);
                 }
             }
 
             return 0;
         } catch (QueryException failure) {
-            PrintWriter err = spec.commandLine().getErr();
-            WarningPrinter.print(err, failure.warnings());
+            WarningPrinter.print(diagnostics, failure.warnings());
             boolean causeHelps =
                     switch (failure.reason()) {
                         case READ_FAILED, VECTOR_SEARCH_UNAVAILABLE, EMBEDDER_UNAVAILABLE, EMBEDDING_FAILED -> true;
@@ -119,21 +128,21 @@ public class QueryCommand implements Callable<Integer> {
                             && !failure.getMessage().equals(failure.getCause().getMessage())
                     ? ": " + failure.getCause().getMessage()
                     : "";
-            err.println("pecia query: " + failure.reason() + ": " + failure.getMessage() + detail);
+            diagnostics.failure(failure.reason() + ": " + failure.getMessage() + detail);
 
             int exitCode =
                     switch (failure.reason()) {
                         case INDEX_NOT_FOUND, MIGRATION_REQUIRED -> {
-                            err.println(indexCommand(""));
+                            diagnostics.line(indexCommand(""));
                             yield 1;
                         }
                         case EMBEDDINGS_MISSING, EMBEDDINGS_OUTDATED, MODEL_NOT_CACHED -> {
                             // Semantic indexing makes the embeddings and downloads the model; queries never do.
-                            err.println(indexCommand(" --semantic"));
+                            diagnostics.line(indexCommand(" --semantic"));
                             yield MISSING_SEMANTIC_PREREQUISITE;
                         }
                         case VECTOR_SEARCH_UNAVAILABLE, EMBEDDER_UNAVAILABLE, EMBEDDING_FAILED -> {
-                            err.println("Use --mode lexical to search without embeddings.");
+                            diagnostics.line("Use --mode lexical to search without embeddings.");
                             yield MISSING_SEMANTIC_PREREQUISITE;
                         }
                         default -> 1;
@@ -142,7 +151,7 @@ public class QueryCommand implements Callable<Integer> {
 
             return exitCode;
         } catch (IllegalArgumentException failure) {
-            spec.commandLine().getErr().println("pecia query: " + failure.getMessage());
+            diagnostics.failure(failure.getMessage());
             printFailure(List.of(), INVALID_INPUT, failure.getMessage());
 
             return 1;
@@ -169,31 +178,43 @@ public class QueryCommand implements Callable<Integer> {
      * Notes why auto searched lexically, unless the index simply has no embeddings, where lexical search is what auto
      * is expected to do, and anything else about how the query text was used.
      */
-    private static void printNotes(PrintWriter err, QueryResult result) {
+    private static void printNotes(Diagnostics diagnostics, QueryResult result) {
         result.fallback()
                 .filter(fallback -> fallback.reason() != QueryException.Reason.EMBEDDINGS_MISSING)
-                .ifPresent(fallback -> err.println("note: searched lexically: " + fallback.message()));
+                .ifPresent(fallback -> diagnostics.note("searched lexically: " + fallback.message()));
 
         for (QueryNotice notice : result.notices()) {
-            err.println("note: " + notice.message());
+            diagnostics.note(notice.message());
         }
     }
 
-    private static void printHit(PrintWriter out, SearchHit hit, Optional<QueryShape> shape) {
-        String location = FileWalker.portablePath(hit.sourcePath());
+    /**
+     * Prints a hit: its path and line range, its score rounded for reading, its heading path, and its snippet. With
+     * colour, as ripgrep shows matches, the path is bold magenta, the range, score, and heading dim, and the matched
+     * words bold red.
+     */
+    private static void printHit(PrintWriter out, SearchHit hit, Optional<QueryShape> shape, Terminal terminal) {
+        String location =
+                terminal.paint(FileWalker.portablePath(hit.sourcePath()), Terminal.Style.BOLD, Terminal.Style.MAGENTA);
 
         if (hit.sourceLocation() instanceof LineRange lines) {
-            location += ":" + lines.startLine() + "-" + lines.endLine();
+            location += terminal.paint(":" + lines.startLine() + "-" + lines.endLine(), Terminal.Style.DIM);
         }
 
         out.println(location);
-        out.println("  " + scoreLabel(hit.score().kind()) + ": " + hit.score().value() + fusedRanks(hit, shape));
+        out.println("  "
+                + terminal.paint(
+                        scoreLabel(hit.score().kind()) + ": "
+                                + HitText.score(hit.score().value()) + fusedRanks(hit, shape),
+                        Terminal.Style.DIM));
 
         if (!hit.metadata().headingPath().isEmpty()) {
-            out.println("  heading: " + String.join(" > ", hit.metadata().headingPath()));
+            out.println("  "
+                    + terminal.paint(
+                            "heading: " + String.join(" > ", hit.metadata().headingPath()), Terminal.Style.DIM));
         }
 
-        hit.snippet().lines().forEach(line -> out.println("  " + line));
+        HitText.snippetLines(hit.snippet(), hit.matches(), terminal).forEach(line -> out.println("  " + line));
         out.println();
     }
 

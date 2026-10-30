@@ -97,7 +97,8 @@ public final class ModelCache implements ModelProvider, ModelLookup {
     }
 
     /**
-     * Works like {@link #ensure()} and tells the listener before a download starts.
+     * Works like {@link #ensure()} and tells the listener before a download starts, and as its bytes arrive when it is
+     * a {@link DownloadProgressListener}.
      *
      * @throws NullPointerException if listener is null
      */
@@ -172,7 +173,7 @@ public final class ModelCache implements ModelProvider, ModelLookup {
         }
 
         listener.downloading(model, target);
-        download(target);
+        download(target, listener);
 
         return new ModelOutcome(ModelOutcome.Status.DOWNLOADED, model, target);
     }
@@ -204,11 +205,11 @@ public final class ModelCache implements ModelProvider, ModelLookup {
         return HexFormat.of().formatHex(digest.digest()).equals(model.sha256());
     }
 
-    private void download(Path target) throws IOException, ModelException {
+    private void download(Path target, DownloadListener listener) throws IOException, ModelException {
         Path temporary = Files.createTempFile(target.getParent(), TEMPORARY_PREFIX, TEMPORARY_SUFFIX);
 
         try {
-            fetchInto(temporary);
+            fetchInto(temporary, listener);
             Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
         } finally {
             try {
@@ -219,7 +220,7 @@ public final class ModelCache implements ModelProvider, ModelLookup {
         }
     }
 
-    private void fetchInto(Path temporary) throws ModelException {
+    private void fetchInto(Path temporary, DownloadListener listener) throws ModelException {
         HttpRequest request = HttpRequest.newBuilder(model.downloadUri())
                 // Bounds the wait for response headers; reading the body has its own stall timeout.
                 .timeout(stallTimeout)
@@ -251,13 +252,13 @@ public final class ModelCache implements ModelProvider, ModelLookup {
                         null);
             }
 
-            copyVerified(body, temporary);
+            copyVerified(body, temporary, listener);
         } catch (IOException closeFailure) {
             throw transferFailed(closeFailure);
         }
     }
 
-    private void copyVerified(InputStream body, Path temporary) throws ModelException {
+    private void copyVerified(InputStream body, Path temporary, DownloadListener listener) throws ModelException {
         MessageDigest digest = sha256();
         long total = 0;
         ExecutorService reader = Executors.newSingleThreadExecutor(task -> {
@@ -279,6 +280,9 @@ public final class ModelCache implements ModelProvider, ModelLookup {
 
                 digest.update(buffer, 0, read);
                 output.write(buffer, 0, read);
+                if (listener instanceof DownloadProgressListener progress) {
+                    progress.received(total, model.size());
+                }
             }
         } catch (IOException failure) {
             throw cacheUnavailable(temporary.getParent(), failure);

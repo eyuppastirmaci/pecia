@@ -73,7 +73,7 @@ class QueryCommandTest {
             int position = rendered.indexOf(hit.sourcePath().toString() + ":");
             assertTrue(position > previous);
             previous = position;
-            assertTrue(rendered.contains("  BM25: " + hit.score().value()));
+            assertTrue(rendered.contains("  BM25: " + HitText.score(hit.score().value())));
         }
 
         assertTrue(rendered.contains("plain.txt:1-2"));
@@ -107,7 +107,9 @@ class QueryCommandTest {
         assertEquals("", err.toString());
         assertTrue(out.toString().startsWith("refunds.txt:1-1" + System.lineSeparator()), out.toString());
         assertEquals(
-                expected.stream().map(hit -> "  cosine: " + hit.score().value()).toList(),
+                expected.stream()
+                        .map(hit -> "  cosine: " + HitText.score(hit.score().value()))
+                        .toList(),
                 out.toString()
                         .lines()
                         .filter(line -> line.startsWith("  cosine: "))
@@ -140,10 +142,10 @@ class QueryCommandTest {
         assertEquals(4, expected.size());
         assertEquals(
                 List.of(
-                        "  RRF: " + expected.get(0).score().value() + " (lexical #1, semantic #1)",
-                        "  RRF: " + expected.get(1).score().value() + " (semantic #2)",
-                        "  RRF: " + expected.get(2).score().value() + " (lexical #2)",
-                        "  RRF: " + expected.get(3).score().value() + " (semantic #3)"),
+                        "  RRF: " + HitText.score(expected.get(0).score().value()) + " (lexical #1, semantic #1)",
+                        "  RRF: " + HitText.score(expected.get(1).score().value()) + " (semantic #2)",
+                        "  RRF: " + HitText.score(expected.get(2).score().value()) + " (lexical #2)",
+                        "  RRF: " + HitText.score(expected.get(3).score().value()) + " (semantic #3)"),
                 scores);
         // Rank 2 on either side scores the same; the tie breaks by path.
         assertEquals(Path.of("accounts.txt"), expected.get(1).sourcePath());

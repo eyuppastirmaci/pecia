@@ -157,9 +157,8 @@ class PackagedCliIndexingIT {
 
         assertEquals(1, partial.exitCode());
         assertEquals(
-                "index: " + database
-                        + "\ncandidates: 2\nindexed: 1\nrechunked: 0\nunchanged: 0\ndeleted: 0\nchunks: 1\nrejected: 1\nfailed: 0\n",
-                partial.out());
+                "index: " + database + "\n" + PackagedCliAssertions.files(1, 0, 0, 0, 1, 2) + "\nchunks: 1 written\n",
+                PackagedCliAssertions.withoutTime(partial.out()));
         assertTrue(partial.err().startsWith("warning: bad.txt: INVALID_UTF8: "), partial.err());
         assertTrue(
                 partial.err()
@@ -191,9 +190,9 @@ class PackagedCliIndexingIT {
 
         assertSuccess(cleanup);
         assertEquals(
-                "index: " + project.resolve(".pecia/index.db")
-                        + "\ncandidates: 0\nindexed: 0\nrechunked: 0\nunchanged: 0\ndeleted: 1\nchunks: 0\nrejected: 0\nfailed: 0\n",
-                cleanup.out());
+                "index: " + project.resolve(".pecia/index.db") + "\n" + PackagedCliAssertions.files(0, 0, 0, 1, 0, 0)
+                        + "\nchunks: 0 written\n",
+                PackagedCliAssertions.withoutTime(cleanup.out()));
         Result query = cli.run(project, "query", "deletedneedle");
         assertSuccess(query);
         assertEquals("No results.\n", query.out());

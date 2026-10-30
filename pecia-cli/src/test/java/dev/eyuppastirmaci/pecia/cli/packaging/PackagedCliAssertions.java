@@ -37,22 +37,21 @@ final class PackagedCliAssertions {
             Result result, Path database, int candidates, int indexed, int rechunked, int deleted, int chunks) {
         assertSuccess(result);
         assertEquals(
-                "index: "
-                        + database
-                        + "\ncandidates: "
-                        + candidates
-                        + "\nindexed: "
-                        + indexed
-                        + "\nrechunked: "
-                        + rechunked
-                        + "\nunchanged: "
-                        + (candidates - indexed)
-                        + "\ndeleted: "
-                        + deleted
-                        + "\nchunks: "
-                        + chunks
-                        + "\nrejected: 0\nfailed: 0\n",
-                result.out());
+                "index: " + database + "\n" + files(indexed, rechunked, candidates - indexed, deleted, 0, candidates)
+                        + "\nchunks: " + chunks + " written\n",
+                withoutTime(result.out()));
+    }
+
+    /** Returns a summary's {@code files:} line for a run without failed files. */
+    static String files(int indexed, int rechunked, int unchanged, int deleted, int rejected, int found) {
+        return "files: " + indexed + " indexed, " + rechunked + " rechunked, " + unchanged + " unchanged, " + deleted
+                + " deleted, " + rejected + " rejected, 0 failed (" + found + " found)";
+    }
+
+    /** Removes a summary's last line, its duration, which varies from run to run. */
+    static String withoutTime(String summary) {
+        assertTrue(summary.matches("(?s).*\ntime: [^\n]+ s( \\([^\n]+/s\\))?\n"), summary);
+        return summary.substring(0, summary.lastIndexOf("time: "));
     }
 
     /** Returns the location header of each query hit, in rank order. */

@@ -208,23 +208,21 @@ class IndexCommandTest {
         Files.writeString(root.resolve("a.txt"), "needle");
 
         assertEquals(0, run(root.toString(), "--semantic"));
-        List<String> summary = out.toString().lines().toList();
+        List<String> summary = summary();
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 1", "backfilled: 0"),
-                summary.subList(summary.size() - 4, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "embeddings: 1 made, 0 backfilled, 0 discarded"),
+                summary.subList(summary.size() - 2, summary.size()));
         assertEquals("", err.toString());
 
         // The same project indexed from scratch without semantic indexing prints the rest of the summary unchanged.
         deleteIndex();
         assertSuccessfulIndex(1, 1, 0, 0, 1);
-        assertEquals(
-                summary.subList(0, summary.size() - 4), out.toString().lines().toList());
+        assertEquals(summary.subList(0, summary.size() - 2), summary());
 
         deleteIndex();
         out.getBuffer().setLength(0);
         assertEquals(0, run(root.toString(), "--no-semantic"));
-        assertEquals(
-                summary.subList(0, summary.size() - 4), out.toString().lines().toList());
+        assertEquals(summary.subList(0, summary.size() - 2), summary());
     }
 
     @Test
@@ -235,8 +233,7 @@ class IndexCommandTest {
 
         assertEquals(0, run(root.toString(), "--semantic"));
 
-        List<String> summary = out.toString().lines().toList();
-        assertEquals(List.of("embedded: 0", "backfilled: 0"), summary.subList(summary.size() - 2, summary.size()));
+        assertEquals("embeddings: 0 made, 0 backfilled, 0 discarded", summary().getLast());
     }
 
     @Test
@@ -248,12 +245,14 @@ class IndexCommandTest {
 
         assertEquals(0, run(root.toString(), "--semantic"));
 
-        List<String> summary = out.toString().lines().toList();
-        assertEquals(List.of("indexed: 0", "rechunked: 0", "unchanged: 2"), summary.subList(2, 5));
+        List<String> summary = summary();
+        assertEquals(files(0, 0, 2, 0, 0, 0, 2), summary.get(1));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 2"),
-                summary.subList(summary.size() - 4, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "embeddings: 0 made, 2 backfilled, 0 discarded"),
+                summary.subList(summary.size() - 2, summary.size()));
         assertEquals("", err.toString());
+        // Nothing was written, but backfilled chunks give the run its pace.
+        assertTrue(out.toString().lines().toList().getLast().matches("time: .+ s \\(.+ chunks/s\\)"), out.toString());
     }
 
     @Test
@@ -266,11 +265,11 @@ class IndexCommandTest {
 
         assertEquals(0, run(root.toString(), "--semantic"));
 
-        List<String> summary = out.toString().lines().toList();
-        assertEquals(List.of("indexed: 0", "rechunked: 0", "unchanged: 2"), summary.subList(2, 5));
+        List<String> summary = summary();
+        assertEquals(files(0, 0, 2, 0, 0, 0, 2), summary.get(1));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 2", "embedded: 0", "backfilled: 2"),
-                summary.subList(summary.size() - 4, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "embeddings: 0 made, 2 backfilled, 2 discarded"),
+                summary.subList(summary.size() - 2, summary.size()));
     }
 
     /** Rewrites the stored embeddings under another profile, as an index written before a model update holds them. */
@@ -300,11 +299,11 @@ class IndexCommandTest {
 
         assertEquals(1, run(root.toString(), "--semantic"));
 
-        List<String> summary = out.toString().lines().toList();
-        assertEquals("unchanged: 1", summary.get(4));
+        List<String> summary = summary();
+        assertEquals(files(0, 0, 1, 0, 0, 0, 1), summary.get(1));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 0"),
-                summary.subList(summary.size() - 4, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "embeddings: 0 made, 0 backfilled, 0 discarded"),
+                summary.subList(summary.size() - 2, summary.size()));
         assertEquals(
                 List.of(
                         "warning: a.txt: INVALID_OUTPUT: The model returned token embeddings whose average is not a"
@@ -335,11 +334,11 @@ class IndexCommandTest {
 
         assertEquals(1, run(root.toString(), "--semantic"));
 
-        List<String> summary = out.toString().lines().toList();
-        assertEquals("indexed: 1", summary.get(2));
+        List<String> summary = summary();
+        assertEquals(files(1, 0, 0, 0, 0, 0, 1), summary.get(1));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 0"),
-                summary.subList(summary.size() - 4, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "embeddings: 0 made, 0 backfilled, 0 discarded"),
+                summary.subList(summary.size() - 2, summary.size()));
         assertEquals(
                 List.of(
                         "warning: a.txt: INVALID_OUTPUT: The model returned token embeddings whose average is not a"
@@ -357,11 +356,11 @@ class IndexCommandTest {
 
         assertEquals(1, run(root.toString(), "--semantic"));
 
-        List<String> summary = out.toString().lines().toList();
-        assertEquals("indexed: 3", summary.get(2));
+        List<String> summary = summary();
+        assertEquals(files(3, 0, 0, 0, 0, 0, 3), summary.get(1));
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 cached", "discarded: 0", "embedded: 0", "backfilled: 0"),
-                summary.subList(summary.size() - 4, summary.size()));
+                List.of("model: all-MiniLM-L6-v2 cached", "embeddings: 0 made, 0 backfilled, 0 discarded"),
+                summary.subList(summary.size() - 2, summary.size()));
         List<String> lines = err.toString().lines().toList();
         assertEquals(5, lines.size(), err.toString());
 
@@ -394,10 +393,12 @@ class IndexCommandTest {
                 "Downloading all-MiniLM-L6-v2 (90.4 MB) from huggingface.co into " + file.getParent()
                         + System.lineSeparator(),
                 err.toString());
-        List<String> summary = out.toString().lines().toList();
+        List<String> summary = summary();
         assertEquals(
-                List.of("model: all-MiniLM-L6-v2 downloaded (90.4 MB)", "discarded: 0", "embedded: 1", "backfilled: 0"),
-                summary.subList(summary.size() - 4, summary.size()));
+                List.of(
+                        "model: all-MiniLM-L6-v2 downloaded (90.4 MB)",
+                        "embeddings: 1 made, 0 backfilled, 0 discarded"),
+                summary.subList(summary.size() - 2, summary.size()));
     }
 
     @ParameterizedTest
@@ -462,18 +463,10 @@ class IndexCommandTest {
         assertEquals(0, run(root.toString()));
         assertEquals("", err.toString());
         assertEquals(
-                String.join(
-                        System.lineSeparator(),
-                        "index: " + root.resolve(".pecia/index.db"),
-                        "candidates: 2",
-                        "indexed: 2",
-                        "rechunked: 0",
-                        "unchanged: 0",
-                        "deleted: 0",
-                        "chunks: 1",
-                        "rejected: 0",
-                        "failed: 0",
-                        ""),
+                List.of("index: " + root.resolve(".pecia/index.db"), files(2, 0, 0, 0, 0, 0, 2), "chunks: 1 written"),
+                summary());
+        assertTrue(
+                out.toString().lines().toList().getLast().matches("time: [0-9.]+ s \\([0-9.,]+ chunks/s\\)"),
                 out.toString());
 
         try (SqliteStorage storage = SqliteStorage.openReadOnly(root.resolve(".pecia/index.db"), root)) {
@@ -494,19 +487,10 @@ class IndexCommandTest {
         assertEquals(0, run(root.toString()));
         assertEquals("", err.toString());
         assertEquals(
-                String.join(
-                        System.lineSeparator(),
-                        "index: " + root.resolve(".pecia/index.db"),
-                        "candidates: 2",
-                        "indexed: 0",
-                        "rechunked: 0",
-                        "unchanged: 2",
-                        "deleted: 0",
-                        "chunks: 0",
-                        "rejected: 0",
-                        "failed: 0",
-                        ""),
-                out.toString());
+                List.of("index: " + root.resolve(".pecia/index.db"), files(0, 0, 2, 0, 0, 0, 2), "chunks: 0 written"),
+                summary());
+        // Nothing was written, so the run has no rate.
+        assertTrue(out.toString().lines().toList().getLast().matches("time: [0-9.]+ s"), out.toString());
     }
 
     @Test
@@ -576,21 +560,15 @@ class IndexCommandTest {
         err.getBuffer().setLength(0);
 
         assertEquals(1, run(root.toString()));
-        assertTrue(out.toString().contains("indexed: 0"));
-        assertTrue(out.toString().contains("unchanged: 1"));
-        assertTrue(out.toString().contains("deleted: 0"));
-        assertTrue(out.toString().contains("chunks: 0"));
-        assertTrue(out.toString().contains("rejected: 1"));
-        assertTrue(out.toString().contains("failed: 0"));
+        assertEquals(files(0, 0, 1, 0, 1, 0, 2), summary().get(1));
+        assertEquals("chunks: 0 written", summary().get(2));
         assertTrue(err.toString().contains("warning: bad.txt: BINARY_CONTENT:"));
     }
 
     @Test
     void emptyProjectIsSuccessful() {
         assertEquals(0, run(root.toString()));
-        assertTrue(out.toString().contains("indexed: 0"));
-        assertTrue(out.toString().contains("unchanged: 0"));
-        assertTrue(out.toString().contains("deleted: 0"));
+        assertEquals(files(0, 0, 0, 0, 0, 0, 0), summary().get(1));
         assertEquals("", err.toString());
         assertTrue(Files.isRegularFile(root.resolve(".pecia/index.db")));
     }
@@ -601,9 +579,7 @@ class IndexCommandTest {
         Files.writeString(root.resolve("bad.txt"), "binary\0");
 
         assertEquals(1, run(root.toString()));
-        assertTrue(out.toString().contains("candidates: 2"));
-        assertTrue(out.toString().contains("indexed: 1"));
-        assertTrue(out.toString().contains("rejected: 1"));
+        assertEquals(files(1, 0, 0, 0, 1, 0, 2), summary().get(1));
         assertTrue(err.toString().contains("warning: bad.txt: BINARY_CONTENT:"));
         assertTrue(
                 err.toString()
@@ -620,7 +596,7 @@ class IndexCommandTest {
         Files.writeString(root.resolve("good.txt"), "good");
 
         assertEquals(1, run(root.toString()));
-        assertTrue(out.toString().contains("indexed: 1"));
+        assertEquals(files(1, 0, 0, 0, 0, 0, 1), summary().get(1));
         List<String> lines = err.toString().lines().toList();
         assertEquals(2, lines.size(), err.toString());
         assertTrue(lines.get(0).startsWith("warning: bad/.gitignore: IO_ERROR: "), lines.get(0));
@@ -669,7 +645,7 @@ class IndexCommandTest {
                         + " from your files.",
                 lines.get(1));
         assertFalse(err.toString().contains("\tat "));
-        assertTrue(out.toString().contains("indexed: 0"));
+        assertEquals(files(0, 0, 0, 0, 0, 0, 0), summary().get(1));
         org.junit.jupiter.api.Assertions.assertArrayEquals(corrupt, Files.readAllBytes(database));
     }
 
@@ -697,14 +673,14 @@ class IndexCommandTest {
         Files.writeString(root.resolve("a.txt"), "needle");
 
         assertEquals(0, run(root.toString()));
-        String withWarning = out.toString();
+        List<String> withWarning = summary();
         assertEquals(typoWarning(config) + System.lineSeparator(), err.toString());
 
         // The same project without the typo, indexed from scratch, prints the same summary and nothing on stderr.
         deleteIndex();
         Files.writeString(config, VALID_CONFIG);
         assertSuccessfulIndex(1, 1, 0, 0, 1);
-        assertEquals(withWarning, out.toString());
+        assertEquals(withWarning, summary());
     }
 
     @Test
@@ -794,19 +770,22 @@ class IndexCommandTest {
         assertEquals(0, run(root.toString()));
         assertEquals("", err.toString());
         assertEquals(
-                String.join(
-                        System.lineSeparator(),
+                List.of(
                         "index: " + root.resolve(".pecia/index.db"),
-                        "candidates: " + candidates,
-                        "indexed: " + indexed,
-                        "rechunked: " + rechunked,
-                        "unchanged: " + unchanged,
-                        "deleted: " + deleted,
-                        "chunks: " + chunks,
-                        "rejected: 0",
-                        "failed: 0",
-                        ""),
-                out.toString());
+                        files(indexed, rechunked, unchanged, deleted, 0, 0, candidates),
+                        "chunks: " + chunks + " written"),
+                summary());
+    }
+
+    /** Returns the summary's lines without its time line, whose duration varies. */
+    private List<String> summary() {
+        return out.toString().lines().filter(line -> !line.startsWith("time: ")).toList();
+    }
+
+    private static String files(
+            int indexed, int rechunked, int unchanged, int deleted, int rejected, int failed, int found) {
+        return "files: " + indexed + " indexed, " + rechunked + " rechunked, " + unchanged + " unchanged, " + deleted
+                + " deleted, " + rejected + " rejected, " + failed + " failed (" + found + " found)";
     }
 
     private int run(String... args) {

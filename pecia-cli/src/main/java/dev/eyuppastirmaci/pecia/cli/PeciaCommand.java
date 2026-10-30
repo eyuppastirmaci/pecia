@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.cli;
 
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
 
 /** Root CLI command that groups supported operations and displays usage. */
 @Command(
@@ -14,6 +15,17 @@ public class PeciaCommand implements Runnable {
 
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
+
+    // Inherited, so it may follow the subcommand as well; subcommands read it with ColorMode.of.
+    @Option(
+            names = "--color",
+            paramLabel = "<when>",
+            scope = CommandLine.ScopeType.INHERIT,
+            converter = ColorMode.Names.class,
+            completionCandidates = ColorMode.Names.class,
+            description = "When to use colour: ${COMPLETION-CANDIDATES} (default: auto, on terminals that show colour"
+                    + " unless NO_COLOR is set).")
+    ColorMode color = ColorMode.AUTO;
 
     /** Prints usage when pecia is run without a subcommand. */
     @Override

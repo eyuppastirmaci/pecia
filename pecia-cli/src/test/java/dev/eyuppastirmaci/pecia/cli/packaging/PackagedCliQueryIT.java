@@ -78,13 +78,19 @@ class PackagedCliQueryIT {
                 project.toString());
 
         assertSuccess(identifier);
-        assertEquals(
-                expected.stream().map(hit -> "  BM25: " + hit.score().value()).toList(),
-                identifier
-                        .out()
-                        .lines()
-                        .filter(line -> line.startsWith("  BM25: "))
-                        .toList());
+        List<Double> printed = identifier
+                .out()
+                .lines()
+                .filter(line -> line.startsWith("  BM25: "))
+                .map(line -> Double.parseDouble(line.substring("  BM25: ".length())))
+                .toList();
+        assertEquals(expected.size(), printed.size(), identifier.out());
+
+        // Text output rounds scores to three significant digits.
+        for (int hit = 0; hit < printed.size(); hit++) {
+            double score = expected.get(hit).score().value();
+            assertEquals(score, printed.get(hit), Math.abs(score) * 0.005, identifier.out());
+        }
         assertTrue(
                 identifier.out().indexOf(portablePath(expected.getFirst().sourcePath()) + ":")
                         < identifier

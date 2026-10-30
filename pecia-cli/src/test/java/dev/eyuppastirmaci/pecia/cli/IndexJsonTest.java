@@ -44,6 +44,8 @@ class IndexJsonTest {
             "files",
             "chunks",
             "embeddings",
+            "durationMillis",
+            "phases",
             "issues",
             "scanIssues",
             "semanticIssues",
@@ -88,6 +90,11 @@ class IndexJsonTest {
         assertEquals(List.of(2, 2, 0, 0, 0, 0, 0), numbers(files));
         assertEquals(2, document.getAsJsonObject("chunks").get("written").getAsInt());
         assertEquals(JsonNull.INSTANCE, document.get("embeddings"));
+        assertTrue(document.get("durationMillis").getAsLong() >= 0);
+        // A first run deletes nothing, so it has no cleanup phase.
+        assertEquals(List.of("SCAN", "FILES"), JsonDocuments.fields(document.getAsJsonObject("phases")));
+        assertTrue(document.getAsJsonObject("phases").get("FILES").getAsLong()
+                <= document.get("durationMillis").getAsLong());
         assertEquals(JsonNull.INSTANCE, document.get("error"));
 
         for (String list : List.of("issues", "scanIssues", "semanticIssues", "warnings")) {
@@ -110,6 +117,7 @@ class IndexJsonTest {
         JsonObject document = JsonDocuments.parse(out.toString());
         assertEquals(config.toString(), document.get("config").getAsString());
         assertEquals(List.of(2, 1, 0, 1, 1, 0, 0), numbers(document.getAsJsonObject("files")));
+        assertEquals(List.of("SCAN", "FILES", "CLEANUP"), JsonDocuments.fields(document.getAsJsonObject("phases")));
         JsonArray warnings = document.getAsJsonArray("warnings");
         assertEquals(1, warnings.size());
         assertEquals(
@@ -135,6 +143,9 @@ class IndexJsonTest {
                 List.of("model", "modelSource", "embedded", "backfilled", "discarded", "coverage"),
                 JsonDocuments.fields(embeddings));
         assertEquals("all-MiniLM-L6-v2", embeddings.get("model").getAsString());
+        assertEquals(
+                List.of("SCAN", "MODEL", "FILES"),
+                JsonDocuments.fields(JsonDocuments.parse(out.toString()).getAsJsonObject("phases")));
         assertEquals("DOWNLOADED", embeddings.get("modelSource").getAsString());
         assertEquals(1, embeddings.get("embedded").getAsLong());
         JsonObject coverage = embeddings.getAsJsonObject("coverage");
@@ -345,7 +356,8 @@ class IndexJsonTest {
         JsonObject document = JsonDocuments.parse(out.toString());
         assertEquals(FIELDS, JsonDocuments.fields(document));
 
-        for (String field : List.of("root", "database", "config", "status", "files", "chunks", "embeddings")) {
+        for (String field : List.of(
+                "root", "database", "config", "status", "files", "chunks", "embeddings", "durationMillis", "phases")) {
             assertEquals(JsonNull.INSTANCE, document.get(field), field);
         }
 

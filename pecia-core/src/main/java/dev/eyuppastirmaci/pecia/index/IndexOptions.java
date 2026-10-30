@@ -11,7 +11,8 @@ import java.util.Objects;
  * @param semanticEnabled whether the run builds embeddings for semantic search; null leaves it to {@code
  *     semantic.enabled}
  * @param downloadListener told before the semantic model is downloaded; null when nobody listens
- * @param progressListener told how far long-running work has come; null when nobody listens
+ * @param progressListener told how far each phase of the run has come, on the indexing thread; null when nobody
+ *     listens
  * @param cancellation lets another thread stop the run; null when the run cannot be cancelled
  */
 public record IndexOptions(

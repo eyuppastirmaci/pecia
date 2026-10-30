@@ -70,12 +70,21 @@ final class PackagedCli {
     }
 
     Result run(Path directory, List<String> jvmArguments, String... arguments) throws Exception {
-        return run(directory, jvmArguments, null, DEFAULT_TIMEOUT, arguments);
+        return run(directory, jvmArguments, Map.of(), null, DEFAULT_TIMEOUT, arguments);
+    }
+
+    /**
+     * Runs like {@link #run(Path, String...)} with extra environment variables, such as {@code NO_COLOR}, and extra
+     * JVM options, which come after the shared ones and so override them.
+     */
+    Result run(Path directory, Map<String, String> environment, List<String> jvmArguments, String... arguments)
+            throws Exception {
+        return run(directory, jvmArguments, environment, null, DEFAULT_TIMEOUT, arguments);
     }
 
     /** Runs like {@link #run(Path, String...)} with a longer limit, for commands that index large projects. */
     Result runWithin(Duration timeout, Path directory, String... arguments) throws Exception {
-        return run(directory, List.of(), null, timeout, arguments);
+        return run(directory, List.of(), Map.of(), null, timeout, arguments);
     }
 
     /**
@@ -90,6 +99,7 @@ final class PackagedCli {
         return run(
                 directory,
                 List.of(),
+                Map.of(),
                 evidence -> evidence.verifyDeniedDownload(host, lockFile),
                 DEFAULT_TIMEOUT,
                 arguments);
@@ -144,7 +154,12 @@ final class PackagedCli {
 
     /** Runs the distribution; {@code check} replaces the lexical checks of offline runs when it is not null. */
     private Result run(
-            Path directory, List<String> jvmArguments, EvidenceCheck check, Duration timeout, String... arguments)
+            Path directory,
+            List<String> jvmArguments,
+            Map<String, String> environment,
+            EvidenceCheck check,
+            Duration timeout,
+            String... arguments)
             throws Exception {
         OfflineSandbox.Run evidence = offline == null ? null : offline.newRun();
         List<String> command = command(jvmArguments, evidence, arguments);
@@ -156,6 +171,9 @@ final class PackagedCli {
                 .redirectOutput(stdout.toFile())
                 .redirectError(stderr.toFile());
         builder.environment().keySet().removeAll(List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"));
+        // The developer's own colour preferences must not decide what a test sees.
+        builder.environment().keySet().removeAll(List.of("NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE"));
+        builder.environment().putAll(environment);
         if (evidence != null) {
             evidence.configure(builder.environment());
         }
@@ -224,6 +242,7 @@ final class PackagedCli {
         Result result = run(
                 directory,
                 List.of(),
+                Map.of(),
                 evidence -> {
                     evidence.verifyNothingWritten();
 

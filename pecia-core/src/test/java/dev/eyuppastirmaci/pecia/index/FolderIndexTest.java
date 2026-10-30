@@ -62,7 +62,8 @@ class FolderIndexTest {
         assertEquals(0, result.writtenChunks());
         assertEquals(0, result.rejectedFiles());
         assertEquals(0, result.failedFiles());
-        assertEquals(result, service.index(child));
+        // A second run finds the same; only its timings differ.
+        assertEquals(untimed(result), untimed(service.index(child)));
 
         try (SqliteStorage storage = SqliteStorage.open(result.context().databasePath(), root)) {
             assertEquals(4, storage.files().findAll().size());
@@ -406,4 +407,24 @@ class FolderIndexTest {
     }
 
     private record IndexedFile(StoredFile file, List<StoredChunk> chunks, ChunkingIdentity identity) {}
+
+    private static IndexResult untimed(IndexResult result) {
+        return new IndexResult(
+                result.context(),
+                result.status(),
+                result.candidateCount(),
+                result.indexedFiles(),
+                result.unchangedFiles(),
+                result.deletedFiles(),
+                result.writtenChunks(),
+                result.issues(),
+                result.semanticModel(),
+                result.embeddedChunks(),
+                result.backfilledChunks(),
+                result.discardedEmbeddings(),
+                result.embeddingCoverage(),
+                result.rechunkedFiles(),
+                result.scanIssues(),
+                result.semanticIssues());
+    }
 }

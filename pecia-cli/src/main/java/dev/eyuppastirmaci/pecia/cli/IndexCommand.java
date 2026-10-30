@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -55,6 +56,16 @@ public class IndexCommand implements Callable<Integer> {
     Boolean semantic;
 
     @Option(
+            names = "--progress",
+            paramLabel = "<mode>",
+            converter = ProgressMode.Names.class,
+            completionCandidates = ProgressMode.Names.class,
+            description = "How to show progress on stderr: ${COMPLETION-CANDIDATES} (default: auto, one line that"
+                    + " updates in place on an interactive terminal; plain prints a line every few seconds for"
+                    + " logs).")
+    ProgressMode progress = ProgressMode.AUTO;
+
+    @Option(
             names = "--json",
             description = "Print the outcome as one JSON document on stdout; warnings and issues stay on stderr.")
     boolean json;
@@ -73,6 +84,11 @@ public class IndexCommand implements Callable<Integer> {
 
     private final IndexService indexService;
     private final InterruptHandlers interrupts;
+    private final Supplier<Terminal.Environment> environment;
+    // Set when the command starts, from --color, --progress, and the terminal.
+    private Diagnostics diagnostics;
+    private ProgressDisplay display = ProgressDisplay.NONE;
+    private Terminal terminal = Terminal.PLAIN;
 
     /** Creates a command using the supplied non-null indexing service. */
     public IndexCommand(IndexService indexService) {
@@ -80,8 +96,13 @@ public class IndexCommand implements Callable<Integer> {
     }
 
     IndexCommand(IndexService indexService, InterruptHandlers interrupts) {
+        this(indexService, interrupts, Terminal.Environment::system);
+    }
+
+    IndexCommand(IndexService indexService, InterruptHandlers interrupts, Supplier<Terminal.Environment> environment) {
         this.indexService = Objects.requireNonNull(indexService, "indexService");
         this.interrupts = Objects.requireNonNull(interrupts, "interrupts");
+        this.environment = Objects.requireNonNull(environment, "environment");
     }
 
     /**
@@ -93,13 +114,20 @@ public class IndexCommand implements Callable<Integer> {
      * the indexed files whose unchanged content was chunked again for new settings. Ctrl+C stops the run before its
      * next file, batch, or page and prints what it finished; the files it indexed stay, and the next run continues.
      * With {@code --json}, a run or dry run prints one JSON document on stdout in place of its summary, whatever its
-     * outcome, and stderr and the exit code stay the same.
+     * outcome, and stderr and the exit code stay the same. A run shows its progress on stderr as {@code --progress}
+     * chooses, and clears a redrawn progress line before printing anything else.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file or scan issues, an unavailable model or
      *     embedder, an embedding failure, or storage failure, 130 when Ctrl+C stopped the run
      */
     @Override
     public Integer call() {
+        terminal = Terminal.detect(ColorMode.of(spec), environment.get());
+        PrintWriter err = spec.commandLine().getErr();
+        // Only runs report progress; a dry run never hears from it.
+        display = ProgressDisplay.of(progress, terminal, err, System::nanoTime);
+        diagnostics = new Diagnostics(err, terminal, "pecia index", display::clear);
+
         if (dryRun) {
             return execute(null);
         }
@@ -136,16 +164,23 @@ public class IndexCommand implements Callable<Integer> {
             options = options.withDownloadListener(this::announceDownload);
 
             if (!dryRun) {
-                IndexResult result = indexService.index(path, options.withCancellation(cancellation));
-                WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
+                IndexResult result;
+
+                try {
+                    result = indexService.index(
+                            path, options.withCancellation(cancellation).withProgressListener(display));
+                } finally {
+                    // The summary and diagnostics come after the progress line, never on it.
+                    display.clear();
+                }
+
+                WarningPrinter.print(diagnostics, result.warnings());
                 reportIndex(result);
                 printJson(IndexJson.run(result, null));
 
                 if (result.status() == IndexResult.Status.CANCELLED) {
-                    spec.commandLine()
-                            .getErr()
-                            .println("pecia index: cancelled; the files indexed so far are kept, and the next run"
-                                    + " continues from there");
+                    diagnostics.partial(
+                            "cancelled; the files indexed so far are kept, and the next run continues from there");
 
                     return INTERRUPTED;
                 }
@@ -158,7 +193,7 @@ public class IndexCommand implements Callable<Integer> {
             }
 
             IndexPreview preview = indexService.preview(path, options);
-            WarningPrinter.print(spec.commandLine().getErr(), preview.warnings());
+            WarningPrinter.print(diagnostics, preview.warnings());
             WalkResult result = preview.walkResult();
 
             if (!json) {
@@ -173,11 +208,9 @@ public class IndexCommand implements Callable<Integer> {
 
             if (changes.index() == IndexPreview.IndexState.UNREADABLE) {
                 // The run would fail the same way, so the dry run says so as index does.
-                spec.commandLine()
-                        .getErr()
-                        .println("pecia index: " + IndexResult.Status.FAILED + ": " + changes.storageFailure() + ": "
-                                + changes.storageMessage());
-                spec.commandLine().getErr().println(storageAdvice(changes.storageFailure(), preview.databasePath()));
+                diagnostics.failure(
+                        IndexResult.Status.FAILED + ": " + changes.storageFailure() + ": " + changes.storageMessage());
+                diagnostics.line(storageAdvice(changes.storageFailure(), preview.databasePath()));
                 printJson(IndexJson.preview(
                         preview, IndexJson.error(changes.storageFailure().name(), changes.storageMessage())));
 
@@ -187,21 +220,19 @@ public class IndexCommand implements Callable<Integer> {
             printJson(IndexJson.preview(preview, null));
 
             if (!result.complete()) {
-                spec.commandLine()
-                        .getErr()
-                        .println("pecia index: incomplete scan; listed files are only partial results");
+                diagnostics.partial("incomplete scan; listed files are only partial results");
 
                 return 1;
             }
 
             return 0;
         } catch (IndexException failure) {
-            WarningPrinter.print(spec.commandLine().getErr(), failure.result().warnings());
+            WarningPrinter.print(diagnostics, failure.result().warnings());
             printJson(IndexJson.run(failure.result(), reportFailure(failure)));
 
             return 1;
         } catch (IOException | IllegalArgumentException failure) {
-            spec.commandLine().getErr().println("pecia index: " + failure.getMessage());
+            diagnostics.failure(failure.getMessage());
             String reason = failure instanceof IOException ? IO_ERROR : QueryCommand.INVALID_INPUT;
             Json.JsonObject error = IndexJson.error(reason, failure.getMessage());
             printJson(dryRun ? IndexJson.previewFailure(error) : IndexJson.failure(error));
@@ -240,17 +271,15 @@ public class IndexCommand implements Callable<Integer> {
             StorageFailure reason = failure.storageFailure().orElseThrow();
             String message = failure.getCause().getMessage();
 
-            spec.commandLine().getErr().println("pecia index: " + status + ": " + reason + ": " + message);
-            spec.commandLine()
-                    .getErr()
-                    .println(storageAdvice(reason, failure.result().context().databasePath()));
+            diagnostics.failure(status + ": " + reason + ": " + message);
+            diagnostics.line(storageAdvice(reason, failure.result().context().databasePath()));
 
             return IndexJson.error(reason.name(), message);
         }
 
         String detail =
                 failure.getCause() == null ? "" : ": " + failure.getCause().getMessage();
-        spec.commandLine().getErr().println("pecia index: " + failure.getMessage() + detail);
+        diagnostics.failure(failure.getMessage() + detail);
 
         return IndexJson.error(status.name(), failure.getMessage() + detail);
     }
@@ -273,41 +302,40 @@ public class IndexCommand implements Callable<Integer> {
         }
 
         for (IndexResult.SemanticIssue issue : result.semanticIssues()) {
-            spec.commandLine()
-                    .getErr()
-                    .println("warning: "
-                            + FileWalker.portablePath(issue.sourcePath())
-                            + ": "
-                            + issue.reason()
-                            + ": "
-                            + issue.message()
-                            + " (indexed without embeddings)");
+            diagnostics.warning(FileWalker.portablePath(issue.sourcePath())
+                    + ": "
+                    + issue.reason()
+                    + ": "
+                    + issue.message()
+                    + " (indexed without embeddings)");
         }
 
         for (IndexResult.FileIssue issue : result.issues()) {
-            spec.commandLine()
-                    .getErr()
-                    .println("warning: "
-                            + FileWalker.portablePath(issue.sourcePath())
-                            + ": "
-                            + issue.reason()
-                            + ": "
-                            + issue.message());
+            diagnostics.warning(
+                    FileWalker.portablePath(issue.sourcePath()) + ": " + issue.reason() + ": " + issue.message());
         }
     }
 
+    /**
+     * Prints the run's summary, grouped like a dry run's: the index, what happened to the files, the chunks, for a
+     * semantic run the model and embeddings, and how long the run took. Rejected and failed files are coloured when
+     * there are any.
+     */
     private void printSummary(IndexResult result) {
         PrintWriter out = spec.commandLine().getOut();
+        String rejected = result.rejectedFiles() + " rejected";
+        String failed = result.failedFiles() + " failed";
 
         out.println("index: " + result.context().databasePath());
-        out.println("candidates: " + result.candidateCount());
-        out.println("indexed: " + result.indexedFiles());
-        out.println("rechunked: " + result.rechunkedFiles());
-        out.println("unchanged: " + result.unchangedFiles());
-        out.println("deleted: " + result.deletedFiles());
-        out.println("chunks: " + result.writtenChunks());
-        out.println("rejected: " + result.rejectedFiles());
-        out.println("failed: " + result.failedFiles());
+        out.println("files: "
+                + result.indexedFiles() + " indexed, "
+                + result.rechunkedFiles() + " rechunked, "
+                + result.unchangedFiles() + " unchanged, "
+                + result.deletedFiles() + " deleted, "
+                + (result.rejectedFiles() > 0 ? terminal.paint(rejected, Terminal.Style.YELLOW) : rejected) + ", "
+                + (result.failedFiles() > 0 ? terminal.paint(failed, Terminal.Style.RED) : failed)
+                + " (" + result.candidateCount() + " found)");
+        out.println("chunks: " + result.writtenChunks() + " written");
 
         ModelOutcome model = result.semanticModel();
 
@@ -317,10 +345,18 @@ public class IndexCommand implements Callable<Integer> {
                     + (model.status() == ModelOutcome.Status.DOWNLOADED
                             ? " downloaded (" + megabytes(model.model().size()) + ")"
                             : " cached"));
-            out.println("discarded: " + result.discardedEmbeddings());
-            out.println("embedded: " + result.embeddedChunks());
-            out.println("backfilled: " + result.backfilledChunks());
+            out.println("embeddings: "
+                    + result.embeddedChunks() + " made, "
+                    + result.backfilledChunks() + " backfilled, "
+                    + result.discardedEmbeddings() + " discarded");
         }
+
+        Duration took = result.timings().total();
+        // Chunks set the pace: written ones are read and chunked, and backfilled ones embedded.
+        String rate = ProgressText.rate(result.writtenChunks() + result.backfilledChunks(), took, "chunks/s")
+                .map(value -> " (" + value + ")")
+                .orElse("");
+        out.println("time: " + ProgressText.duration(took) + rate);
     }
 
     /** Prints a path discovery could not read, relative to {@code base} when it lies below it. */
@@ -330,9 +366,7 @@ public class IndexCommand implements Callable<Integer> {
         // Without its ignore rules, a folder's files could include some the user meant to leave out.
         String effect = path.getFileName().toString().equals(".gitignore") ? "its folder was skipped" : "not scanned";
 
-        spec.commandLine()
-                .getErr()
-                .println("warning: " + shown + ": " + issue.cause() + ": " + issue.reason() + " (" + effect + ")");
+        diagnostics.warning(shown + ": " + issue.cause() + ": " + issue.reason() + " (" + effect + ")");
     }
 
     /** Summarizes what a partial run left out, after the issues themselves. */
@@ -354,12 +388,10 @@ public class IndexCommand implements Callable<Integer> {
         boolean keptDeletions =
                 !result.issues().isEmpty() || !result.scanIssues().isEmpty();
 
-        spec.commandLine()
-                .getErr()
-                .println("pecia index: PARTIAL: "
-                        + String.join("; ", parts)
-                        + "; every other file was indexed"
-                        + (keptDeletions ? ", and no file was removed from the index" : ""));
+        diagnostics.partial("PARTIAL: "
+                + String.join("; ", parts)
+                + "; every other file was indexed"
+                + (keptDeletions ? ", and no file was removed from the index" : ""));
     }
 
     private static String count(int count, String noun) {
@@ -390,23 +422,19 @@ public class IndexCommand implements Callable<Integer> {
     }
 
     private void announceDownload(SemanticModel model, Path file) {
-        spec.commandLine()
-                .getErr()
-                .println("Downloading "
-                        + model.name()
-                        + " ("
-                        + megabytes(model.size())
-                        + ") from "
-                        + model.downloadUri().getHost()
-                        + " into "
-                        + file.getParent());
+        diagnostics.line("Downloading "
+                + model.name()
+                + " ("
+                + megabytes(model.size())
+                + ") from "
+                + model.downloadUri().getHost()
+                + " into "
+                + file.getParent());
     }
 
     private Json.JsonObject reportSemanticFailure(IndexResult.Status status, Enum<?> reason, String message) {
-        PrintWriter err = spec.commandLine().getErr();
-
-        err.println("pecia index: " + status + ": " + reason + ": " + message);
-        err.println("Run with --no-semantic to build only the lexical index.");
+        diagnostics.failure(status + ": " + reason + ": " + message);
+        diagnostics.line("Run with --no-semantic to build only the lexical index.");
 
         return IndexJson.error(reason.name(), message);
     }

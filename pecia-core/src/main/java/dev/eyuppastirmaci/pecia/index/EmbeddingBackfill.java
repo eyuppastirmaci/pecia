@@ -9,6 +9,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.function.Consumer;
 
 /**
@@ -25,23 +26,24 @@ final class EmbeddingBackfill {
     private final SqliteStorage storage;
     private final EmbeddingPipeline pipeline;
     private final EmbeddingProfile profile;
-    private final IndexProgressListener listener;
+    private final ProgressReporter progress;
     private final EmbeddingFailures failures;
     private final Consumer<IndexResult.SemanticIssue> issues;
     private long stored;
     private long processed;
+    private ProgressReporter.Phase phase;
 
     EmbeddingBackfill(
             SqliteStorage storage,
             EmbeddingPipeline pipeline,
             EmbeddingProfile profile,
-            IndexProgressListener listener,
+            ProgressReporter progress,
             EmbeddingFailures failures,
             Consumer<IndexResult.SemanticIssue> issues) {
         this.storage = Objects.requireNonNull(storage, "storage");
         this.pipeline = Objects.requireNonNull(pipeline, "pipeline");
         this.profile = Objects.requireNonNull(profile, "profile");
-        this.listener = listener;
+        this.progress = Objects.requireNonNull(progress, "progress");
         this.failures = Objects.requireNonNull(failures, "failures");
         this.issues = Objects.requireNonNull(issues, "issues");
     }
@@ -72,25 +74,30 @@ final class EmbeddingBackfill {
             return;
         }
 
-        report(total);
-        List<UnembeddedChunk> page = new ArrayList<>(PAGE_SIZE);
+        phase = progress.start(IndexProgress.Phase.BACKFILL, OptionalLong.of(total));
 
-        for (long fileId : pending) {
-            for (UnembeddedChunk chunk : storage.findUnembeddedChunks(fileId)) {
-                page.add(chunk);
+        try {
+            List<UnembeddedChunk> page = new ArrayList<>(PAGE_SIZE);
 
-                if (page.size() == PAGE_SIZE) {
-                    submit(page, total);
-                    page = new ArrayList<>(PAGE_SIZE);
+            for (long fileId : pending) {
+                for (UnembeddedChunk chunk : storage.findUnembeddedChunks(fileId)) {
+                    page.add(chunk);
+
+                    if (page.size() == PAGE_SIZE) {
+                        submit(page);
+                        page = new ArrayList<>(PAGE_SIZE);
+                    }
                 }
             }
-        }
 
-        if (!page.isEmpty()) {
-            submit(page, total);
-        }
+            if (!page.isEmpty()) {
+                submit(page);
+            }
 
-        pipeline.finish();
+            pipeline.finish();
+        } finally {
+            phase.finish(processed);
+        }
     }
 
     /** Returns how many embeddings committed pages stored; chunks changed, deleted, or embedded meanwhile are skipped. */
@@ -98,7 +105,7 @@ final class EmbeddingBackfill {
         return stored;
     }
 
-    private void submit(List<UnembeddedChunk> page, long total)
+    private void submit(List<UnembeddedChunk> page)
             throws SQLException, EmbeddingException, Cancellation.CancelledException {
         List<String> inputs = page.stream()
                 .map(chunk -> EmbeddingInput.of(chunk.sourcePath(), chunk.headingPath(), chunk.content()))
@@ -109,13 +116,13 @@ final class EmbeddingBackfill {
                 vectors -> {
                     stored += storage.storeEmbeddings(profile, page, vectors);
                     processed += page.size();
-                    report(total);
+                    phase.update(processed);
                     failures.succeeded();
                 },
                 failure -> {
                     // Skipped chunks are still processed, so progress reaches its total.
                     processed += page.size();
-                    report(total);
+                    phase.update(processed);
                     page.stream()
                             .map(UnembeddedChunk::sourcePath)
                             .distinct()
@@ -123,12 +130,5 @@ final class EmbeddingBackfill {
                                     new IndexResult.SemanticIssue(path, failure.reason(), failure.getMessage())));
                     failures.failed(failure);
                 });
-    }
-
-    /** Reports progress, capped at the total because chunks added by another process after counting are embedded too. */
-    private void report(long total) {
-        if (listener != null) {
-            listener.progress(new IndexProgress(IndexProgress.Stage.BACKFILL, Math.min(processed, total), total));
-        }
     }
 }

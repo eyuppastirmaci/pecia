@@ -7,6 +7,7 @@ import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
 import dev.eyuppastirmaci.pecia.semantic.DownloadListener;
+import dev.eyuppastirmaci.pecia.semantic.DownloadProgressListener;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.semantic.ModelCache;
@@ -29,6 +30,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
+import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 /** Coordinates project discovery and per-file extraction, chunking, and storage replacement. */
@@ -40,6 +44,7 @@ public final class IndexService {
     private final TextEmbedder.Opener embedders;
     private final Supplier<EmbeddingProfile> profiles;
     private final ModelLookup modelLookup;
+    private final LongSupplier nanoTime;
 
     /**
      * Creates an indexing service that opens SQLite storage for each resolved project and keeps the semantic model in
@@ -98,6 +103,18 @@ public final class IndexService {
             TextEmbedder.Opener embedders,
             Supplier<EmbeddingProfile> profiles,
             ModelLookup modelLookup) {
+        this(configLoader, storageOpener, models, embedders, profiles, modelLookup, System::nanoTime);
+    }
+
+    IndexService(
+            PeciaConfigLoader configLoader,
+            StorageOpener storageOpener,
+            ModelProvider models,
+            TextEmbedder.Opener embedders,
+            Supplier<EmbeddingProfile> profiles,
+            ModelLookup modelLookup,
+            LongSupplier nanoTime) {
+        this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
         this.modelLookup = Objects.requireNonNull(modelLookup, "modelLookup");
         this.contextResolver = new ProjectContextResolver(configLoader);
         this.storageOpener = Objects.requireNonNull(storageOpener, "storageOpener");
@@ -413,8 +430,9 @@ public final class IndexService {
      * vectors in the file's replacement. The calling thread keeps reading files while the workers embed, writes files
      * in candidate order, and waits once a bounded number of chunks are waiting to be written. After cleanup,
      * the stored chunks of unchanged files that have no embedding are embedded from storage in pages that commit on
-     * their own, so an interrupted run leaves only the rest for the next one; the progress listener hears how far this
-     * has come. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs the model.
+     * their own, so an interrupted run leaves only the rest for the next one. The progress listener hears each phase
+     * the run reaches, from discovery to the backfill, when it starts, at most every 100 ms while it runs, and when it
+     * ends, also when the run fails or is cancelled; the result says how long the run and each phase took. {@link #preview(Path, IndexOptions)} reports the resolved choice and never needs the model.
      *
      * <p>A file whose chunks cannot be embedded is written without embeddings and reported as a semantic issue, and a
      * backfill page that cannot be embedded is skipped; the result is then PARTIAL, and a later semantic run embeds
@@ -435,30 +453,46 @@ public final class IndexService {
      */
     public IndexResult index(Path target, IndexOptions options) throws IOException, IndexException {
         Objects.requireNonNull(options, "options");
+        ProgressReporter progress = new ProgressReporter(options.progressListener(), nanoTime);
         ProjectContext context = contextResolver.resolve(target);
-        WalkResult scanResult = scan(context);
+        ProgressReporter.Phase scanning = progress.start(IndexProgress.Phase.SCAN, OptionalLong.empty());
+        WalkResult scanResult;
+
+        try {
+            scanResult = scan(context, scanning::update);
+        } finally {
+            scanning.finish();
+        }
+
         boolean semanticEnabled =
                 options.resolveSemanticEnabled(context.loadedConfig().config());
 
-        return indexFiles(context, scanResult, options, semanticEnabled);
+        return indexFiles(context, scanResult, options, semanticEnabled, progress);
     }
 
     /** Indexes the scanned files, making the semantic model available only when {@code semanticEnabled}. */
     private IndexResult indexFiles(
-            ProjectContext context, WalkResult scanResult, IndexOptions options, boolean semanticEnabled)
+            ProjectContext context,
+            WalkResult scanResult,
+            IndexOptions options,
+            boolean semanticEnabled,
+            ProgressReporter progress)
             throws IndexException {
         List<Path> candidates = scanResult.files();
         Cancellation cancellation = options.cancellation() == null ? new Cancellation() : options.cancellation();
         // Constructing the file pipeline validates the real tokenizer budget before opening storage.
         FileIndexer indexer = new FileIndexer(context);
-        ModelOutcome semanticModel = semanticEnabled ? ensureModel(context, candidates, options) : null;
+        ProgressReporter.Phase loading =
+                semanticEnabled ? progress.start(IndexProgress.Phase.MODEL, OptionalLong.empty()) : null;
+        ModelOutcome semanticModel =
+                semanticEnabled ? ensureModel(context, candidates, options, progress, loading) : null;
         int workers = context.loadedConfig().config().embedConcurrency();
         // Semantic classes are created only for a semantic run; the profile comes first so nothing can fail between
         // opening the embedder and the try block that closes it.
         EmbeddingProfile profile = semanticModel == null ? null : profiles.get();
         TextEmbedder embedder =
-                semanticModel == null ? null : openEmbedder(context, candidates, semanticModel, workers);
-        Tally tally = new Tally(context, candidates.size(), semanticModel, scanResult.issues());
+                semanticModel == null ? null : openEmbedder(context, candidates, semanticModel, workers, progress);
+        Tally tally = new Tally(context, candidates.size(), semanticModel, scanResult.issues(), progress);
         EmbeddingFailures failures = new EmbeddingFailures();
 
         // Resources close in reverse order: the workers stop before the embedder they use closes.
@@ -466,11 +500,19 @@ public final class IndexService {
                 SqliteStorage storage = storageOpener.open(context);
                 EmbeddingPipeline pipeline =
                         embedder == null ? null : new EmbeddingPipeline(embedder, cancellation, workers)) {
+            if (loading != null) {
+                // Finished inside the try, so the embedder closes even if the listener fails.
+                loading.finish();
+            }
+
             if (pipeline != null) {
                 // Embeddings of another profile cannot be compared with this run's; the backfill below makes them
                 // again from the stored chunks, so the index never holds two profiles.
                 tally.discardedEmbeddings = storage.discardIncompatibleEmbeddings(profile);
             }
+
+            ProgressReporter.Phase files =
+                    progress.start(IndexProgress.Phase.FILES, OptionalLong.of(candidates.size()));
 
             for (Path candidate : candidates) {
                 if (cancellation.isCancelled()) {
@@ -488,11 +530,13 @@ public final class IndexService {
                                     changed.embeddingInputs(),
                                     vectors -> {
                                         tally.add(indexer.write(changed, storage, profile, vectors));
+                                        files.update(tally.fileCounts());
                                         failures.succeeded();
                                     },
                                     failure -> {
                                         // Its new chunks keep lexical search current; a later run embeds them.
                                         tally.add(indexer.write(changed, storage));
+                                        files.update(tally.fileCounts());
                                         tally.semanticIssues.add(new IndexResult.SemanticIssue(
                                                 changed.document().sourcePath(),
                                                 failure.reason(),
@@ -501,14 +545,18 @@ public final class IndexService {
                                     });
                     }
                 } catch (ExtractionException failure) {
-                    tally.issues.add(new IndexResult.FileIssue(
+                    tally.addIssue(new IndexResult.FileIssue(
                             context.sourcePath(candidate), failure.reason(), failure.getMessage()));
                 }
+
+                files.update(tally.fileCounts());
             }
 
             if (pipeline != null) {
                 pipeline.finish();
             }
+
+            files.finish(tally.fileCounts());
 
             // A cancelled run's scan may be stale by the time it stops, so it deletes nothing.
             cancellation.check();
@@ -517,15 +565,23 @@ public final class IndexService {
             if (tally.issues.isEmpty() && scanResult.complete()) {
                 IndexDeletionPlanner planner = new IndexDeletionPlanner(context);
                 var missing = planner.plan(scanResult, storage.files().findAll());
+                // A cleanup with nothing to remove is not worth reporting.
+                ProgressReporter.Phase cleanup = missing.isEmpty()
+                        ? null
+                        : progress.start(IndexProgress.Phase.CLEANUP, OptionalLong.of(missing.size()));
 
                 // Recheck absence and scope immediately before applying the batch.
                 tally.deletedFiles = storage.deleteFiles(planner.plan(scanResult, missing));
+
+                if (cleanup != null) {
+                    cleanup.finish(tally.deletedFiles);
+                }
             }
 
             if (pipeline != null) {
                 // Unchanged files' chunks match their content and chunking, so they are embedded from storage.
                 tally.backfill = new EmbeddingBackfill(
-                        storage, pipeline, profile, options.progressListener(), failures, tally.semanticIssues::add);
+                        storage, pipeline, profile, progress, failures, tally.semanticIssues::add);
                 tally.backfill.run(tally.unchanged);
                 tally.coverage = storage.embeddingCoverage(profile);
             }
@@ -549,42 +605,96 @@ public final class IndexService {
         return tally.result(partial ? IndexResult.Status.PARTIAL : IndexResult.Status.COMPLETE);
     }
 
-    private TextEmbedder openEmbedder(ProjectContext context, List<Path> candidates, ModelOutcome model, int workers)
+    private TextEmbedder openEmbedder(
+            ProjectContext context, List<Path> candidates, ModelOutcome model, int workers, ProgressReporter progress)
             throws IndexException {
         int threads = EmbeddingPipeline.intraOpThreads(Runtime.getRuntime().availableProcessors(), workers);
 
         try {
             return embedders.open(model, threads);
         } catch (EmbeddingException failure) {
-            IndexResult result = new IndexResult(
-                    context, IndexResult.Status.EMBEDDER_UNAVAILABLE, candidates.size(), 0, 0, 0, 0, List.of(), model);
+            IndexResult result =
+                    nothingIndexed(context, IndexResult.Status.EMBEDDER_UNAVAILABLE, candidates, model, progress);
 
             throw new IndexException("Semantic indexing could not open its embedder", failure, result);
         }
     }
 
-    private ModelOutcome ensureModel(ProjectContext context, List<Path> candidates, IndexOptions options)
+    private ModelOutcome ensureModel(
+            ProjectContext context,
+            List<Path> candidates,
+            IndexOptions options,
+            ProgressReporter progress,
+            ProgressReporter.Phase loading)
             throws IndexException {
         // Semantic classes are reached only here, so lexical runs never initialize them.
-        DownloadListener listener =
+        DownloadListener caller =
                 options.downloadListener() == null ? DownloadListener.NONE : options.downloadListener();
+        // The caller hears the download as before, and the model phase reports its bytes.
+        DownloadListener listener = new DownloadProgressListener() {
+            @Override
+            public void downloading(SemanticModel model, Path file) {
+                caller.downloading(model, file);
+            }
+
+            @Override
+            public void received(long received, long size) {
+                if (caller instanceof DownloadProgressListener progress) {
+                    progress.received(received, size);
+                }
+
+                loading.update(received, size);
+            }
+        };
 
         try {
             return models.ensure(listener);
         } catch (ModelException failure) {
             IndexResult result =
-                    new IndexResult(context, IndexResult.Status.MODEL_UNAVAILABLE, candidates.size(), 0, 0, List.of());
+                    nothingIndexed(context, IndexResult.Status.MODEL_UNAVAILABLE, candidates, null, progress);
 
             throw new IndexException("Semantic indexing needs its model", failure, result);
         }
     }
 
+    /** Returns the result of a semantic run that stopped before it indexed anything. */
+    private static IndexResult nothingIndexed(
+            ProjectContext context,
+            IndexResult.Status status,
+            List<Path> candidates,
+            ModelOutcome model,
+            ProgressReporter progress) {
+        return new IndexResult(
+                context,
+                status,
+                candidates.size(),
+                0,
+                0,
+                0,
+                0,
+                List.of(),
+                model,
+                0,
+                0,
+                0,
+                null,
+                0,
+                List.of(),
+                List.of(),
+                progress.timings());
+    }
+
     private WalkResult scan(ProjectContext context) throws IOException {
+        return scan(context, found -> {});
+    }
+
+    /** Discovers the candidates, telling {@code found} how many it has after each one. */
+    private WalkResult scan(ProjectContext context, LongConsumer found) throws IOException {
         PeciaConfig config = context.loadedConfig().config();
         GlobFilter filter = new GlobFilter(config.include(), config.exclude());
         FileWalker walker = new FileWalker(filter);
 
-        return walker.scan(context.target(), context.projectRoot(), context.storageFiles());
+        return walker.scan(context.target(), context.projectRoot(), context.storageFiles(), found);
     }
 
     /** What a run has committed so far, reported in its result however the run ends. */
@@ -597,7 +707,9 @@ public final class IndexService {
         private final List<Long> unchanged = new ArrayList<>();
         private final List<IndexResult.FileIssue> issues = new ArrayList<>();
         private final List<IndexResult.SemanticIssue> semanticIssues = new ArrayList<>();
+        private final ProgressReporter progress;
         private int indexedFiles;
+        private int rejectedFiles;
         private int rechunkedFiles;
         private int deletedFiles;
         private long writtenChunks;
@@ -610,8 +722,10 @@ public final class IndexService {
                 ProjectContext context,
                 int candidateCount,
                 ModelOutcome semanticModel,
-                List<WalkResult.Issue> scanIssues) {
+                List<WalkResult.Issue> scanIssues,
+                ProgressReporter progress) {
             this.context = context;
+            this.progress = progress;
             this.candidateCount = candidateCount;
             this.semanticModel = semanticModel;
             this.scanIssues = scanIssues;
@@ -632,6 +746,25 @@ public final class IndexService {
             embeddedChunks += result.embeddedChunks();
         }
 
+        void addIssue(IndexResult.FileIssue issue) {
+            issues.add(issue);
+
+            if (issue.rejected()) {
+                rejectedFiles++;
+            }
+        }
+
+        /** Returns what happened to the candidates so far. */
+        IndexProgress.FileCounts fileCounts() {
+            return new IndexProgress.FileCounts(
+                    indexedFiles,
+                    unchanged.size(),
+                    rejectedFiles,
+                    issues.size() - rejectedFiles,
+                    writtenChunks,
+                    embeddedChunks);
+        }
+
         /** Builds the result; coverage is set only once a run has completed its embedding. */
         IndexResult result(IndexResult.Status status) {
             return new IndexResult(
@@ -650,7 +783,8 @@ public final class IndexService {
                     coverage,
                     rechunkedFiles,
                     scanIssues,
-                    semanticIssues);
+                    semanticIssues,
+                    progress.timings());
         }
     }
 

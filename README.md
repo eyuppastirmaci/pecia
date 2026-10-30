@@ -23,10 +23,10 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 - [x] Failure isolation: unreadable folders and files that cannot be read or embedded are reported while everything else is indexed, storage failures say what to do, and an interrupted or killed run recovers on the next run.
 - [x] Reusable Java core API and runnable JAR with `init`, `index`, and `query` commands.
 - [x] JSON output for indexing, queries, and dry runs, with match ranges for highlighting.
+- [x] Detailed dry runs, live progress, grouped run summaries, and coloured, readable terminal output.
 
 ### Planned for v0.1.0
 
-- [ ] Richer dry runs, progress reporting, and run summaries.
 - [ ] Expanded end-to-end and retrieval-quality checks.
 - [ ] Automated macOS, Linux, and Windows release packages with installation documentation.
 
@@ -57,20 +57,21 @@ java -jar pecia-cli/build/libs/pecia.jar init                               # wr
 java -jar pecia-cli/build/libs/pecia.jar index . --dry-run                  # show what indexing would change, writing nothing
 java -jar pecia-cli/build/libs/pecia.jar index .                            # build the local lexical index
 java -jar pecia-cli/build/libs/pecia.jar index . --semantic                 # also build embeddings (downloads the model once)
+java -jar pecia-cli/build/libs/pecia.jar index . --progress=plain           # progress as plain lines, for logs
 java -jar pecia-cli/build/libs/pecia.jar query "authentication middleware"  # search in the default auto mode
 java -jar pecia-cli/build/libs/pecia.jar query "JWT_SECRET" --mode lexical --root /path/to/project --limit 5
 java -jar pecia-cli/build/libs/pecia.jar query "how are refunds paid?" --mode semantic
 java -jar pecia-cli/build/libs/pecia.jar query "refund policy" --json          # one JSON document for scripts
 ```
 
-Run `index` before `query`. Every command accepts `--help`.
+Run `index` before `query`. Every command accepts `--help` and `--color=auto|always|never`; see [Colour](#colour).
 
 ### Commands
 
 | Command | What it does | Main options |
 | --- | --- | --- |
 | `init` | Writes a default `.pecia.toml` into the current directory, unless one is already there. | — |
-| `index [folder]` | Indexes the files under the folder (default: current directory) into the index of the project that contains it, found from the nearest `.pecia.toml` or Git root: it adds new and changed files, removes deleted ones, and skips unchanged ones. With semantic indexing on, it also embeds new chunks and stored chunks that have no embedding yet. | `--dry-run`, `--semantic` / `--no-semantic`, `--json` |
+| `index [folder]` | Indexes the files under the folder (default: current directory) into the index of the project that contains it, found from the nearest `.pecia.toml` or Git root: it adds new and changed files, removes deleted ones, and skips unchanged ones. With semantic indexing on, it also embeds new chunks and stored chunks that have no embedding yet. | `--dry-run`, `--semantic` / `--no-semantic`, `--progress`, `--json` |
 | `query <text>` | Searches the existing index read-only, without rereading source files, and prints the best-matching chunks. Quote text with several words. | `--mode`, `--limit`, `--root`, `--json` |
 
 ### `index` options
@@ -80,9 +81,39 @@ Run `index` before `query`. Every command accepts `--help`.
 | `--dry-run` | Shows what the run would do without changing the project: it reads the files to compare them with the index, but never writes the index, downloads the model, or loads it. An index of an older format is compared after upgrading a temporary copy, which is then deleted. See [Dry runs](#dry-runs). |
 | `--semantic` | Builds embeddings in this run, overriding `semantic.enabled` in `.pecia.toml`. The first semantic run downloads the model (about 90 MB) and says so on stderr. |
 | `--no-semantic` | Builds only the lexical index in this run. Embeddings that are already stored stay, except those of changed or deleted files. |
+| `--progress=<mode>` | How a run shows its progress on stderr: `auto` (default), `plain`, or `none`; see [Progress](#progress). |
 | `--json` | Prints the run's or dry run's outcome as one JSON document instead of the summary; see [JSON output](#json-output). |
 
-Without either flag, `semantic.enabled` in `.pecia.toml` decides; it is `false` by default. The summary counts candidate, indexed, rechunked, unchanged, and deleted files, written chunks, and rejected and failed files; semantic runs add the model, discarded embeddings of an earlier model, and the chunks they embedded and backfilled.
+Without either flag, `semantic.enabled` in `.pecia.toml` decides; it is `false` by default.
+
+#### Run summary
+
+Each run ends with a summary on stdout:
+
+```
+index: /home/me/project/.pecia/index.db
+files: 2 indexed, 0 rechunked, 41 unchanged, 1 deleted, 1 rejected, 0 failed (44 found)
+chunks: 9 written
+model: all-MiniLM-L6-v2 cached
+embeddings: 9 made, 312 backfilled, 0 discarded
+time: 3.2 s (101 chunks/s)
+```
+
+- `files` says what happened to each file found. Rechunked files are indexed files whose content was unchanged but whose chunk settings changed.
+- `model` and `embeddings` appear for semantic runs. Discarded embeddings belong to an earlier model; backfilled ones were made for stored chunks that had none.
+- `time` is the whole run, with the pace of the chunks written and backfilled.
+
+#### Progress
+
+A run shows how far it has come on stderr, phase by phase: scanning, downloading or loading the model, indexing, removing deleted files, and embedding stored chunks.
+
+| `--progress` | What it shows |
+| --- | --- |
+| `auto` (default) | One line that updates in place on an interactive terminal, such as `indexing: 1,240 of 18,268 files, 9,812 chunks, 197 chunks/s, about 1 min left`; nothing when output goes to a pipe or a file. |
+| `plain` | A line every 5 seconds and when a phase ends, with the time since the run started, such as `[0:12] indexing: 1,240 of 18,268 files`; meant for logs and CI. |
+| `none` | Nothing. |
+
+The progress line is cleared before warnings, the summary, or JSON, so it never mixes with them. Dry runs show no progress.
 
 Ctrl+C stops a run before its next file or embedding batch, prints the summary of what it finished, and exits with `130`. Files indexed until then stay in the index, a file in progress keeps its previous version, and no deleted files are removed; the next run continues from there.
 
@@ -135,7 +166,7 @@ Each result shows the project-relative path and line range, the score with its k
 
 ```
 docs/payments.md:3-5
-  RRF: 0.03278688524590164 (lexical #1, semantic #1)
+  RRF: 0.0328 (lexical #1, semantic #1)
   heading: Payments > Refunds
   ## Refunds
 
@@ -148,7 +179,24 @@ docs/payments.md:3-5
 | `cosine: 0.33` | Semantic similarity from -1 to 1; higher is better. |
 | `RRF: 0.0328 (lexical #1, semantic #1)` | Hybrid score; higher is better. The parentheses list the sides that ranked the chunk and its rank on each, and end with `; identifier query` when the lexical order decided. |
 
-Results go to stdout, so scripts can read them. Configuration warnings and `note:` lines go to stderr; a note explains, for example, why `auto` searched lexically although the index has embeddings, such as a model that is no longer cached. `No results.` is printed when nothing matches.
+- Scores are rounded to three significant digits; JSON keeps their full precision.
+- Results go to stdout. Configuration warnings and `note:` lines go to stderr; a note explains, for example, why `auto` searched lexically although the index has embeddings, such as a model that is no longer cached.
+- `No results.` is printed when nothing matches.
+
+### Colour
+
+On a terminal that shows colour, results, summaries, and stderr labels are coloured: the path is bold, the line range, score, and heading dim, and the words that matched bold red, as ripgrep shows them. Output that goes to a pipe or a file is plain, and JSON never has colour.
+
+| Setting | Effect |
+| --- | --- |
+| `--color=auto` (default) | Colour on a terminal that shows it. |
+| `--color=always` / `--color=never` | Always or never, whatever the variables below say. |
+| `NO_COLOR` (set and not empty) | No colour in `auto` mode, as [no-color.org](https://no-color.org) describes. |
+| `CLICOLOR_FORCE` (set and not `0`) | Colour in `auto` mode even into a pipe, unless `NO_COLOR` is set. |
+
+- `--color` may come before or after the command: `pecia --color=never query …` and `pecia query … --color=never` are the same.
+- On Windows, `auto` colours Windows Terminal, ConEmu, ANSICON, and shells that set `TERM`, such as Git Bash; the legacy console prints escape codes as text, so it stays plain.
+- Java can tell whether the console, stdin and stdout, is a terminal, but not stderr alone. When stdout goes to a pipe, `auto` shows neither colour nor the progress line on stderr; `--color=always` and `--progress=plain` still work.
 
 ### JSON output
 
@@ -156,6 +204,9 @@ With `--json`, `index`, `index --dry-run`, and `query` print one JSON document o
 
 - Stderr and exit codes stay the same as without `--json`.
 - Usage errors, such as an unknown option, stay plain text on stderr with exit code `2` and nothing on stdout.
+
+<details>
+<summary>Example: a lexical query</summary>
 
 ```
 $ java -jar pecia-cli/build/libs/pecia.jar query "refund card" --mode lexical --json
@@ -207,6 +258,8 @@ $ java -jar pecia-cli/build/libs/pecia.jar query "refund card" --mode lexical --
 }
 ```
 
+</details>
+
 **Conventions**
 
 - Every document starts with `schemaVersion` (currently `1`) and `command`.
@@ -217,13 +270,14 @@ $ java -jar pecia-cli/build/libs/pecia.jar query "refund card" --mode lexical --
 - Scores keep full precision.
 - The output is plain ASCII: other characters are written as `\u` escapes, so no console or code page can garble them.
 
-**Documents**
+<details>
+<summary>Documents: the fields of each document</summary>
 
 | Document | Fields |
 | --- | --- |
 | `query` | `query`, `limit`, `requestedMode`, `effectiveMode`, `fallback`, `notices`, `queryShape`, `embeddingCoverage`, `warnings`, `hits`, `error` |
 | Query hit | `rank`, `path`, `documentType`, `lines`, `chunkIndex`, `stableId`, `headingPath`, `score`, `fusedRanks`, `snippet`, `matches` |
-| `index` | `dryRun` (`false`), `root`, `database`, `config`, `status`, `files`, `chunks`, `embeddings`, `issues`, `scanIssues`, `semanticIssues`, `warnings`, `error` |
+| `index` | `dryRun` (`false`), `root`, `database`, `config`, `status`, `files`, `chunks`, `embeddings`, `durationMillis`, `phases`, `issues`, `scanIssues`, `semanticIssues`, `warnings`, `error` |
 | `index --dry-run` | `dryRun` (`true`), `root`, `database`, `config`, `semantic`, `index`, `files`, `chunks`, `embeddings`, `newFiles`, `changedFiles`, `rechunkedFiles`, `rejectedFiles`, `removedFiles`, `scanIssues`, `warnings`, `error` |
 
 - `fallback` is set when `auto` searched lexically.
@@ -231,7 +285,10 @@ $ java -jar pecia-cli/build/libs/pecia.jar query "refund card" --mode lexical --
 - `embeddings` is set for semantic runs and dry runs.
 - A dry run only counts unchanged files; it does not list them.
 
-**Nested fields**
+</details>
+
+<details>
+<summary>Nested fields: what each field contains</summary>
 
 | Field | Fields or values |
 | --- | --- |
@@ -247,12 +304,15 @@ $ java -jar pecia-cli/build/libs/pecia.jar query "refund card" --mode lexical --
 | `chunks` (dry run) | `toWrite`, `kept`, `removed` |
 | `embeddings` (run) | `model`, `modelSource` (`CACHED`, `DOWNLOADED`), `embedded`, `backfilled`, `discarded`, `coverage` |
 | `embeddings` (dry run) | `model`, `modelState` (`CACHED`, `DOWNLOAD`, `UNAVAILABLE`), `downloadBytes`, `toEmbed`, `toDiscard` |
+| `phases` | milliseconds per phase the run reached, in run order: `SCAN`, `MODEL`, `FILES`, `CLEANUP`, `BACKFILL` |
 | `newFiles`, `changedFiles`, `rechunkedFiles`, `removedFiles` | `path`, `chunks` |
 | `issues`, `rejectedFiles` | `path`, `reason`, `rejected`, `message` |
 | `scanIssues` | `path`, `cause`, `message` |
 | `semanticIssues` | `path`, `reason`, `message` |
 
 In dry runs, a chunk count is `{"value": n, "estimated": true}` when it is estimated from file sizes, and `"estimated": false` when it is read from the index.
+
+</details>
 
 **Match ranges**
 

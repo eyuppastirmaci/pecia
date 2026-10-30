@@ -11,6 +11,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.semantic.DownloadListener;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.TinyModel;
 import java.io.IOException;
@@ -47,16 +48,19 @@ class SemanticModelIndexingTest {
 
         assertEquals(IndexResult.Status.COMPLETE, result.status());
         assertSame(CACHED, result.semanticModel());
-        assertEquals(List.of(DownloadListener.NONE), requests);
+        assertEquals(1, requests.size());
     }
 
     @Test
-    void theCallersListenerReachesTheProvider() throws Exception {
-        DownloadListener listener = (model, file) -> {};
+    void theCallersListenerHearsTheDownloadTheProviderAnnounces() throws Exception {
+        List<Path> heard = new ArrayList<>();
+        DownloadListener listener = (model, file) -> heard.add(file);
 
         service().index(root, IndexOptions.semantic(true).withDownloadListener(listener));
+        // The provider gets the run's own listener, which also reports the download's bytes as progress.
+        requests.getFirst().downloading(SemanticModel.MINILM, root.resolve("model.onnx"));
 
-        assertEquals(List.of(listener), requests);
+        assertEquals(List.of(root.resolve("model.onnx")), heard);
     }
 
     @Test
