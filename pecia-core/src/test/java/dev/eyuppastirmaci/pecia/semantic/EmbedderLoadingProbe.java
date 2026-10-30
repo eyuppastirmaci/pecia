@@ -29,6 +29,12 @@ public final class EmbedderLoadingProbe {
             // The second attempt meets the class that failed to initialize and must fail just as clearly.
             case "broken-runtime" ->
                 System.out.println(failure(() -> Embedder.open(outcome)) + " " + failure(() -> Embedder.open(outcome)));
+            // Never finishes, so the test can check that a probe that hangs fails within its time limit.
+            case "hang" -> {
+                System.out.println("HANGING " + ProcessHandle.current().pid());
+                System.out.flush();
+                Thread.sleep(Long.MAX_VALUE);
+            }
             default -> throw new IllegalArgumentException(args[0]);
         }
     }
