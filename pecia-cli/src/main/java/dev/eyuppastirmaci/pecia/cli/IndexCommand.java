@@ -56,6 +56,16 @@ public class IndexCommand implements Callable<Integer> {
     Boolean semantic;
 
     @Option(
+            names = "--progress",
+            paramLabel = "<mode>",
+            converter = ProgressMode.Names.class,
+            completionCandidates = ProgressMode.Names.class,
+            description = "How to show progress on stderr: ${COMPLETION-CANDIDATES} (default: auto, one line that"
+                    + " updates in place on an interactive terminal; plain prints a line every few seconds for"
+                    + " logs).")
+    ProgressMode progress = ProgressMode.AUTO;
+
+    @Option(
             names = "--json",
             description = "Print the outcome as one JSON document on stdout; warnings and issues stay on stderr.")
     boolean json;
@@ -75,8 +85,9 @@ public class IndexCommand implements Callable<Integer> {
     private final IndexService indexService;
     private final InterruptHandlers interrupts;
     private final Supplier<Terminal.Environment> environment;
-    // Set when the command starts, from --color and the terminal.
+    // Set when the command starts, from --color, --progress, and the terminal.
     private Diagnostics diagnostics;
+    private ProgressDisplay display = ProgressDisplay.NONE;
 
     /** Creates a command using the supplied non-null indexing service. */
     public IndexCommand(IndexService indexService) {
@@ -102,7 +113,8 @@ public class IndexCommand implements Callable<Integer> {
      * the indexed files whose unchanged content was chunked again for new settings. Ctrl+C stops the run before its
      * next file, batch, or page and prints what it finished; the files it indexed stay, and the next run continues.
      * With {@code --json}, a run or dry run prints one JSON document on stdout in place of its summary, whatever its
-     * outcome, and stderr and the exit code stay the same.
+     * outcome, and stderr and the exit code stay the same. A run shows its progress on stderr as {@code --progress}
+     * chooses, and clears a redrawn progress line before printing anything else.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file or scan issues, an unavailable model or
      *     embedder, an embedding failure, or storage failure, 130 when Ctrl+C stopped the run
@@ -110,7 +122,10 @@ public class IndexCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         Terminal terminal = Terminal.detect(ColorMode.of(spec), environment.get());
-        diagnostics = new Diagnostics(spec.commandLine().getErr(), terminal, "pecia index");
+        PrintWriter err = spec.commandLine().getErr();
+        // Only runs report progress; a dry run never hears from it.
+        display = ProgressDisplay.of(progress, terminal, err, System::nanoTime);
+        diagnostics = new Diagnostics(err, terminal, "pecia index", display::clear);
 
         if (dryRun) {
             return execute(null);
@@ -148,7 +163,16 @@ public class IndexCommand implements Callable<Integer> {
             options = options.withDownloadListener(this::announceDownload);
 
             if (!dryRun) {
-                IndexResult result = indexService.index(path, options.withCancellation(cancellation));
+                IndexResult result;
+
+                try {
+                    result = indexService.index(
+                            path, options.withCancellation(cancellation).withProgressListener(display));
+                } finally {
+                    // The summary and diagnostics come after the progress line, never on it.
+                    display.clear();
+                }
+
                 WarningPrinter.print(diagnostics, result.warnings());
                 reportIndex(result);
                 printJson(IndexJson.run(result, null));

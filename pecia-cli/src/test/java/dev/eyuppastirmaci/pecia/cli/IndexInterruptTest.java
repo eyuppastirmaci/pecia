@@ -15,6 +15,7 @@ import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -77,6 +78,21 @@ class IndexInterruptTest {
     }
 
     @Test
+    void anInterruptedRunClearsTheProgressLineBeforeSayingSo() {
+        interrupts.interruptOnRegister = true;
+        Terminal.Environment terminal = TerminalTest.environment("Linux", true, null, "NO_COLOR=1");
+
+        assertEquals(130, run(() -> terminal, root.toString(), "--no-semantic"));
+
+        String stderr = err.toString().replace("\r\n", "\n");
+        assertTrue(stderr.startsWith("\rscanning: "), stderr);
+        assertEquals(
+                "pecia index: cancelled; the files indexed so far are kept, and the next run continues from there\n",
+                stderr.substring(stderr.lastIndexOf('\r') + 1));
+        assertFalse(printed().contains("\r"), printed());
+    }
+
+    @Test
     void theNextRunCompletesTheIndex() throws Exception {
         interrupts.interruptOnRegister = true;
         run(root.toString(), "--no-semantic");
@@ -117,8 +133,12 @@ class IndexInterruptTest {
     }
 
     private int run(String... args) {
+        return run(Terminal.Environment::system, args);
+    }
+
+    private int run(Supplier<Terminal.Environment> environment, String... args) {
         IndexService service = new IndexService(new PeciaConfigLoader(new PeciaConfigParser()));
-        CommandLine commandLine = new CommandLine(new IndexCommand(service, interrupts));
+        CommandLine commandLine = new CommandLine(new IndexCommand(service, interrupts, environment));
         commandLine.setOut(new PrintWriter(out));
         commandLine.setErr(new PrintWriter(err));
 
