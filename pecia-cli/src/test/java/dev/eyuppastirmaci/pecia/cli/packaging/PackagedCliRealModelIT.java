@@ -16,6 +16,9 @@ import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.semantic.VectorExtensionAccess;
 import dev.eyuppastirmaci.pecia.testing.OfflineEnvironment;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -27,7 +30,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -50,6 +55,9 @@ class PackagedCliRealModelIT {
     // Shares no words with the refunds page beyond "money" and "back", so lexical search, which needs every word,
     // finds nothing.
     private static final String PARAPHRASE = "how long until I get my money back";
+    // The interrupted runs index this many generated notes beside the project's four files.
+    private static final int NOTES = 200;
+    private static final int FILES = NOTES + 4;
 
     @TempDir
     Path sandbox;
@@ -190,10 +198,8 @@ class PackagedCliRealModelIT {
     @Test
     @DisabledOnOs(value = OS.WINDOWS, disabledReason = "Process.destroy() kills at once on Windows, so no hook runs")
     void aStoppedSemanticRunKeepsAConsistentIndexThatTheNextRunCompletes() throws Exception {
-        Path cache = Files.createDirectory(sandbox.resolve("cache"));
-        placeModel(cache);
-        Map<String, String> environment = Map.of("PECIA_CACHE_DIR", cache.toString());
-        writeCorpus(project.resolve("many"), 200);
+        Map<String, String> environment = ownCache();
+        writeCorpus(project.resolve("many"), NOTES);
         Path database = project.resolve(".pecia/index.db");
 
         Started started = cli.start(project, environment, "index", "--semantic", "--progress=none");
@@ -208,7 +214,7 @@ class PackagedCliRealModelIT {
                 Files.readString(started.stderr()).replace("\r\n", "\n"));
         assertEquals("ok", queryDatabase(database, "SELECT integrity_check FROM pragma_integrity_check"));
         long committed = Long.parseLong(queryDatabase(database, "SELECT count(*) FROM files"));
-        assertTrue(committed > 0 && committed < 204, committed + " files were committed before the stop");
+        assertTrue(committed > 0 && committed < FILES, committed + " files were committed before the stop");
 
         Result next = cli.run(project, environment, SEMANTIC, null, "index", "--semantic", "--json");
 
@@ -216,11 +222,50 @@ class PackagedCliRealModelIT {
         JsonObject document = JsonDocuments.parse(next.out());
         assertEquals("COMPLETE", document.get("status").getAsString());
         assertEquals(
-                204 - committed,
+                FILES - committed,
                 document.getAsJsonObject("files").get("indexed").getAsLong());
         JsonObject coverage = document.getAsJsonObject("embeddings").getAsJsonObject("coverage");
         assertEquals(0, coverage.get("missing").getAsLong(), coverage.toString());
         assertEquals(0, coverage.get("stale").getAsLong(), coverage.toString());
+    }
+
+    @Test
+    void aKilledSemanticRunRecoversToTheIndexACleanRunWrites() throws Exception {
+        Map<String, String> environment = ownCache();
+        writeCorpus(project.resolve("many"), NOTES);
+        Path clean = copyProject(sandbox.resolve("clean"));
+        Path database = project.resolve(".pecia/index.db");
+
+        Started started = cli.start(project, environment, "index", "--semantic", "--progress=none");
+        awaitCommittedFile(started.process(), database);
+        // A hard kill: no shutdown hook runs and no transaction is finished.
+        started.process().destroyForcibly();
+
+        assertTrue(started.process().waitFor(SEMANTIC.toSeconds(), TimeUnit.SECONDS), "The run did not stop");
+        assertEquals("ok", queryDatabase(database, "SELECT integrity_check FROM pragma_integrity_check"));
+        assertEquals("0", queryDatabase(database, "SELECT count(*) FROM pragma_foreign_key_check"));
+        long committed = Long.parseLong(queryDatabase(database, "SELECT count(*) FROM files"));
+        assertTrue(committed > 0 && committed < FILES, committed + " files were committed before the kill");
+        // A file and its embeddings commit in one transaction, so no committed chunk lacks its vector.
+        assertEquals("0", queryDatabase(database, """
+                SELECT count(*) FROM chunks c LEFT JOIN chunk_embeddings e ON e.chunk_id = c.id
+                WHERE e.chunk_id IS NULL
+                """));
+
+        Result next = cli.run(project, environment, SEMANTIC, null, "index", "--semantic", "--json");
+        Result fresh = cli.run(clean, environment, SEMANTIC, null, "index", "--semantic", "--json");
+
+        assertEquals(0, next.exitCode(), next.err());
+        assertEquals(0, fresh.exitCode(), fresh.err());
+        assertEquals(
+                FILES - committed,
+                JsonDocuments.parse(next.out())
+                        .getAsJsonObject("files")
+                        .get("indexed")
+                        .getAsLong());
+        Path cleanDatabase = clean.resolve(".pecia/index.db");
+        assertEquals(chunksByPosition(cleanDatabase), chunksByPosition(database));
+        assertCloseVectors(vectorsByPosition(cleanDatabase), vectorsByPosition(database));
     }
 
     @Test
@@ -287,6 +332,30 @@ class PackagedCliRealModelIT {
 
         assertEquals(0, result.exitCode(), result.err());
         return JsonDocuments.parse(result.out());
+    }
+
+    /** Places the model in a cache of the test's own, outside the offline guard, and returns the environment naming it. */
+    private Map<String, String> ownCache() throws IOException {
+        Path cache = Files.createDirectory(sandbox.resolve("cache"));
+        placeModel(cache);
+        return Map.of("PECIA_CACHE_DIR", cache.toString());
+    }
+
+    /** Copies the project's files, before any index exists, into a new directory and returns its real path. */
+    private Path copyProject(Path target) throws IOException {
+        Files.createDirectory(target);
+
+        try (Stream<Path> paths = Files.walk(project)) {
+            for (Path source : paths.sorted().toList()) {
+                Path copy = target.resolve(project.relativize(source).toString());
+
+                if (!source.equals(project)) {
+                    Files.copy(source, copy);
+                }
+            }
+        }
+
+        return target.toRealPath();
     }
 
     /**
@@ -360,6 +429,75 @@ class PackagedCliRealModelIT {
         }
 
         return rows;
+    }
+
+    /**
+     * Returns every stored chunk by file and position with its line range, content, and stable identity; row ids are
+     * left out, because they depend on the order in which files were committed.
+     */
+    private static List<String> chunksByPosition(Path database) throws SQLException {
+        List<String> rows = new ArrayList<>();
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database.toUri());
+                ResultSet result = connection.createStatement().executeQuery("""
+                    SELECT f.source_path, c.chunk_index, c.start_line, c.end_line, c.content, i.stable_id
+                    FROM chunks c
+                    JOIN files f ON f.id = c.file_id
+                    JOIN chunk_identities i ON i.chunk_id = c.id
+                    ORDER BY f.source_path, c.chunk_index
+                    """)) {
+            while (result.next()) {
+                rows.add(result.getString(1) + "#" + result.getInt(2) + "|" + result.getInt(3) + "-" + result.getInt(4)
+                        + "|" + result.getString(5) + "|" + result.getString(6));
+            }
+        }
+
+        return rows;
+    }
+
+    /** Returns every stored vector, keyed by its chunk's file and position. */
+    private static Map<String, float[]> vectorsByPosition(Path database) throws SQLException {
+        Map<String, float[]> vectors = new TreeMap<>();
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database.toUri());
+                ResultSet result = connection.createStatement().executeQuery("""
+                    SELECT f.source_path, c.chunk_index, e.vector
+                    FROM chunk_embeddings e
+                    JOIN chunks c ON c.id = e.chunk_id
+                    JOIN files f ON f.id = c.file_id
+                    """)) {
+            while (result.next()) {
+                FloatBuffer values = ByteBuffer.wrap(result.getBytes(3))
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                        .asFloatBuffer();
+                float[] vector = new float[values.remaining()];
+                values.get(vector);
+                vectors.put(result.getString(1) + "#" + result.getInt(2), vector);
+            }
+        }
+
+        return vectors;
+    }
+
+    /**
+     * Asserts that both indexes hold a vector for the same chunks, each pointing the same way; the values may differ in
+     * the last bits, because a batch is padded to its longest text and the two runs batch the chunks differently.
+     */
+    private static void assertCloseVectors(Map<String, float[]> expected, Map<String, float[]> actual) {
+        assertEquals(expected.keySet(), actual.keySet());
+
+        for (Map.Entry<String, float[]> entry : expected.entrySet()) {
+            float[] other = actual.get(entry.getKey());
+            assertEquals(entry.getValue().length, other.length, entry.getKey());
+            double dot = 0;
+
+            for (int i = 0; i < other.length; i++) {
+                dot += entry.getValue()[i] * other[i];
+            }
+
+            // Both are unit vectors, so this is their cosine similarity.
+            assertTrue(dot > 0.9999, entry.getKey() + " has cosine similarity " + dot);
+        }
     }
 
     /** Rewrites the stored embeddings under another profile, as an index written before a model update holds them. */
