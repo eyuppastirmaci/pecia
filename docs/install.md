@@ -54,7 +54,7 @@ xattr -dr com.apple.quarantine pecia-<version>-osx-aarch64
 
 ## The JAR, with Java 21 or newer
 
-A source build produces `pecia-cli/build/libs/pecia.jar`, which runs on any system with Java 21 or newer; see [Building and testing](../README.md#building-and-testing). Run it as `java -jar pecia.jar …` in place of `pecia`. On Intel Macs and other systems without a package, lexical search works this way; semantic search needs a system that ONNX Runtime supports.
+A source build produces `pecia-cli/build/libs/pecia.jar`, which runs on any system with Java 21 or newer; see [CONTRIBUTING](../CONTRIBUTING.md#building-and-testing). Run it as `java -jar pecia.jar …` in place of `pecia`. On Intel Macs and other systems without a package, lexical search works this way; semantic search needs a system that ONNX Runtime supports.
 
 On Windows, `java.exe` reads its arguments in the system's ANSI code page, so query characters outside it are replaced: under Western European settings `İstanbul` arrives as `?stanbul`. The packaged `pecia.exe` has no such limit. With the JAR, enable **Beta: Use Unicode UTF-8 for worldwide language support** under **Settings → Time & language → Language & region → Administrative language settings → Change system locale**, then restart Windows.
 

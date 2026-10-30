@@ -32,6 +32,10 @@ tasks.named<Test>("test") {
     useJUnitPlatform {
         excludeTags(referenceTag, performanceTag)
     }
+    // LibraryGuideTest compares the guide's example with its own source, whose comments and spacing leave the compiled
+    // classes unchanged, so both files are inputs.
+    inputs.file(layout.projectDirectory.file("../docs/library.md")).withPropertyName("libraryGuide")
+    inputs.file("src/test/java/dev/eyuppastirmaci/pecia/LibraryGuideTest.java").withPropertyName("libraryGuideTest")
 }
 
 tasks.register<Test>("referenceTest") {

@@ -36,48 +36,6 @@ Packages bundle their own Java runtime, so no Java installation is needed.
 
 [Installing Pecia](docs/install.md) covers archives from [Releases](https://github.com/eyuppastirmaci/pecia/releases), upgrades, security prompts, and running the JAR with Java 21 or newer. Intel Macs have no package, because ONNX Runtime does not support them.
 
-## Building and testing
-
-Building needs JDK 17 or newer to run Gradle; the build itself compiles and tests on JDK 21, which Gradle downloads if it is not installed. The Gradle Wrapper is included, so no Gradle installation is needed. The CLI JAR runs on Java 21+.
-
-The project has two Gradle modules: `pecia-core` provides discovery, extraction, chunking, storage, embeddings, and search behind a Java API; `pecia-cli` provides the terminal commands and depends on `pecia-core`.
-
-Run these commands from the repository root:
-
-```
-./gradlew test                  # run unit tests in both modules
-./gradlew :pecia-cli:shadowJar  # build the CLI JAR without running tests
-./gradlew build                 # run all tests and checks, including acceptance tests against the packaged JARs
-./gradlew referenceTest         # check the real semantic model, through the core API and the CLI JAR
-./gradlew :pecia-core:performanceTest  # measure indexing and query speed on a synthetic corpus
-./gradlew :pecia-core:pitest           # run mutation testing on chunking, incremental indexing, and ranking
-./gradlew :pecia-cli:packageArchive    # build this system's package in pecia-cli/build/package/dist
-./gradlew :pecia-cli:packageTest       # extract that package and run it with no Java on PATH
-```
-
-On Windows use `gradlew.bat` instead of `./gradlew`.
-
-`build` never downloads anything and uses a tiny test model. The other tasks run only on request:
-
-| Task | Checks | Report |
-| --- | --- | --- |
-| `referenceTest` | The real model: embeddings, retrieval quality, and the CLI's semantic workflows | `pecia-core/build/reports/retrieval/` |
-| `:pecia-core:performanceTest` | Indexing and query speed on a generated corpus; never fails on time | `pecia-core/build/reports/performance/index.md` |
-| `:pecia-core:pitest` | Which code mutations the unit tests miss | `pecia-core/build/reports/pitest/` |
-
-Retrieval quality is measured on a labelled corpus (`pecia-core/src/test/resources/retrieval`): lexical search in `test`, semantic and hybrid in `referenceTest`. A metric below its threshold fails the run.
-
-`referenceTest` reads the model from `PECIA_CACHE_DIR` and may write there, so point it at a copy of your cache (see [Model cache](docs/cli.md#model-cache)). If no model is cached yet, `java -jar pecia-cli/build/libs/pecia.jar index --semantic <folder>` downloads it (about 90 MB) into the cache that the variable names.
-
-```
-export PECIA_CACHE_DIR=/tmp/pecia-reference-cache
-mkdir -p "$PECIA_CACHE_DIR"
-cp -R ~/Library/Caches/pecia/models "$PECIA_CACHE_DIR"   # macOS path
-./gradlew referenceTest
-```
-
-A hanging test fails after five minutes with a thread dump in its XML report.
-
 ## Usage
 
 ### Quick start
@@ -106,7 +64,7 @@ Run `index` before `query`. From a source build, use `java -jar pecia-cli/build/
 | `index [folder]` | Indexes the files under the folder (default: current directory) into the index of the project that contains it, found from the nearest `.pecia.toml` or Git root: it adds new and changed files, removes deleted ones, and skips unchanged ones. With semantic indexing on, it also embeds new chunks and stored chunks that have no embedding yet. | `--dry-run`, `--semantic` / `--no-semantic`, `--progress`, `--json` |
 | `query <text>` | Searches the existing index read-only, without rereading source files, and prints the best-matching chunks. Quote text with several words. | `--mode`, `--limit`, `--root`, `--json` |
 
-The [CLI reference](docs/cli.md) covers every option, the output formats, exit codes, failures, configuration, and the model cache.
+The [CLI reference](docs/cli.md) covers every option, the output formats, exit codes, failures, configuration, and the model cache. To use Pecia from Java instead, see [Using pecia-core from Java](docs/library.md).
 
 ## Supported files
 
@@ -179,6 +137,10 @@ Semantic indexing embeds each chunk with [all-MiniLM-L6-v2](https://huggingface.
 - **sqlite-vec 0.1.9.** The loadable libraries for the supported platforms are bundled unchanged from the [release](https://github.com/asg017/sqlite-vec/releases/tag/v0.1.9); their [`NOTICE.txt`](pecia-core/src/main/resources/dev/eyuppastirmaci/pecia/semantic/sqlite-vec/NOTICE.txt) pins each library's SHA-256.
 - **ONNX Runtime 1.28.0**, a runtime dependency of the CLI JAR, runs the model; its native libraries ship inside its JAR.
 - **The model itself is not bundled.** The first semantic indexing run downloads it into the user's cache, as described under [Model cache](docs/cli.md#model-cache).
+
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build Pecia, run its tests and checks, and publish a release.
 
 ## License
 
