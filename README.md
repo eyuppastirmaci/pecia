@@ -24,11 +24,24 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 - [x] Reusable Java core API and runnable JAR with `init`, `index`, and `query` commands.
 - [x] JSON output for indexing, queries, and dry runs, with match ranges for highlighting.
 - [x] Detailed dry runs, live progress, grouped run summaries, and coloured, readable terminal output.
+- [x] End-to-end checks of the packaged CLI with the real model, and retrieval-quality metrics gated in CI.
 
 ### Planned for v0.1.0
 
-- [ ] Expanded end-to-end and retrieval-quality checks.
 - [ ] Automated macOS, Linux, and Windows release packages with installation documentation.
+
+## Install
+
+Packages bundle their own Java runtime, so no Java installation is needed.
+
+| System | Install |
+| --- | --- |
+| macOS (Apple silicon), Linux (x64, arm64) | `brew install eyuppastirmaci/pecia/pecia` |
+| Windows (x64) | `scoop bucket add pecia https://github.com/eyuppastirmaci/scoop-pecia`, then `scoop install pecia` |
+
+Without a package manager, download the archive for your system from [Releases](https://github.com/eyuppastirmaci/pecia/releases), extract it, and add its `bin` folder (on Windows, the folder holding `pecia.exe`) to `PATH`. Intel Macs have no package, because ONNX Runtime does not support them.
+
+With Java 21 or newer, the plain `pecia.jar` from a source build also works: `java -jar pecia.jar …`.
 
 ## Building and testing
 
@@ -45,6 +58,8 @@ Run these commands from the repository root:
 ./gradlew referenceTest         # check the real semantic model, through the core API and the CLI JAR
 ./gradlew :pecia-core:performanceTest  # measure indexing and query speed on a synthetic corpus
 ./gradlew :pecia-core:pitest           # run mutation testing on chunking, incremental indexing, and ranking
+./gradlew :pecia-cli:packageArchive    # build this system's package in pecia-cli/build/package/dist
+./gradlew :pecia-cli:packageTest       # extract that package and run it with no Java on PATH
 ```
 
 On Windows use `gradlew.bat` instead of `./gradlew`.
@@ -75,20 +90,20 @@ A hanging test fails after five minutes with a thread dump in its XML report.
 ### Quick start
 
 ```
-java -jar pecia-cli/build/libs/pecia.jar --help                             # list commands
-java -jar pecia-cli/build/libs/pecia.jar --version                          # print version
-java -jar pecia-cli/build/libs/pecia.jar init                               # write a default .pecia.toml into the current directory
-java -jar pecia-cli/build/libs/pecia.jar index . --dry-run                  # show what indexing would change, writing nothing
-java -jar pecia-cli/build/libs/pecia.jar index .                            # build the local lexical index
-java -jar pecia-cli/build/libs/pecia.jar index . --semantic                 # also build embeddings (downloads the model once)
-java -jar pecia-cli/build/libs/pecia.jar index . --progress=plain           # progress as plain lines, for logs
-java -jar pecia-cli/build/libs/pecia.jar query "authentication middleware"  # search in the default auto mode
-java -jar pecia-cli/build/libs/pecia.jar query "JWT_SECRET" --mode lexical --root /path/to/project --limit 5
-java -jar pecia-cli/build/libs/pecia.jar query "how are refunds paid?" --mode semantic
-java -jar pecia-cli/build/libs/pecia.jar query "refund policy" --json          # one JSON document for scripts
+pecia --help                             # list commands
+pecia --version                          # print version
+pecia init                               # write a default .pecia.toml into the current directory
+pecia index . --dry-run                  # show what indexing would change, writing nothing
+pecia index .                            # build the local lexical index
+pecia index . --semantic                 # also build embeddings (downloads the model once)
+pecia index . --progress=plain           # progress as plain lines, for logs
+pecia query "authentication middleware"  # search in the default auto mode
+pecia query "JWT_SECRET" --mode lexical --root /path/to/project --limit 5
+pecia query "how are refunds paid?" --mode semantic
+pecia query "refund policy" --json       # one JSON document for scripts
 ```
 
-Run `index` before `query`. Every command accepts `--help` and `--color=auto|always|never`; see [Colour](#colour).
+Run `index` before `query`. From a source build, use `java -jar pecia-cli/build/libs/pecia.jar` in place of `pecia`. Every command accepts `--help` and `--color=auto|always|never`; see [Colour](#colour).
 
 ### Commands
 
@@ -233,7 +248,7 @@ With `--json`, `index`, `index --dry-run`, and `query` print one JSON document o
 <summary>Example: a lexical query</summary>
 
 ```
-$ java -jar pecia-cli/build/libs/pecia.jar query "refund card" --mode lexical --json
+$ pecia query "refund card" --mode lexical --json
 {
   "schemaVersion": 1,
   "command": "query",
