@@ -45,6 +45,8 @@ tasks.shadowJar {
 
 // Real-model checks need the model in the cache that PECIA_CACHE_DIR names, so only referenceTest runs them.
 val referenceTag = "reference"
+// Package checks run the extracted platform package, so only packageTest runs them, after building it.
+val packageTag = "package"
 val cliJar = tasks.shadowJar.flatMap { it.archiveFile }
 
 tasks.named<Test>("integrationTest") {
@@ -53,7 +55,7 @@ tasks.named<Test>("integrationTest") {
         listOf("-Dpecia.it.jar=${cliJar.get().asFile.absolutePath}", "-Dpecia.it.version=${project.version}")
     })
     useJUnitPlatform {
-        excludeTags(referenceTag)
+        excludeTags(referenceTag, packageTag)
     }
 }
 
@@ -119,6 +121,8 @@ val platformJar = tasks.register<Zip>("platformJar") {
     group = "distribution"
     val platform = packagePlatform
     inputs.property("platform", platform)
+    // Gradle does not see inside the exclude rule, so the directories it keeps are declared as an input.
+    inputs.property("nativeDirectories", platform.map { nativeDirectories(it) })
     from(zipTree(tasks.shadowJar.flatMap { it.archiveFile })) {
         exclude { entry ->
             val path = entry.path + if (entry.isDirectory) "/" else ""
@@ -260,4 +264,32 @@ packageArchive.configure {
         archive.resolveSibling(archive.name + ".sha256")
             .writeText(digest.joinToString("") { "%02x".format(it) } + "  " + archive.name + "\n")
     }
+}
+
+tasks.register<Test>("packageTest") {
+    description = "Extracts this platform's package and runs its launcher with no Java on PATH. Semantic checks copy " +
+        "the model from PECIA_CACHE_DIR; -Ppecia.package.download=true also downloads it once."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/*IT.class")
+    val archive = packageArchive.flatMap { it.archiveFile }
+    inputs.file(archive).withPropertyName("packageArchive")
+    val download = providers.gradleProperty("pecia.package.download").map { it.toBoolean() }.orElse(false)
+    useJUnitPlatform {
+        includeTags(packageTag)
+        if (!download.get()) {
+            excludeTags("download")
+        }
+    }
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf(
+            "-Dpecia.package.archive=${archive.get().asFile.absolutePath}",
+            "-Dpecia.package.platform=${packagePlatform.get()}",
+            "-Dpecia.it.version=${project.version}",
+        )
+    })
+    // The model lives outside the build, so a previous result is never reused.
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("The model lives outside the build") { true }
 }
