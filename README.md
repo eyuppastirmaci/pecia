@@ -33,13 +33,30 @@ Pecia is a local search tool that turns a folder of documents and source code in
 - End-to-end checks of the packaged app with the real model, and retrieval-quality metrics gated in CI.
 - Packages for macOS, Linux, and Windows with a bundled Java runtime, installed through Homebrew or Scoop.
 
-### Planned
+### Planned for v0.2.0
 
 - A desktop app with a graphical interface.
+- Clickable result paths in the terminal that open the file, at the matching line in editors that support it.
+- Shell completion for commands and options.
+- A `pecia status` command that summarises a project's index: files, chunks, embeddings, size, and the last run.
+- Query filters that limit a search to some paths or file types.
+- A few lines of surrounding context around each result.
+- Results grouped by file, so one file's matches no longer fill the list.
+
+### Planned later
+
 - Language-aware chunking for source code, splitting at functions and classes instead of lines and indentation.
 - Chunking tuned to more text formats, such as JSON, YAML, and reStructuredText.
 - More file types: PDF, Word and Excel documents, and images.
 - An MCP server, so AI agents can search a project through Pecia.
+- Matching word forms, so `refunds` also finds `refund`.
+- Splitting code names such as `PaymentService` into words for search.
+- Saying so when no result is a confident match.
+- A watch mode that updates the index as files change.
+- An interactive search screen in the terminal.
+- An optional multilingual model for better search by meaning in Turkish and other languages.
+- Finding the documents most similar to a given file.
+- Results on public retrieval benchmarks (BEIR, MTEB, CodeSearchNet, and CoIR), published next to their reference numbers.
 
 ## Install
 
