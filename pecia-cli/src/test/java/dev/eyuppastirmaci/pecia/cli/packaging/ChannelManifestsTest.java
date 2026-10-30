@@ -58,7 +58,8 @@ class ChannelManifestsTest {
             assertTrue(formula.indexOf("sha256 \"" + sha256(platform) + "\"", at) > at, "No checksum for " + platform);
         }
 
-        assertTrue(formula.contains("version \"" + VERSION + "\""));
+        // brew audit --strict rejects a version that Homebrew can already read from the URLs.
+        assertFalse(formula.contains("version \""));
         assertFalse(formula.contains("${"));
     }
 
