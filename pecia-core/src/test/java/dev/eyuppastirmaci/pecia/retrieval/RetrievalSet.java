@@ -77,6 +77,19 @@ public record RetrievalSet(Path corpus, List<String> files, List<RetrievalQuery>
         return new RetrievalSet(corpus, files, queries);
     }
 
+    /** Copies the corpus into {@code target}, which must not exist yet, and returns the target's real path. */
+    public Path copyCorpus(Path target) throws IOException {
+        Files.createDirectories(target);
+
+        for (String file : files) {
+            Path copy = target.resolve(file);
+            Files.createDirectories(copy.getParent());
+            Files.copy(corpus.resolve(file), copy);
+        }
+
+        return target.toRealPath();
+    }
+
     private static List<String> corpusFiles(Path corpus) throws IOException {
         try (Stream<Path> paths = Files.walk(corpus)) {
             List<String> files = paths.filter(Files::isRegularFile)
