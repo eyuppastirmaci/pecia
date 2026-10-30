@@ -41,8 +41,30 @@ tasks.shadowJar {
     addMultiReleaseAttribute = false
 }
 
+// Real-model checks need the model in the cache that PECIA_CACHE_DIR names, so only referenceTest runs them.
+val referenceTag = "reference"
+val cliJar = tasks.shadowJar.flatMap { it.archiveFile }
+
 tasks.named<Test>("integrationTest") {
-    val cliJar = tasks.shadowJar.flatMap { it.archiveFile }
     inputs.file(cliJar).withPropertyName("cliJar")
     jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dpecia.it.jar=${cliJar.get().asFile.absolutePath}") })
+    useJUnitPlatform {
+        excludeTags(referenceTag)
+    }
+}
+
+tasks.register<Test>("referenceTest") {
+    description = "Runs the packaged CLI with the real semantic model copied from the cache that PECIA_CACHE_DIR names."
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    include("**/*IT.class")
+    inputs.file(cliJar).withPropertyName("cliJar")
+    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dpecia.it.jar=${cliJar.get().asFile.absolutePath}") })
+    useJUnitPlatform {
+        includeTags(referenceTag)
+    }
+    shouldRunAfter(tasks.named("integrationTest"))
+    // The model lives outside the build, so Gradle cannot tell when a previous result is still valid.
+    outputs.upToDateWhen { false }
 }

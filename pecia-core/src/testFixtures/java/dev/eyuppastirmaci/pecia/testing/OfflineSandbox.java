@@ -29,6 +29,11 @@ public final class OfflineSandbox {
         this.environment = environment;
     }
 
+    /** Returns the directory child processes receive as {@code PECIA_CACHE_DIR}, where a test may place a model. */
+    public Path peciaCache() {
+        return environment.peciaCache();
+    }
+
     /** Creates fresh test state in an existing directory, without using the host's home or cache. */
     public static OfflineSandbox create(Path directory) throws IOException {
         Path root = directory.toRealPath();
