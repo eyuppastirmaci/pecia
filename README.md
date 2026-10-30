@@ -22,11 +22,11 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 - [x] Parallel embedding with bounded memory, and indexing runs that stop cleanly on Ctrl+C.
 - [x] Failure isolation: unreadable folders and files that cannot be read or embedded are reported while everything else is indexed, storage failures say what to do, and an interrupted or killed run recovers on the next run.
 - [x] Reusable Java core API and runnable JAR with `init`, `index`, and `query` commands.
+- [x] JSON output for indexing, queries, and dry runs, with match ranges for highlighting.
 
 ### Planned for v0.1.0
 
 - [ ] Richer dry runs, progress reporting, and run summaries.
-- [ ] JSON output for indexing, queries, and dry runs.
 - [ ] Expanded end-to-end and retrieval-quality checks.
 - [ ] Automated macOS, Linux, and Windows release packages with installation documentation.
 
@@ -60,6 +60,7 @@ java -jar pecia-cli/build/libs/pecia.jar index . --semantic                 # al
 java -jar pecia-cli/build/libs/pecia.jar query "authentication middleware"  # search in the default auto mode
 java -jar pecia-cli/build/libs/pecia.jar query "JWT_SECRET" --mode lexical --root /path/to/project --limit 5
 java -jar pecia-cli/build/libs/pecia.jar query "how are refunds paid?" --mode semantic
+java -jar pecia-cli/build/libs/pecia.jar query "refund policy" --json          # one JSON document for scripts
 ```
 
 Run `index` before `query`. Every command accepts `--help`.
@@ -69,8 +70,8 @@ Run `index` before `query`. Every command accepts `--help`.
 | Command | What it does | Main options |
 | --- | --- | --- |
 | `init` | Writes a default `.pecia.toml` into the current directory, unless one is already there. | — |
-| `index [folder]` | Indexes the files under the folder (default: current directory) into the index of the project that contains it, found from the nearest `.pecia.toml` or Git root: it adds new and changed files, removes deleted ones, and skips unchanged ones. With semantic indexing on, it also embeds new chunks and stored chunks that have no embedding yet. | `--dry-run`, `--semantic` / `--no-semantic` |
-| `query <text>` | Searches the existing index read-only, without rereading source files, and prints the best-matching chunks. Quote text with several words. | `--mode`, `--limit`, `--root` |
+| `index [folder]` | Indexes the files under the folder (default: current directory) into the index of the project that contains it, found from the nearest `.pecia.toml` or Git root: it adds new and changed files, removes deleted ones, and skips unchanged ones. With semantic indexing on, it also embeds new chunks and stored chunks that have no embedding yet. | `--dry-run`, `--semantic` / `--no-semantic`, `--json` |
+| `query <text>` | Searches the existing index read-only, without rereading source files, and prints the best-matching chunks. Quote text with several words. | `--mode`, `--limit`, `--root`, `--json` |
 
 ### `index` options
 
@@ -79,6 +80,7 @@ Run `index` before `query`. Every command accepts `--help`.
 | `--dry-run` | Shows what the run would do without changing the project: it reads the files to compare them with the index, but never writes the index, downloads the model, or loads it. An index of an older format is compared after upgrading a temporary copy, which is then deleted. See [Dry runs](#dry-runs). |
 | `--semantic` | Builds embeddings in this run, overriding `semantic.enabled` in `.pecia.toml`. The first semantic run downloads the model (about 90 MB) and says so on stderr. |
 | `--no-semantic` | Builds only the lexical index in this run. Embeddings that are already stored stay, except those of changed or deleted files. |
+| `--json` | Prints the run's or dry run's outcome as one JSON document instead of the summary; see [JSON output](#json-output). |
 
 Without either flag, `semantic.enabled` in `.pecia.toml` decides; it is `false` by default. The summary counts candidate, indexed, rechunked, unchanged, and deleted files, written chunks, and rejected and failed files; semantic runs add the model, discarded embeddings of an earlier model, and the chunks they embedded and backfilled.
 
@@ -107,25 +109,6 @@ rejected:
 
 Counts marked `~` are estimated from file sizes; the others are read from the index. The `index` line says whether the index is `current`, does not exist yet (`none yet; would be created`), has an older format (`older format; would be upgraded`), or `cannot be read`, in which case the dry run fails as the run would, with the same advice. The `model` line says whether the model is cached or would be downloaded, with its size. A rejected file or an unreadable folder keeps the run from removing deleted files, so none are listed then. A dry run exits with `0`, even with rejected files, unless the index cannot be read or a folder cannot be scanned.
 
-#### When something goes wrong
-
-A problem with one file or folder never stops the others. Each problem is printed on stderr with its reason, followed by one line that sums up what was left out, and the command exits with `1`:
-
-```
-warning: private: PERMISSION_DENIED: /home/me/project/private (not scanned)
-warning: notes/draft.md: INVALID_UTF8: File is not valid UTF-8: /home/me/project/notes/draft.md
-pecia index: PARTIAL: 1 file could not be read or were rejected; 1 path could not be scanned; every other file was indexed, and no file was removed from the index
-```
-
-| Problem | What happens |
-| --- | --- |
-| A folder or `.gitignore` cannot be read | The folder is skipped (a folder whose `.gitignore` cannot be read is skipped whole, since its rules are unknown), every other file is indexed, and nothing is deleted, because files that could not be seen are not known to be gone. |
-| A file cannot be read or is rejected (too large, not UTF-8, binary) | It keeps its previous version in the index, and nothing is deleted in that run. A file that changes while it is read, as when an editor saves it, is read once more. |
-| A file's chunks cannot be embedded | The file is indexed with its new chunks and no embeddings, so lexical search stays current; the next semantic run embeds them. A broken runtime or model, or three failing files in a row, stop the run instead. |
-| The index cannot be written | The run stops, keeping every file it finished, and says why and what to do: free disk space (`DISK_FULL`), wait for another indexing process (`BUSY`), make the index writable (`READ_ONLY`), check the disk (`IO_ERROR`), or delete a damaged, foreign, or incompatible index and run again (`CORRUPT`, `WRONG_PROJECT`, `INCOMPATIBLE`). |
-
-If the process is killed outright, for example by a crash or a power loss, the index stays consistent: each file is written in one transaction, and the next run indexes the rest and ends with the same index as an uninterrupted run.
-
 ### `query` options
 
 | Option | Default | Effect |
@@ -133,6 +116,7 @@ If the process is killed outright, for example by a crash or a power loss, the i
 | `--mode <mode>` | `search.mode` in `.pecia.toml`, otherwise `auto` | Chooses the search mode for this query; see the next table. |
 | `--limit <n>` | `10` | Maximum number of results, from 1 to 100. |
 | `--root <dir>` | `.` | Any directory inside the project; the whole project's index is searched. |
+| `--json` | off | Prints the results as one JSON document; see [JSON output](#json-output). |
 
 ### Search modes
 
@@ -166,6 +150,126 @@ docs/payments.md:3-5
 
 Results go to stdout, so scripts can read them. Configuration warnings and `note:` lines go to stderr; a note explains, for example, why `auto` searched lexically although the index has embeddings, such as a model that is no longer cached. `No results.` is printed when nothing matches.
 
+### JSON output
+
+With `--json`, `index`, `index --dry-run`, and `query` print one JSON document on stdout, also when they fail.
+
+- Stderr and exit codes stay the same as without `--json`.
+- Usage errors, such as an unknown option, stay plain text on stderr with exit code `2` and nothing on stdout.
+
+```
+$ java -jar pecia-cli/build/libs/pecia.jar query "refund card" --mode lexical --json
+{
+  "schemaVersion": 1,
+  "command": "query",
+  "query": "refund card",
+  "limit": 10,
+  "requestedMode": "lexical",
+  "effectiveMode": "lexical",
+  "fallback": null,
+  "notices": [],
+  "queryShape": null,
+  "embeddingCoverage": null,
+  "warnings": [],
+  "hits": [
+    {
+      "rank": 1,
+      "path": "refunds.md",
+      "documentType": "MARKDOWN",
+      "lines": {
+        "start": 1,
+        "end": 3
+      },
+      "chunkIndex": 0,
+      "stableId": "34a3a27471462101e7f371f1e4ffda1a4edf31a2a4a9026c042c888700aac3ca",
+      "headingPath": [
+        "Refunds"
+      ],
+      "score": {
+        "kind": "SQLITE_BM25",
+        "value": -2.0E-6
+      },
+      "fusedRanks": null,
+      "snippet": "# Refunds\n\nA refund takes five days. Refunds go to the original card.\n",
+      "matches": [
+        {
+          "start": 13,
+          "end": 19
+        },
+        {
+          "start": 64,
+          "end": 68
+        }
+      ]
+    }
+  ],
+  "error": null
+}
+```
+
+**Conventions**
+
+- Every document starts with `schemaVersion` (currently `1`) and `command`.
+- Every field is always present, in the same order; `null` means it does not apply.
+- New fields may appear within a version. A field that changes meaning or is removed raises the version.
+- Project paths are relative to the project root and use `/`. `root`, `database`, `config`, and warning sources are absolute.
+- Modes are spelled as `--mode` takes them (`"hybrid"`); other codes as stderr prints them (`"PARTIAL"`).
+- Scores keep full precision.
+- The output is plain ASCII: other characters are written as `\u` escapes, so no console or code page can garble them.
+
+**Documents**
+
+| Document | Fields |
+| --- | --- |
+| `query` | `query`, `limit`, `requestedMode`, `effectiveMode`, `fallback`, `notices`, `queryShape`, `embeddingCoverage`, `warnings`, `hits`, `error` |
+| Query hit | `rank`, `path`, `documentType`, `lines`, `chunkIndex`, `stableId`, `headingPath`, `score`, `fusedRanks`, `snippet`, `matches` |
+| `index` | `dryRun` (`false`), `root`, `database`, `config`, `status`, `files`, `chunks`, `embeddings`, `issues`, `scanIssues`, `semanticIssues`, `warnings`, `error` |
+| `index --dry-run` | `dryRun` (`true`), `root`, `database`, `config`, `semantic`, `index`, `files`, `chunks`, `embeddings`, `newFiles`, `changedFiles`, `rechunkedFiles`, `rejectedFiles`, `removedFiles`, `scanIssues`, `warnings`, `error` |
+
+- `fallback` is set when `auto` searched lexically.
+- `queryShape` and `embeddingCoverage` are set when embeddings were compared, and `fusedRanks` for hybrid hits.
+- `embeddings` is set for semantic runs and dry runs.
+- A dry run only counts unchanged files; it does not list them.
+
+**Nested fields**
+
+| Field | Fields or values |
+| --- | --- |
+| `lines` | `start`, `end` |
+| `score` | `kind`, `value` |
+| `fusedRanks` | `lexical`, `semantic`: a rank, or `null` when that side did not rank the hit |
+| `embeddingCoverage`, `coverage` | `embedded`, `stale`, `missing` |
+| `status` | `COMPLETE`, `PARTIAL`, `CANCELLED`, or a failure such as `FAILED` |
+| `index` | `NONE`, `CURRENT`, `UPGRADE`, `UNREADABLE` |
+| `files` (run) | `candidates`, `indexed`, `rechunked`, `unchanged`, `deleted`, `rejected`, `failed` |
+| `files` (dry run) | `new`, `changed`, `rechunked`, `unchanged`, `rejected`, `removed` |
+| `chunks` (run) | `written` |
+| `chunks` (dry run) | `toWrite`, `kept`, `removed` |
+| `embeddings` (run) | `model`, `modelSource` (`CACHED`, `DOWNLOADED`), `embedded`, `backfilled`, `discarded`, `coverage` |
+| `embeddings` (dry run) | `model`, `modelState` (`CACHED`, `DOWNLOAD`, `UNAVAILABLE`), `downloadBytes`, `toEmbed`, `toDiscard` |
+| `newFiles`, `changedFiles`, `rechunkedFiles`, `removedFiles` | `path`, `chunks` |
+| `issues`, `rejectedFiles` | `path`, `reason`, `rejected`, `message` |
+| `scanIssues` | `path`, `cause`, `message` |
+| `semanticIssues` | `path`, `reason`, `message` |
+
+In dry runs, a chunk count is `{"value": n, "estimated": true}` when it is estimated from file sizes, and `"estimated": false` when it is read from the index.
+
+**Match ranges**
+
+- `matches` lists where the snippet matches the query, so a program can highlight it.
+- Each range has an inclusive `start` and an exclusive `end`, in Unicode code points from the start of the snippet.
+- Hits found only by semantic search have no ranges, and neither do lexical hits that match only in their headings or path.
+- Ranges are never wrong, at worst missing: a hit whose text contains U+FDD0 or U+FDD1, the markers used to find them, has none.
+
+**Errors**
+
+- `error` is `null` on success. Otherwise it holds a `reason` and the `message` that stderr shows.
+- Reasons are the codes stderr prints, such as `INDEX_NOT_FOUND`, `OFFLINE`, or `CORRUPT`. Two more cover failures before a command has a result:
+  - `INVALID_INPUT`: rejected input, such as a limit outside 1–100 or an invalid `.pecia.toml`.
+  - `IO_ERROR`: a folder that is missing or cannot be read. The same code also names a disk error while writing the index.
+- When a failure leaves no result, such as a missing folder, the result fields are `null`.
+- A partial run or an incomplete scan is not an error: `status` or `scanIssues` say what was left out, and the exit code is `1`.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -175,6 +279,25 @@ Results go to stdout, so scripts can read them. Configuration warnings and `note
 | `2` | Usage error, such as an unknown option or mode. |
 | `3` | An explicit `semantic` or `hybrid` query whose semantic prerequisite is missing. The error names the reason and prints the next step: `index --semantic` for missing or outdated embeddings and an uncached model, or `--mode lexical` when vector search or the embedder cannot run here. |
 | `130` | `index` was stopped with Ctrl+C; see [`index` options](#index-options). |
+
+### When something goes wrong
+
+A problem with one file or folder never stops `index` from indexing the others. Each problem is printed on stderr with its reason, then one line sums up what was left out, and the command exits with `1`:
+
+```
+warning: private: PERMISSION_DENIED: /home/me/project/private (not scanned)
+warning: notes/draft.md: INVALID_UTF8: File is not valid UTF-8: /home/me/project/notes/draft.md
+pecia index: PARTIAL: 1 file could not be read or were rejected; 1 path could not be scanned; every other file was indexed, and no file was removed from the index
+```
+
+| Problem | What happens |
+| --- | --- |
+| A folder or `.gitignore` cannot be read | The folder is skipped (a folder whose `.gitignore` cannot be read is skipped whole, since its rules are unknown), every other file is indexed, and nothing is deleted, because files that could not be seen are not known to be gone. |
+| A file cannot be read or is rejected (too large, not UTF-8, binary) | It keeps its previous version in the index, and nothing is deleted in that run. A file that changes while it is read, as when an editor saves it, is read once more. |
+| A file's chunks cannot be embedded | The file is indexed with its new chunks and no embeddings, so lexical search stays current; the next semantic run embeds them. A broken runtime or model, or three failing files in a row, stop the run instead. |
+| The index cannot be written | The run stops, keeping every file it finished, and says why and what to do: free disk space (`DISK_FULL`), wait for another indexing process (`BUSY`), make the index writable (`READ_ONLY`), check the disk (`IO_ERROR`), or delete a damaged, foreign, or incompatible index and run again (`CORRUPT`, `WRONG_PROJECT`, `INCOMPATIBLE`). |
+
+If the process is killed outright, for example by a crash or a power loss, the index stays consistent: each file is written in one transaction, and the next run indexes the rest and ends with the same index as an uninterrupted run.
 
 ### Configuration
 
