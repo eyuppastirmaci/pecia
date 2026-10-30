@@ -31,7 +31,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
-/** Builds a folder's lexical index or previews candidate discovery. */
+/** Builds a folder's index, or shows what indexing would change without writing anything. */
 @Command(
         name = "index",
         description = "Builds a local index from a folder of text files, with embeddings when semantic indexing is on.",
@@ -41,7 +41,9 @@ public class IndexCommand implements Callable<Integer> {
     @Parameters(index = "0", defaultValue = ".", description = "Folder to index (default: current directory).")
     Path path;
 
-    @Option(names = "--dry-run", description = "List candidate files without processing contents or writing an index.")
+    @Option(
+            names = "--dry-run",
+            description = "Show what indexing would change, with chunk and embedding counts, without writing anything.")
     boolean dryRun;
 
     // Null when neither form is given, so semantic.enabled in .pecia.toml applies.
@@ -83,15 +85,15 @@ public class IndexCommand implements Callable<Integer> {
     }
 
     /**
-     * Indexes a folder or previews discovery without processing content. Configuration warnings are printed to stderr
+     * Indexes a folder or shows what indexing would change without writing. Configuration warnings are printed to stderr
      * before any other output and do not change the exit code. The semantic flags override {@code semantic.enabled} for
      * this run, and the preview reports the resolved choice. A semantic run announces a model download on stderr when
      * one starts and reports the model, the embeddings of an earlier profile it discarded, the chunks embedded with
      * changed files, and the stored chunks whose missing embeddings it made in its summary. Every summary also counts
      * the indexed files whose unchanged content was chunked again for new settings. Ctrl+C stops the run before its
      * next file, batch, or page and prints what it finished; the files it indexed stay, and the next run continues.
-     * With {@code --json}, a run prints one JSON document on stdout in place of its summary, whatever its outcome, and
-     * stderr and the exit code stay the same.
+     * With {@code --json}, a run or dry run prints one JSON document on stdout in place of its summary, whatever its
+     * outcome, and stderr and the exit code stay the same.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file or scan issues, an unavailable model or
      *     embedder, an embedding failure, or storage failure, 130 when Ctrl+C stopped the run
@@ -158,7 +160,10 @@ public class IndexCommand implements Callable<Integer> {
             IndexPreview preview = indexService.preview(path, options);
             WarningPrinter.print(spec.commandLine().getErr(), preview.warnings());
             WalkResult result = preview.walkResult();
-            report(preview);
+
+            if (!json) {
+                report(preview);
+            }
 
             for (WalkResult.Issue issue : result.issues()) {
                 reportScanIssue(preview.target(), issue);
@@ -173,9 +178,13 @@ public class IndexCommand implements Callable<Integer> {
                         .println("pecia index: " + IndexResult.Status.FAILED + ": " + changes.storageFailure() + ": "
                                 + changes.storageMessage());
                 spec.commandLine().getErr().println(storageAdvice(changes.storageFailure(), preview.databasePath()));
+                printJson(IndexJson.preview(
+                        preview, IndexJson.error(changes.storageFailure().name(), changes.storageMessage())));
 
                 return 1;
             }
+
+            printJson(IndexJson.preview(preview, null));
 
             if (!result.complete()) {
                 spec.commandLine()
@@ -194,7 +203,8 @@ public class IndexCommand implements Callable<Integer> {
         } catch (IOException | IllegalArgumentException failure) {
             spec.commandLine().getErr().println("pecia index: " + failure.getMessage());
             String reason = failure instanceof IOException ? IO_ERROR : QueryCommand.INVALID_INPUT;
-            printJson(IndexJson.failure(IndexJson.error(reason, failure.getMessage())));
+            Json.JsonObject error = IndexJson.error(reason, failure.getMessage());
+            printJson(dryRun ? IndexJson.previewFailure(error) : IndexJson.failure(error));
 
             return 1;
         }
@@ -245,9 +255,9 @@ public class IndexCommand implements Callable<Integer> {
         return IndexJson.error(status.name(), failure.getMessage() + detail);
     }
 
-    /** Prints a run's JSON document on stdout when {@code --json} asked for one; dry runs print text. */
+    /** Prints a JSON document on stdout when {@code --json} asked for one. */
     private void printJson(Json.JsonObject document) {
-        if (json && !dryRun) {
+        if (json) {
             spec.commandLine().getOut().println(Json.write(document));
         }
     }

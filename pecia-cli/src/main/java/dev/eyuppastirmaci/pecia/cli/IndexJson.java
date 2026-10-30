@@ -3,6 +3,7 @@ package dev.eyuppastirmaci.pecia.cli;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigFile;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader.LoadedConfig;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
+import dev.eyuppastirmaci.pecia.index.IndexPreview;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.WalkResult;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
@@ -10,7 +11,10 @@ import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Builds the JSON document of an indexing run: its status, counts, issues, and embeddings, or why it failed. */
+/**
+ * Builds the JSON document of an indexing run, its status, counts, issues, and embeddings, or of a dry run, what a run
+ * would do; either says why it failed when it did.
+ */
 final class IndexJson {
 
     private IndexJson() {}
@@ -68,6 +72,69 @@ final class IndexJson {
                 .put("error", error);
     }
 
+    /**
+     * Describes what a run would do, found by a dry run; an unreadable index leaves the counts and files null.
+     *
+     * @param error why the dry run failed, from {@link #error}; null when it did not
+     */
+    static Json.JsonObject preview(IndexPreview preview, Json.JsonObject error) {
+        IndexPreview.Changes changes = preview.changes();
+        boolean readable = changes.index() != IndexPreview.IndexState.UNREADABLE;
+        Path root = preview.loadedConfig().root();
+        Json.JsonObject files = new Json.JsonObject()
+                .put("new", changes.newFiles().size())
+                .put("changed", changes.changedFiles().size())
+                .put("rechunked", changes.rechunkedFiles().size())
+                .put("unchanged", changes.unchangedFiles().size())
+                .put("rejected", changes.rejectedFiles().size())
+                .put("removed", changes.removedFiles().size());
+        Json.JsonObject chunks = new Json.JsonObject()
+                .put("toWrite", count(changes.chunksToWrite()))
+                .put("kept", count(changes.chunksKept()))
+                .put("removed", count(changes.chunksRemoved()));
+
+        return document(true)
+                .put("root", root.toString())
+                .put("database", preview.databasePath().toString())
+                .put("config", config(preview.loadedConfig()))
+                .put("semantic", preview.semanticEnabled())
+                .put("index", changes.index().name())
+                .put("files", readable ? files : null)
+                .put("chunks", readable ? chunks : null)
+                .put("embeddings", plannedEmbeddings(changes.semantic()))
+                .put("newFiles", planned(changes.newFiles()))
+                .put("changedFiles", planned(changes.changedFiles()))
+                .put("rechunkedFiles", planned(changes.rechunkedFiles()))
+                .put(
+                        "rejectedFiles",
+                        changes.rejectedFiles().stream().map(IndexJson::issue).toList())
+                .put("removedFiles", planned(changes.removedFiles()))
+                .put("scanIssues", scanIssues(root, preview.walkResult().issues()))
+                .put("warnings", WarningPrinter.json(preview.warnings()))
+                .put("error", error);
+    }
+
+    /** Describes a dry run that failed before it could look at the project, such as one whose folder does not exist. */
+    static Json.JsonObject previewFailure(Json.JsonObject error) {
+        return document(true)
+                .put("root", null)
+                .put("database", null)
+                .put("config", null)
+                .put("semantic", null)
+                .put("index", null)
+                .put("files", null)
+                .put("chunks", null)
+                .put("embeddings", null)
+                .put("newFiles", List.of())
+                .put("changedFiles", List.of())
+                .put("rechunkedFiles", List.of())
+                .put("rejectedFiles", List.of())
+                .put("removedFiles", List.of())
+                .put("scanIssues", List.of())
+                .put("warnings", List.of())
+                .put("error", error);
+    }
+
     /** Returns an error with the reason and message stderr shows. */
     static Json.JsonObject error(String reason, String message) {
         return new Json.JsonObject().put("reason", reason).put("message", message);
@@ -80,7 +147,7 @@ final class IndexJson {
                 : null;
     }
 
-    /** Describes paths discovery could not read, relative to the project when they lie below it, as stderr does. */
+    /** Describes paths discovery could not read, relative to the project root when they lie below it. */
     static List<Json.JsonObject> scanIssues(Path root, List<WalkResult.Issue> issues) {
         return issues.stream()
                 .map(issue -> new Json.JsonObject()
@@ -144,6 +211,32 @@ final class IndexJson {
                 .put("path", FileWalker.portablePath(issue.sourcePath()))
                 .put("reason", issue.reason().name())
                 .put("message", issue.message());
+    }
+
+    private static Json.JsonObject plannedEmbeddings(IndexPreview.SemanticChanges semantic) {
+        if (semantic == null) {
+            return null;
+        }
+
+        return new Json.JsonObject()
+                .put("model", semantic.model())
+                .put("modelState", semantic.modelState().name())
+                .put("downloadBytes", semantic.downloadBytes())
+                .put("toEmbed", count(semantic.chunksToEmbed()))
+                .put("toDiscard", semantic.embeddingsToDiscard());
+    }
+
+    private static List<Json.JsonObject> planned(List<IndexPreview.PlannedFile> files) {
+        return files.stream()
+                .map(file -> new Json.JsonObject()
+                        .put("path", FileWalker.portablePath(file.sourcePath()))
+                        .put("chunks", count(file.chunks())))
+                .toList();
+    }
+
+    /** Describes a count and whether it is estimated from file sizes rather than read from the index. */
+    private static Json.JsonObject count(IndexPreview.Count count) {
+        return new Json.JsonObject().put("value", count.value()).put("estimated", count.estimated());
     }
 
     private static String shownPath(Path root, Path path) {
