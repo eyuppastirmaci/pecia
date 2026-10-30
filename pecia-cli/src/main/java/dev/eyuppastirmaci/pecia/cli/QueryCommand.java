@@ -2,6 +2,7 @@ package dev.eyuppastirmaci.pecia.cli;
 
 import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.content.LineRange;
+import dev.eyuppastirmaci.pecia.diagnostic.Warning;
 import dev.eyuppastirmaci.pecia.index.FileWalker;
 import dev.eyuppastirmaci.pecia.search.FusedRanks;
 import dev.eyuppastirmaci.pecia.search.QueryException;
@@ -56,11 +57,19 @@ public class QueryCommand implements Callable<Integer> {
                     + " the cached model is usable, and lexically otherwise; queries never download the model.")
     SearchMode mode;
 
+    @Option(
+            names = "--json",
+            description = "Print the results as one JSON document on stdout; warnings and notes stay on stderr.")
+    boolean json;
+
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
 
     /** The exit code when an explicit semantic or hybrid query lacks a semantic prerequisite. */
     static final int MISSING_SEMANTIC_PREREQUISITE = 3;
+
+    /** The JSON error reason of a request the core rejects as invalid, such as a limit out of range. */
+    static final String INVALID_INPUT = "INVALID_INPUT";
 
     private final QueryService queryService;
 
@@ -73,7 +82,8 @@ public class QueryCommand implements Callable<Integer> {
      * Searches the stored index; returns 0 for successful queries, {@link #MISSING_SEMANTIC_PREREQUISITE} when an
      * explicit semantic or hybrid query lacks a semantic prerequisite, and 1 for other core validation or access
      * failures. Configuration warnings are printed to stderr first, then notes on how the query was searched; neither
-     * changes the exit code.
+     * changes the exit code. With {@code --json}, stdout holds one JSON document for every outcome, a failure included,
+     * and stderr is the same as without it.
      */
     @Override
     public Integer call() {
@@ -85,7 +95,9 @@ public class QueryCommand implements Callable<Integer> {
             List<SearchHit> hits = result.hits();
             PrintWriter out = spec.commandLine().getOut();
 
-            if (hits.isEmpty()) {
+            if (json) {
+                out.println(Json.write(QueryJson.result(text, limit, result)));
+            } else if (hits.isEmpty()) {
                 out.println("No results.");
             } else {
                 for (SearchHit hit : hits) {
@@ -109,26 +121,38 @@ public class QueryCommand implements Callable<Integer> {
                     : "";
             err.println("pecia query: " + failure.reason() + ": " + failure.getMessage() + detail);
 
-            return switch (failure.reason()) {
-                case INDEX_NOT_FOUND, MIGRATION_REQUIRED -> {
-                    err.println(indexCommand(""));
-                    yield 1;
-                }
-                case EMBEDDINGS_MISSING, EMBEDDINGS_OUTDATED, MODEL_NOT_CACHED -> {
-                    // Semantic indexing makes the embeddings and downloads the model; queries never do.
-                    err.println(indexCommand(" --semantic"));
-                    yield MISSING_SEMANTIC_PREREQUISITE;
-                }
-                case VECTOR_SEARCH_UNAVAILABLE, EMBEDDER_UNAVAILABLE, EMBEDDING_FAILED -> {
-                    err.println("Use --mode lexical to search without embeddings.");
-                    yield MISSING_SEMANTIC_PREREQUISITE;
-                }
-                default -> 1;
-            };
+            int exitCode =
+                    switch (failure.reason()) {
+                        case INDEX_NOT_FOUND, MIGRATION_REQUIRED -> {
+                            err.println(indexCommand(""));
+                            yield 1;
+                        }
+                        case EMBEDDINGS_MISSING, EMBEDDINGS_OUTDATED, MODEL_NOT_CACHED -> {
+                            // Semantic indexing makes the embeddings and downloads the model; queries never do.
+                            err.println(indexCommand(" --semantic"));
+                            yield MISSING_SEMANTIC_PREREQUISITE;
+                        }
+                        case VECTOR_SEARCH_UNAVAILABLE, EMBEDDER_UNAVAILABLE, EMBEDDING_FAILED -> {
+                            err.println("Use --mode lexical to search without embeddings.");
+                            yield MISSING_SEMANTIC_PREREQUISITE;
+                        }
+                        default -> 1;
+                    };
+            printFailure(failure.warnings(), failure.reason().name(), failure.getMessage() + detail);
+
+            return exitCode;
         } catch (IllegalArgumentException failure) {
             spec.commandLine().getErr().println("pecia query: " + failure.getMessage());
+            printFailure(List.of(), INVALID_INPUT, failure.getMessage());
 
             return 1;
+        }
+    }
+
+    /** Prints a failed query's JSON document when {@code --json} asked for one. */
+    private void printFailure(List<Warning> warnings, String reason, String message) {
+        if (json) {
+            spec.commandLine().getOut().println(Json.write(QueryJson.failure(text, limit, warnings, reason, message)));
         }
     }
 

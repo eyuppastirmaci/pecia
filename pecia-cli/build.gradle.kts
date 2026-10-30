@@ -14,6 +14,7 @@ dependencies {
     // Enforced, so the BOM's JUnit Platform version wins over jqwik's older requests instead of counting as a conflict.
     testImplementation(enforcedPlatform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.gson)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

@@ -103,18 +103,20 @@ final class SqliteLexicalRetriever {
     private List<Candidate> readCandidates(String matchExpression, int limit) throws SQLException {
         List<Candidate> candidates = new ArrayList<>();
 
-        try (var statement = connection.prepareStatement("""
+        try (var statement =
+                connection.prepareStatement("""
             SELECT c.id AS chunk_id, c.file_id, c.chunk_index, f.source_path,
                    bm25(chunks_fts, 1.0, 1.0, 1.0) AS bm25_score,
                    f.document_type, c.content, c.start_line, c.end_line,
-                   snippet(chunks_fts, 0, '', '', '…', 32) AS content_snippet
+                   snippet(chunks_fts, 0, '', '', '…', 32) AS content_snippet,
+                   snippet(chunks_fts, 0, %s, %s, '…', 32) AS marked_snippet
             FROM chunks_fts
             JOIN chunks c ON c.id = chunks_fts.rowid
             JOIN files f ON f.id = c.file_id
             WHERE chunks_fts MATCH ?
             ORDER BY bm25_score ASC, f.source_path COLLATE BINARY ASC, c.chunk_index ASC, c.id ASC
             LIMIT ?
-            """)) {
+            """.formatted(HighlightedSnippet.SQL_OPEN, HighlightedSnippet.SQL_CLOSE))) {
             statement.setString(1, matchExpression);
             statement.setInt(2, limit);
 
@@ -136,7 +138,8 @@ final class SqliteLexicalRetriever {
                             rows.getString("content"),
                             rows.getInt("start_line"),
                             rows.getInt("end_line"),
-                            rows.getString("content_snippet")));
+                            HighlightedSnippet.read(
+                                    rows.getString("content_snippet"), rows.getString("marked_snippet"))));
                 }
             }
         }
@@ -156,6 +159,7 @@ final class SqliteLexicalRetriever {
                     new LineRange(candidate.startLine(), candidate.endLine()),
                     metadata);
             StoredChunk stored = new StoredChunk(candidate.chunkId(), candidate.fileId(), chunk, stableId);
+            HighlightedSnippet snippet = candidate.snippet().bounded();
 
             return new SearchHit(
                     stored.id(),
@@ -165,21 +169,13 @@ final class SqliteLexicalRetriever {
                     chunk.sourceLocation(),
                     chunk.metadata(),
                     new SearchScore(candidate.score(), kind),
-                    boundedSnippet(candidate.snippet()),
-                    stored.stableId());
+                    snippet.text(),
+                    stored.stableId(),
+                    Optional.empty(),
+                    snippet.matches());
         } catch (IllegalArgumentException | NullPointerException invalid) {
             throw new SQLException("Invalid stored search result", invalid);
         }
-    }
-
-    /** Caps a preview at {@link SearchHit#MAX_SNIPPET_CODE_POINTS}, marking a cut with an ellipsis. */
-    private static String boundedSnippet(String snippet) {
-        if (snippet.codePointCount(0, snippet.length()) <= SearchHit.MAX_SNIPPET_CODE_POINTS) {
-            return snippet;
-        }
-
-        int end = snippet.offsetByCodePoints(0, SearchHit.MAX_SNIPPET_CODE_POINTS - 1);
-        return snippet.substring(0, end) + "…";
     }
 
     @FunctionalInterface
@@ -202,5 +198,5 @@ final class SqliteLexicalRetriever {
             String content,
             int startLine,
             int endLine,
-            String snippet) {}
+            HighlightedSnippet snippet) {}
 }

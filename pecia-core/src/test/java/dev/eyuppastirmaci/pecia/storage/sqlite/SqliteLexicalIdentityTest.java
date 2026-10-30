@@ -334,7 +334,10 @@ class SqliteLexicalIdentityTest {
                 hit.sourceLocation(),
                 hit.metadata(),
                 hit.score(),
-                hit.snippet());
+                hit.snippet(),
+                Optional.empty(),
+                hit.fusedRanks(),
+                hit.matches());
     }
 
     private static List<SearchHit> search(SqliteStorage storage, String query) throws SQLException {
