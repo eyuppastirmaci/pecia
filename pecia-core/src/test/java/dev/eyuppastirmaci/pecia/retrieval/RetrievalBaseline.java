@@ -18,8 +18,8 @@ import org.tomlj.TomlParseResult;
 import org.tomlj.TomlTable;
 
 /**
- * The committed thresholds: for each measured mode, the lowest value each metric of each kind may reach. A mode
- * without a table has not been measured yet and is only reported.
+ * The committed thresholds: for each mode, the lowest value each metric of each kind may reach. A quality check fails
+ * when its mode has no tables, so a deleted table cannot silently turn the check off.
  */
 public record RetrievalBaseline(Map<SearchMode, Map<Kind, Map<String, Double>>> thresholds) {
 
@@ -65,7 +65,7 @@ public record RetrievalBaseline(Map<SearchMode, Map<Kind, Map<String, Double>>> 
         return new RetrievalBaseline(thresholds);
     }
 
-    /** Returns the thresholds of a mode, or empty when the mode has not been measured yet. */
+    /** Returns the thresholds of a mode, or empty when the file has none for it. */
     public Optional<Map<Kind, Map<String, Double>>> of(SearchMode mode) {
         return Optional.ofNullable(thresholds.get(mode));
     }

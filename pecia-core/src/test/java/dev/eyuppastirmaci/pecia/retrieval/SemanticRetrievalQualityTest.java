@@ -1,7 +1,6 @@
 package dev.eyuppastirmaci.pecia.retrieval;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
@@ -67,8 +66,6 @@ class SemanticRetrievalQualityTest {
     @EnumSource(names = {"SEMANTIC", "HYBRID"})
     void everyKindOfQueryMeetsItsThresholds(SearchMode mode) {
         RetrievalEvaluation evaluation = EVALUATIONS.get(mode);
-        assumeTrue(baseline.of(mode).isPresent(), "No " + evaluation.modeName() + " thresholds yet; see the report");
-
         assertEquals(List.of(), baseline.shortfalls(evaluation), evaluation::report);
     }
 

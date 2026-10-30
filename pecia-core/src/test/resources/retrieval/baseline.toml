@@ -1,7 +1,7 @@
 # Thresholds for the retrieval-quality checks; README.md explains how they are set.
 #
-# For each mode and query kind, the lowest value each metric may reach. A mode without tables has not been measured
-# yet: its checks write a report and assert nothing. Each report ends with the tables its values would give.
+# For each mode and query kind, the lowest value each metric may reach; a check whose mode has no tables fails. Each
+# report ends with the tables its values would give.
 
 # Lexical search, measured once; it ranks the same on every platform.
 [lexical.identifier]
@@ -33,3 +33,65 @@ recall_at_5 = 0.12
 recall_at_10 = 0.12
 mrr = 0.12
 ndcg_at_10 = 0.10
+
+# Semantic search with the real model: the lowest value measured on Linux, macOS, and Windows.
+[semantic.identifier]
+recall_at_5 = 0.87
+recall_at_10 = 1.00
+mrr = 0.74
+ndcg_at_10 = 0.86
+
+[semantic.keyword]
+recall_at_5 = 1.00
+recall_at_10 = 1.00
+mrr = 0.87
+ndcg_at_10 = 0.92
+
+[semantic.paraphrase]
+recall_at_5 = 0.87
+recall_at_10 = 1.00
+mrr = 0.83
+ndcg_at_10 = 0.81
+
+[semantic.mixed]
+recall_at_5 = 1.00
+recall_at_10 = 1.00
+mrr = 0.85
+ndcg_at_10 = 0.88
+
+[semantic.turkish]
+recall_at_5 = 0.87
+recall_at_10 = 0.87
+mrr = 0.54
+ndcg_at_10 = 0.54
+
+# Hybrid search with the real model: the lowest value measured on Linux, macOS, and Windows.
+[hybrid.identifier]
+recall_at_5 = 1.00
+recall_at_10 = 1.00
+mrr = 0.75
+ndcg_at_10 = 0.90
+
+[hybrid.keyword]
+recall_at_5 = 1.00
+recall_at_10 = 1.00
+mrr = 0.87
+ndcg_at_10 = 0.92
+
+[hybrid.paraphrase]
+recall_at_5 = 0.87
+recall_at_10 = 1.00
+mrr = 0.83
+ndcg_at_10 = 0.81
+
+[hybrid.mixed]
+recall_at_5 = 1.00
+recall_at_10 = 1.00
+mrr = 0.91
+ndcg_at_10 = 0.90
+
+[hybrid.turkish]
+recall_at_5 = 0.87
+recall_at_10 = 0.87
+mrr = 0.60
+ndcg_at_10 = 0.58

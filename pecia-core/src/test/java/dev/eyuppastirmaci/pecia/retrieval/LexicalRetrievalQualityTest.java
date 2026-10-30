@@ -1,7 +1,6 @@
 package dev.eyuppastirmaci.pecia.retrieval;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
@@ -44,8 +43,6 @@ class LexicalRetrievalQualityTest {
 
     @Test
     void everyKindOfQueryMeetsItsThresholds() {
-        assumeTrue(baseline.of(SearchMode.LEXICAL).isPresent(), "No lexical thresholds yet; the report was written");
-
         assertEquals(List.of(), baseline.shortfalls(lexical), lexical::report);
     }
 

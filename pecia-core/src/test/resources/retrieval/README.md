@@ -33,4 +33,4 @@ Each query has a kind, so results are reported per kind:
 - lexical search ranks the same on every platform, so one measurement sets it;
 - semantic and hybrid thresholds take the lowest value measured on Linux, macOS, and Windows, because the model's floating-point results can differ slightly between them.
 
-A mode without tables is only reported. Raising or lowering a threshold is a deliberate change, made with the new reports in the same pull request.
+Every mode needs its tables; a check whose mode has none fails. Raising or lowering a threshold is a deliberate change, made with the new reports in the same pull request.
