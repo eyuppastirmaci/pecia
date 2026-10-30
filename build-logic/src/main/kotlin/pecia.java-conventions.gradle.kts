@@ -134,6 +134,9 @@ val integrationTest = tasks.register<Test>("integrationTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/*IT.class")
+    // Like the unit tests, never the user's cache or one the environment names: CI sets PECIA_CACHE_DIR to the real
+    // model's cache for referenceTest, and a packaged run that found the model would search differently.
+    environment("PECIA_CACHE_DIR", layout.buildDirectory.dir("integration-test-cache").get().asFile.absolutePath)
     shouldRunAfter(tasks.test)
     dependsOn(requireIntegrationTests)
 }
