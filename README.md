@@ -42,9 +42,23 @@ Run these commands from the repository root:
 ./gradlew test                  # run unit tests in both modules
 ./gradlew :pecia-cli:shadowJar  # build the CLI JAR without running tests
 ./gradlew build                 # run all tests and checks, including acceptance tests against the packaged JARs
+./gradlew referenceTest         # check the real semantic model, through the core API and the CLI JAR
 ```
 
 On Windows use `gradlew.bat` instead of `./gradlew`.
+
+The other tasks use a tiny test model and never download anything. Only `referenceTest` uses the real model: it compares its embeddings with committed sentence-transformers outputs, checks its retrieval, and runs the CLI JAR's semantic workflows with it. It is not part of `build`.
+
+It reads the model from the cache that `PECIA_CACHE_DIR` names and may add ONNX Runtime's libraries there, so give it a separate cache. Copy the `models` directory from your own cache (see [Model cache](#model-cache)):
+
+```
+export PECIA_CACHE_DIR=/tmp/pecia-reference-cache
+mkdir -p "$PECIA_CACHE_DIR"
+cp -R ~/Library/Caches/pecia/models "$PECIA_CACHE_DIR"   # macOS; other systems use their own cache path
+./gradlew referenceTest
+```
+
+Without a cached model, a semantic run downloads it (about 90 MB) into that cache: with the variable set, run `java -jar pecia-cli/build/libs/pecia.jar index --semantic` on any small folder.
 
 ## CLI reference
 

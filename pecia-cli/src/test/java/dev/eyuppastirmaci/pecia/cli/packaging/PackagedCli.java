@@ -82,6 +82,25 @@ final class PackagedCli {
         return run(directory, jvmArguments, environment, null, DEFAULT_TIMEOUT, arguments);
     }
 
+    /**
+     * Runs with extra environment variables and a longer limit, for semantic runs; offline, {@code check} replaces the
+     * lexical checks, and without the offline guard it is not used.
+     */
+    Result run(
+            Path directory, Map<String, String> environment, Duration timeout, EvidenceCheck check, String... arguments)
+            throws Exception {
+        return run(directory, List.of(), environment, check, timeout, arguments);
+    }
+
+    /** Returns the cache directory processes receive under the offline guard. */
+    Path offlineCache() {
+        if (offline == null) {
+            throw new IllegalStateException("Only the offline guard has its own cache");
+        }
+
+        return offline.peciaCache();
+    }
+
     /** Runs like {@link #run(Path, String...)} with a longer limit, for commands that index large projects. */
     Result runWithin(Duration timeout, Path directory, String... arguments) throws Exception {
         return run(directory, List.of(), Map.of(), null, timeout, arguments);
@@ -110,6 +129,11 @@ final class PackagedCli {
      * it runs; both streams go to files.
      */
     Started start(Path directory, String... arguments) throws IOException {
+        return start(directory, Map.of(), arguments);
+    }
+
+    /** Starts like {@link #start(Path, String...)} with extra environment variables, such as a cache directory. */
+    Started start(Path directory, Map<String, String> environment, String... arguments) throws IOException {
         List<String> command = command(List.of(), null, arguments);
         Path output = Files.createTempDirectory(sandbox, "process-");
         Path stdout = output.resolve("stdout.txt");
@@ -119,6 +143,7 @@ final class PackagedCli {
                 .redirectOutput(stdout.toFile())
                 .redirectError(stderr.toFile());
         builder.environment().keySet().removeAll(List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"));
+        builder.environment().putAll(environment);
         Process process = builder.start();
         process.getOutputStream().close();
 
@@ -285,8 +310,9 @@ final class PackagedCli {
     /** A running CLI process and the files that receive its output. */
     record Started(Process process, Path stdout, Path stderr) {}
 
+    /** Checks what an offline run did, in place of the lexical checks. */
     @FunctionalInterface
-    private interface EvidenceCheck {
+    interface EvidenceCheck {
 
         void verify(OfflineSandbox.Run evidence) throws IOException;
     }
