@@ -23,3 +23,14 @@ Each query has a kind, so results are reported per kind:
 - Every kind has queries, and no two queries share an id or a text.
 - Queries and labels were written before any mode was measured. Change a label only when it is wrong, and say why in the commit; never change one to make a number pass.
 - The corpus keeps its exact bytes on every platform (`.gitattributes` marks it `-text`). Adding or changing a corpus file changes the measured values, so the thresholds are reviewed in the same change.
+
+## Reports and thresholds
+
+`LexicalRetrievalQualityTest` (in `test`) and `SemanticRetrievalQualityTest` (in `referenceTest`, with the real model) run every query in their modes. Each writes `build/reports/retrieval/<mode>.md` with Recall@5, Recall@10, MRR, and nDCG@10 per kind, every query's first answer and leading files, and the thresholds its values would give.
+
+`baseline.toml` holds a threshold for each mode, kind, and metric; a run fails when a value drops below one. Thresholds are measured values rounded down to two decimals:
+
+- lexical search ranks the same on every platform, so one measurement sets it;
+- semantic and hybrid thresholds take the lowest value measured on Linux, macOS, and Windows, because the model's floating-point results can differ slightly between them.
+
+A mode without tables is only reported. Raising or lowering a threshold is a deliberate change, made with the new reports in the same pull request.

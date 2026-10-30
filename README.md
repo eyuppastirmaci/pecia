@@ -60,6 +60,8 @@ cp -R ~/Library/Caches/pecia/models "$PECIA_CACHE_DIR"   # macOS; other systems 
 
 Without a cached model, a semantic run downloads it (about 90 MB) into that cache: with the variable set, run `java -jar pecia-cli/build/libs/pecia.jar index --semantic` on any small folder.
 
+Retrieval quality is measured on a small labelled corpus in `pecia-core/src/test/resources/retrieval`: `test` checks lexical search and `referenceTest` checks semantic and hybrid search. Each run writes a report per mode to `pecia-core/build/reports/retrieval/` and fails when a metric drops below its committed threshold. That directory's README explains the labels and thresholds.
+
 ## CLI reference
 
 ### Quick start
