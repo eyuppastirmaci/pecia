@@ -2,20 +2,26 @@ package dev.eyuppastirmaci.pecia.semantic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.eyuppastirmaci.pecia.testing.OfflineEnvironment;
 import dev.eyuppastirmaci.pecia.testing.OfflineSandbox;
-import java.io.IOException;
+import dev.eyuppastirmaci.pecia.testing.TemporaryDirectories;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -25,9 +31,17 @@ import org.junit.jupiter.api.io.TempDir;
 class EmbedderLoadingTest {
 
     private static final String RUNTIME = "ai.onnxruntime.OrtEnvironment";
+    // Loading the runtime takes a few seconds; slow CI runners take longer.
+    private static final Duration PROBE_LIMIT = Duration.ofSeconds(60);
 
     @TempDir
     Path sandbox;
+
+    /** Probes leave ONNX Runtime's native libraries in the sandbox, which Windows can hold for a moment after they exit. */
+    @AfterEach
+    void emptyTheSandboxOnceTheProbesReleaseIt() throws Exception {
+        TemporaryDirectories.deleteContentsOnceReleased(sandbox);
+    }
 
     @Test
     void nothingBeforeOpeningAnEmbedderInitializesTheRuntime() throws Exception {
@@ -91,16 +105,35 @@ class EmbedderLoadingTest {
                 probe(sandbox.resolve("broken.log"), options, "broken-runtime"));
     }
 
+    @Test
+    // The probe's limit, plus the time to start it and to stop it.
+    @Timeout(30)
+    void aProbeThatNeverFinishesFailsWithinItsLimitAndShowsItsOutput() {
+        AssertionError failure = assertThrows(
+                AssertionError.class,
+                () -> probe(sandbox.resolve("hang.log"), List.of(), null, "hang", Duration.ofSeconds(5)));
+
+        assertTrue(failure.getMessage().contains("did not finish within 5 s"), failure.getMessage());
+        Matcher hanging = Pattern.compile("HANGING (\\d+)").matcher(failure.getMessage());
+        assertTrue(hanging.find(), failure.getMessage());
+        long pid = Long.parseLong(hanging.group(1));
+        assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "The probe was stopped");
+    }
+
     private static String probe(Path log, List<String> options, String mode) throws Exception {
-        return probe(log, options, null, mode);
+        return probe(log, options, null, mode, PROBE_LIMIT);
     }
 
     private static String probe(Path log, OfflineEnvironment isolated, String mode) throws Exception {
-        return probe(log, isolated.jvmArguments(), isolated, mode);
+        return probe(log, isolated.jvmArguments(), isolated, mode, PROBE_LIMIT);
     }
 
-    private static String probe(Path log, List<String> options, OfflineEnvironment isolated, String mode)
-            throws Exception {
+    /**
+     * Runs the probe in a fresh JVM and returns its output. The output goes to a file, so a probe that hangs cannot
+     * block the test: it is stopped after {@code limit}, and the test fails with what it printed.
+     */
+    private static String probe(
+            Path log, List<String> options, OfflineEnvironment isolated, String mode, Duration limit) throws Exception {
         List<String> command = new ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         command.add(OfflineSandbox.initializationLogArgument(log));
@@ -111,7 +144,9 @@ class EmbedderLoadingTest {
                 EmbedderLoadingProbe.class.getName(),
                 mode,
                 EmbedderTest.model("tiny").toString()));
-        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+        Path output = log.resolveSibling(log.getFileName() + ".out");
+        ProcessBuilder builder =
+                new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output.toFile());
 
         if (isolated != null) {
             isolated.configure(builder.environment());
@@ -120,15 +155,16 @@ class EmbedderLoadingTest {
         Process process = builder.start();
         process.getOutputStream().close();
 
-        String output = read(process);
+        if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
+            process.destroyForcibly();
+            process.waitFor(10, TimeUnit.SECONDS);
+            throw new AssertionError("The probe JVM did not finish within " + limit.toSeconds() + " s; it printed: "
+                    + Files.readString(output, StandardCharsets.UTF_8));
+        }
 
-        assertTrue(process.waitFor(60, TimeUnit.SECONDS), "The probe JVM did not finish");
-        assertEquals(0, process.exitValue(), output);
+        String printed = Files.readString(output, StandardCharsets.UTF_8);
+        assertEquals(0, process.exitValue(), printed);
 
-        return output.strip();
-    }
-
-    private static String read(Process process) throws IOException {
-        return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        return printed.strip();
     }
 }
