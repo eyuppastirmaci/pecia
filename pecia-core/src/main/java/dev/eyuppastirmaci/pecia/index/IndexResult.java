@@ -29,6 +29,7 @@ import java.util.Objects;
  * @param scanIssues paths discovery could not read; the run indexed the files it found and deleted none
  * @param semanticIssues files whose chunks could not be embedded; their chunks are stored without embeddings, which
  *     a later semantic run makes
+ * @param timings how long the run and each phase it reached took; {@link IndexTimings#NONE} when not measured
  */
 public record IndexResult(
         ProjectContext context,
@@ -46,7 +47,8 @@ public record IndexResult(
         EmbeddingCoverage embeddingCoverage,
         int rechunkedFiles,
         List<WalkResult.Issue> scanIssues,
-        List<SemanticIssue> semanticIssues) {
+        List<SemanticIssue> semanticIssues,
+        IndexTimings timings) {
 
     /**
      * Copies the issue lists and rejects negative counters, more processed files than candidates, and embeddings beyond the
@@ -58,6 +60,7 @@ public record IndexResult(
         issues = List.copyOf(issues);
         scanIssues = List.copyOf(scanIssues);
         semanticIssues = List.copyOf(semanticIssues);
+        Objects.requireNonNull(timings, "timings");
 
         if (candidateCount < 0
                 || indexedFiles < 0
@@ -84,6 +87,44 @@ public record IndexResult(
         if (rechunkedFiles < 0 || rechunkedFiles > indexedFiles) {
             throw new IllegalArgumentException("rechunkedFiles must be between zero and indexedFiles");
         }
+    }
+
+    /** Creates an outcome whose timing was not measured. */
+    public IndexResult(
+            ProjectContext context,
+            Status status,
+            int candidateCount,
+            int indexedFiles,
+            int unchangedFiles,
+            int deletedFiles,
+            long writtenChunks,
+            List<FileIssue> issues,
+            ModelOutcome semanticModel,
+            long embeddedChunks,
+            long backfilledChunks,
+            long discardedEmbeddings,
+            EmbeddingCoverage embeddingCoverage,
+            int rechunkedFiles,
+            List<WalkResult.Issue> scanIssues,
+            List<SemanticIssue> semanticIssues) {
+        this(
+                context,
+                status,
+                candidateCount,
+                indexedFiles,
+                unchangedFiles,
+                deletedFiles,
+                writtenChunks,
+                issues,
+                semanticModel,
+                embeddedChunks,
+                backfilledChunks,
+                discardedEmbeddings,
+                embeddingCoverage,
+                rechunkedFiles,
+                scanIssues,
+                semanticIssues,
+                IndexTimings.NONE);
     }
 
     /** Creates an outcome of a run that embedded every chunk it meant to. */

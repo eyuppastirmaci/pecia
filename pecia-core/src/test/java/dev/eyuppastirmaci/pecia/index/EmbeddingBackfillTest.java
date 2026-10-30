@@ -11,6 +11,7 @@ import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.semantic.Embedder;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
+import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
@@ -30,6 +31,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Predicate;
@@ -48,6 +50,7 @@ class EmbeddingBackfillTest {
     private final PeciaConfigLoader loader = new PeciaConfigLoader(new PeciaConfigParser());
     private final List<Integer> batchSizes = new ArrayList<>();
     private final List<IndexProgress> progress = new ArrayList<>();
+    private long clock;
     private int failOnCall = -1;
     private boolean failEveryCall;
     private Predicate<List<String>> failWhen = texts -> false;
@@ -102,7 +105,7 @@ class EmbeddingBackfillTest {
 
         assertEquals(0, again.backfilledChunks());
         assertEquals(calls, embedCalls);
-        assertEquals(List.of(), progress);
+        assertEquals(List.of(), backfill());
     }
 
     @Test
@@ -129,7 +132,7 @@ class EmbeddingBackfillTest {
                 List.of(new IndexResult.SemanticIssue(
                         Path.of("words.txt"), EmbeddingException.Reason.INFERENCE_FAILED, "injected")),
                 result.semanticIssues());
-        assertEquals(new IndexProgress(IndexProgress.Stage.BACKFILL, 70, 70), progress.getLast());
+        assertEquals("FINISHED 70/70", backfill().getLast());
 
         failOnCall = -1;
         IndexResult resumed = service().index(skipped, semantic());
@@ -244,13 +247,10 @@ class EmbeddingBackfillTest {
 
         IndexResult semantic = service().index(project, semantic());
 
+        // The clock moves on by the update interval at every reading, so every page is reported.
         assertEquals(
-                List.of(
-                        new IndexProgress(IndexProgress.Stage.BACKFILL, 0, 70),
-                        new IndexProgress(IndexProgress.Stage.BACKFILL, 32, 70),
-                        new IndexProgress(IndexProgress.Stage.BACKFILL, 64, 70),
-                        new IndexProgress(IndexProgress.Stage.BACKFILL, 70, 70)),
-                progress);
+                List.of("STARTED 0/70", "UPDATED 32/70", "UPDATED 64/70", "UPDATED 70/70", "FINISHED 70/70"),
+                backfill());
         assertEquals(70, semantic.backfilledChunks());
     }
 
@@ -261,7 +261,7 @@ class EmbeddingBackfillTest {
         IndexOptions options = IndexOptions.semantic(true).withProgressListener(update -> {
             progress.add(update);
 
-            if (progress.size() == 1) {
+            if (update.phase() == IndexProgress.Phase.BACKFILL && update.event() == IndexProgress.Event.STARTED) {
                 // After counting, another process rewrites the file with more chunks under the same file id.
                 try {
                     Files.writeString(project.resolve("words.txt"), "alpha beta gamma delta ".repeat(100) + "\n");
@@ -275,8 +275,8 @@ class EmbeddingBackfillTest {
         IndexResult semantic = service().index(project, options);
 
         assertEquals(100, semantic.backfilledChunks());
-        assertEquals(new IndexProgress(IndexProgress.Stage.BACKFILL, 70, 70), progress.getLast());
-        assertTrue(progress.stream().allMatch(update -> update.total() == 70), progress.toString());
+        assertEquals("FINISHED 70/70", backfill().getLast());
+        assertTrue(backfill().stream().allMatch(update -> update.endsWith("/70")), progress.toString());
     }
 
     @Test
@@ -289,16 +289,24 @@ class EmbeddingBackfillTest {
 
         assertEquals(0, again.backfilledChunks());
         assertEquals(List.of(), dump(again).embeddings());
-        assertEquals(List.of(), progress);
+        assertEquals(
+                List.of(IndexProgress.Phase.SCAN, IndexProgress.Phase.FILES, IndexProgress.Phase.CLEANUP),
+                progress.stream().map(IndexProgress::phase).distinct().toList());
         assertEquals(0, embedCalls);
     }
 
     @Test
-    void progressValuesAreValidated() {
-        assertThrows(IllegalArgumentException.class, () -> new IndexProgress(IndexProgress.Stage.BACKFILL, -1, 1));
-        assertThrows(IllegalArgumentException.class, () -> new IndexProgress(IndexProgress.Stage.BACKFILL, 2, 1));
-        assertThrows(NullPointerException.class, () -> new IndexProgress(null, 0, 0));
+    void aProgressListenerIsRequiredWhenOneIsSet() {
         assertThrows(NullPointerException.class, () -> IndexOptions.configured().withProgressListener(null));
+    }
+
+    /** Returns the backfill reports as {@code "EVENT completed/total"}, in order. */
+    private List<String> backfill() {
+        return progress.stream()
+                .filter(update -> update.phase() == IndexProgress.Phase.BACKFILL)
+                .map(update -> update.event() + " " + update.completed() + "/"
+                        + update.total().orElseThrow())
+                .toList();
     }
 
     private IndexOptions semantic() {
@@ -316,7 +324,14 @@ class EmbeddingBackfillTest {
     }
 
     private IndexService service() {
-        return new IndexService(loader, EmbeddingBackfillTest::openStorage, listener -> TINY, this::open);
+        return new IndexService(
+                loader,
+                EmbeddingBackfillTest::openStorage,
+                listener -> TINY,
+                this::open,
+                EmbeddingProfile::minilm,
+                Optional::empty,
+                () -> clock += ProgressReporter.UPDATE_INTERVAL.toNanos());
     }
 
     private static SqliteStorage openStorage(ProjectContext context) throws IOException, SQLException {

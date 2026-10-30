@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.LongConsumer;
 import java.util.stream.StreamSupport;
 
 /**
@@ -66,6 +67,12 @@ public final class FileWalker {
 
     /** Scans with exact absolute paths excluded, even when include rules would accept them. */
     public WalkResult scan(Path target, Path projectRoot, Set<Path> excludedFiles) throws IOException {
+        return scan(target, projectRoot, excludedFiles, found -> {});
+    }
+
+    /** Scans like {@link #scan(Path, Path, Set)}, telling {@code found} the number of candidates after each one. */
+    WalkResult scan(Path target, Path projectRoot, Set<Path> excludedFiles, LongConsumer found) throws IOException {
+        Objects.requireNonNull(found, "found");
         Set<Path> excluded = Set.copyOf(excludedFiles);
         Path normalizedRoot = target.toAbsolutePath().normalize();
         Path project = projectRoot.toAbsolutePath().normalize();
@@ -137,6 +144,7 @@ public final class FileWalker {
 
                 if (filter.matches(project.relativize(file))) {
                     files.add(relative);
+                    found.accept(files.size());
                 }
 
                 return FileVisitResult.CONTINUE;
