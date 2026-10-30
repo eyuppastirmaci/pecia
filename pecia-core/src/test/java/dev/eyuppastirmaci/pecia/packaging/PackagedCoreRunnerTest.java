@@ -12,6 +12,7 @@ import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.jar.Attributes;
@@ -19,6 +20,7 @@ import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class PackagedCoreRunnerTest {
 
+    private static final Duration RELEASE_PATIENCE = Duration.ofSeconds(10);
     private static final Path PACKAGE = Path.of("dev/eyuppastirmaci/pecia/packaging/consumer");
     private static final Path SUPPORT_PACKAGE = Path.of("dev/eyuppastirmaci/pecia/testing");
 
@@ -213,7 +216,8 @@ class PackagedCoreRunnerTest {
     }
 
     @Test
-    @Timeout(15)
+    // The run's three seconds, plus up to ten for Windows to release the killed consumer's files.
+    @Timeout(30)
     void terminatesAndReapsATimedOutConsumer() throws Exception {
         compileProbe();
         PackagedCoreRunner runner = prepare();
@@ -224,6 +228,39 @@ class PackagedCoreRunnerTest {
         assertTrue(failure.getMessage().contains("timed out: wait"));
         long pid = Long.parseLong(Files.readString(project.resolve("child.pid")));
         assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
+        deleteContentsOnceReleased(fixture);
+    }
+
+    /**
+     * Deletes the directory's contents, retrying every 100 ms for up to {@link #RELEASE_PATIENCE}. Windows can keep the
+     * files of a killed process, here its classpath JARs and redirected output, locked for a moment after the process
+     * has exited, and JUnit's cleanup of the temporary directory would then fail although the test passed.
+     */
+    private static void deleteContentsOnceReleased(Path directory) throws IOException, InterruptedException {
+        long deadline = System.nanoTime() + RELEASE_PATIENCE.toNanos();
+
+        while (true) {
+            try {
+                deleteContents(directory);
+                return;
+            } catch (IOException stillLocked) {
+                if (System.nanoTime() >= deadline) {
+                    throw stillLocked;
+                }
+
+                Thread.sleep(100);
+            }
+        }
+    }
+
+    private static void deleteContents(Path directory) throws IOException {
+        try (Stream<Path> paths = Files.walk(directory)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                if (!path.equals(directory)) {
+                    Files.deleteIfExists(path);
+                }
+            }
+        }
     }
 
     private PackagedCoreRunner prepare() throws IOException {
