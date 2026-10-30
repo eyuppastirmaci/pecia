@@ -251,6 +251,24 @@ class IndexDeletionPlannerTest {
                 .isEmpty());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "file"})
+    void retainsRecordsOutsideTheTargetWhoseDirectoryIsGoneOrReplaced(String replacement) throws Exception {
+        Path target = Files.createDirectory(root.resolve("docs"));
+        Path sibling = Files.createDirectory(root.resolve("other"));
+        ProjectContext context = context(target);
+        Files.delete(sibling);
+
+        if (replacement.equals("file")) {
+            Files.writeString(sibling, "not a directory");
+        }
+
+        // A run on docs never reached other, so its records stay even though their directory is no longer there.
+        assertTrue(new IndexDeletionPlanner(context)
+                .plan(scan(context), List.of(stored(1, "other/gone.txt")))
+                .isEmpty());
+    }
+
     @Test
     void retainsMissingRecordsBelowALinkToTheTargetDirectory() throws Exception {
         Path target = Files.createDirectory(root.resolve("docs"));
