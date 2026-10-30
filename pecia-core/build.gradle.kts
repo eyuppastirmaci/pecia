@@ -1,7 +1,10 @@
+import java.nio.file.Path
+
 plugins {
     id("pecia.java-conventions")
     `java-library`
     `java-test-fixtures`
+    alias(libs.plugins.pitest)
 }
 
 dependencies {
@@ -100,3 +103,34 @@ tasks.named<Test>("integrationTest") {
         )
     })
 }
+
+// Mutation testing of the code whose mistakes tests miss most easily: chunking, incremental indexing decisions, and
+// ranking. It runs only on demand (./gradlew :pecia-core:pitest), never in check, and writes build/reports/pitest.
+pitest {
+    pitestVersion = libs.versions.pitest.asProvider().get()
+    junit5PluginVersion = libs.versions.pitest.junit5.plugin.get()
+    targetClasses = setOf(
+        "dev.eyuppastirmaci.pecia.chunking.*",
+        "dev.eyuppastirmaci.pecia.index.FileInspector*",
+        "dev.eyuppastirmaci.pecia.index.IndexDecision*",
+        "dev.eyuppastirmaci.pecia.index.IndexDeletionPlanner*",
+        "dev.eyuppastirmaci.pecia.search.RankFusion*",
+        "dev.eyuppastirmaci.pecia.search.LexicalQueryCompiler*",
+        "dev.eyuppastirmaci.pecia.search.QueryShape*",
+    )
+    // Every unit test may cover these classes, not only tests named after them; packaged tests run the JAR, where
+    // mutations do not reach.
+    targetTests = setOf("dev.eyuppastirmaci.pecia.*")
+    excludedTestClasses = setOf("*IT", "dev.eyuppastirmaci.pecia.packaging.*")
+    excludedGroups = setOf(referenceTag, performanceTag)
+    threads = 4
+    outputFormats = setOf("HTML", "XML")
+    timestampedReports = false
+}
+
+tasks.named<info.solidsoft.gradle.pitest.PitestTask>("pitest") {
+    // Like the test tasks: never the user's cache, and a temporary directory without symbolic links.
+    environment("PECIA_CACHE_DIR", layout.buildDirectory.dir("pitest-cache").get().asFile.absolutePath)
+    jvmArgs = listOf("-Djava.io.tmpdir=" + Path.of(System.getProperty("java.io.tmpdir")).toRealPath())
+}
+
