@@ -43,6 +43,11 @@ tasks.shadowJar {
     addMultiReleaseAttribute = false
 }
 
+// ChannelManifestsTest reads the package-manager templates from the source tree, so they are inputs of the tests.
+tasks.test {
+    inputs.dir("src/package/channels").withPropertyName("channelTemplates")
+}
+
 // Real-model checks need the model in the cache that PECIA_CACHE_DIR names, so only referenceTest runs them.
 val referenceTag = "reference"
 // Package checks run the extracted platform package, so only packageTest runs them, after building it.
@@ -297,4 +302,39 @@ tasks.register<Test>("packageTest") {
     // The model lives outside the build, so a previous result is never reused.
     outputs.upToDateWhen { false }
     outputs.doNotCacheIf("The model lives outside the build") { true }
+}
+
+// The release workflow renders the Homebrew formula and the Scoop manifest from the archives' checksums, which it
+// collects in one directory (-Ppecia.package.checksums=<dir>). Templates use ${version} and ${sha256_<platform>}.
+tasks.register("channelManifests") {
+    description = "Renders the Homebrew formula and Scoop manifest for this version from the packages' checksums."
+    group = "distribution"
+    val templates = layout.projectDirectory.dir("src/package/channels")
+    val checksums = providers.gradleProperty("pecia.package.checksums").map { layout.projectDirectory.dir(it) }
+    val output = layout.buildDirectory.dir("package/channels")
+    inputs.dir(templates)
+    inputs.property("version", packageVersion)
+    outputs.dir(output)
+    doLast {
+        val values = mutableMapOf("version" to packageVersion)
+
+        for (platform in supportedPlatforms) {
+            val extension = if (platform.startsWith("win")) "zip" else "tar.gz"
+            val name = "pecia-$packageVersion-$platform.$extension"
+            val file = checksums.get().file("$name.sha256").asFile
+            check(file.isFile) { "No checksum for $name in ${checksums.get()}" }
+            val (hash, archive) = file.readText().trim().split(Regex("\\s+"), limit = 2)
+            check(archive == name && hash.matches(Regex("[0-9a-f]{64}"))) { "Malformed checksum file $file" }
+            values["sha256_" + platform.replace('-', '_')] = hash
+        }
+
+        val directory = output.get().asFile.apply { deleteRecursively(); mkdirs() }
+
+        for (template in templates.asFile.listFiles()!!.sortedBy { it.name }) {
+            var text = template.readText()
+            values.forEach { (key, value) -> text = text.replace("\${$key}", value) }
+            check("\${" !in text) { "Unfilled placeholder in ${template.name}" }
+            directory.resolve(template.name).writeText(text)
+        }
+    }
 }
