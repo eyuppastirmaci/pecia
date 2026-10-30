@@ -88,6 +88,7 @@ public class IndexCommand implements Callable<Integer> {
     // Set when the command starts, from --color, --progress, and the terminal.
     private Diagnostics diagnostics;
     private ProgressDisplay display = ProgressDisplay.NONE;
+    private Terminal terminal = Terminal.PLAIN;
 
     /** Creates a command using the supplied non-null indexing service. */
     public IndexCommand(IndexService indexService) {
@@ -121,7 +122,7 @@ public class IndexCommand implements Callable<Integer> {
      */
     @Override
     public Integer call() {
-        Terminal terminal = Terminal.detect(ColorMode.of(spec), environment.get());
+        terminal = Terminal.detect(ColorMode.of(spec), environment.get());
         PrintWriter err = spec.commandLine().getErr();
         // Only runs report progress; a dry run never hears from it.
         display = ProgressDisplay.of(progress, terminal, err, System::nanoTime);
@@ -315,18 +316,26 @@ public class IndexCommand implements Callable<Integer> {
         }
     }
 
+    /**
+     * Prints the run's summary, grouped like a dry run's: the index, what happened to the files, the chunks, for a
+     * semantic run the model and embeddings, and how long the run took. Rejected and failed files are coloured when
+     * there are any.
+     */
     private void printSummary(IndexResult result) {
         PrintWriter out = spec.commandLine().getOut();
+        String rejected = result.rejectedFiles() + " rejected";
+        String failed = result.failedFiles() + " failed";
 
         out.println("index: " + result.context().databasePath());
-        out.println("candidates: " + result.candidateCount());
-        out.println("indexed: " + result.indexedFiles());
-        out.println("rechunked: " + result.rechunkedFiles());
-        out.println("unchanged: " + result.unchangedFiles());
-        out.println("deleted: " + result.deletedFiles());
-        out.println("chunks: " + result.writtenChunks());
-        out.println("rejected: " + result.rejectedFiles());
-        out.println("failed: " + result.failedFiles());
+        out.println("files: "
+                + result.indexedFiles() + " indexed, "
+                + result.rechunkedFiles() + " rechunked, "
+                + result.unchangedFiles() + " unchanged, "
+                + result.deletedFiles() + " deleted, "
+                + (result.rejectedFiles() > 0 ? terminal.paint(rejected, Terminal.Style.YELLOW) : rejected) + ", "
+                + (result.failedFiles() > 0 ? terminal.paint(failed, Terminal.Style.RED) : failed)
+                + " (" + result.candidateCount() + " found)");
+        out.println("chunks: " + result.writtenChunks() + " written");
 
         ModelOutcome model = result.semanticModel();
 
@@ -336,10 +345,18 @@ public class IndexCommand implements Callable<Integer> {
                     + (model.status() == ModelOutcome.Status.DOWNLOADED
                             ? " downloaded (" + megabytes(model.model().size()) + ")"
                             : " cached"));
-            out.println("discarded: " + result.discardedEmbeddings());
-            out.println("embedded: " + result.embeddedChunks());
-            out.println("backfilled: " + result.backfilledChunks());
+            out.println("embeddings: "
+                    + result.embeddedChunks() + " made, "
+                    + result.backfilledChunks() + " backfilled, "
+                    + result.discardedEmbeddings() + " discarded");
         }
+
+        Duration took = result.timings().total();
+        // Chunks set the pace: written ones are read and chunked, and backfilled ones embedded.
+        String rate = ProgressText.rate(result.writtenChunks() + result.backfilledChunks(), took, "chunks/s")
+                .map(value -> " (" + value + ")")
+                .orElse("");
+        out.println("time: " + ProgressText.duration(took) + rate);
     }
 
     /** Prints a path discovery could not read, relative to {@code base} when it lies below it. */

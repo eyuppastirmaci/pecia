@@ -101,6 +101,14 @@ class ProgressTextTest {
                         Optional.of(new IndexProgress.FileCounts(5, 0, 0, 0, 5, 0)))));
     }
 
+    @Test
+    void aRateNeedsItemsAndTime() {
+        assertEquals(Optional.of("2.5 chunks/s"), ProgressText.rate(1, Duration.ofMillis(400), "chunks/s"));
+        assertEquals(Optional.of("1,000 files/s"), ProgressText.rate(2_000, Duration.ofSeconds(2), "files/s"));
+        assertEquals(Optional.empty(), ProgressText.rate(0, Duration.ofSeconds(2), "files/s"));
+        assertEquals(Optional.empty(), ProgressText.rate(5, Duration.ZERO, "files/s"));
+    }
+
     @ParameterizedTest(name = "{0} ms is {1}")
     @CsvSource({
         "0, 0.0 s",

@@ -3,6 +3,7 @@ package dev.eyuppastirmaci.pecia.cli;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
@@ -15,7 +16,9 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -78,6 +81,32 @@ class ColorOptionTest {
         assertTrue(
                 err.toString().contains(ESCAPE + "1m" + ESCAPE + "33mpecia index:" + ESCAPE + "0m PARTIAL: "),
                 err.toString());
+    }
+
+    @Test
+    void theSummaryColoursRejectedAndFailedFilesOnlyWhenThereAreAny() throws IOException {
+        assertEquals(0, run("--color=always", "index", root.toString()));
+        assertTrue(out.toString().contains(", 0 rejected, 0 failed ("), out.toString());
+
+        Files.write(root.resolve("blob.md"), new byte[] {0, 1, 0, 1});
+        Path blocked = Files.writeString(root.resolve("blocked.md"), "secret");
+        assumeTrue(Files.getFileStore(blocked).supportsFileAttributeView("posix"), "POSIX permissions unavailable");
+        Set<PosixFilePermission> original = Files.getPosixFilePermissions(blocked);
+
+        try {
+            Files.setPosixFilePermissions(blocked, Set.of());
+            assumeTrue(!Files.isReadable(blocked), "Current account bypasses permissions");
+
+            assertEquals(1, run("--color=always", "index", root.toString()));
+        } finally {
+            Files.setPosixFilePermissions(blocked, original);
+        }
+
+        assertTrue(
+                out.toString()
+                        .contains(", " + ESCAPE + "33m1 rejected" + ESCAPE + "0m, " + ESCAPE + "31m1 failed" + ESCAPE
+                                + "0m ("),
+                out.toString());
     }
 
     @Test

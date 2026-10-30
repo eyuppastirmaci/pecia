@@ -133,8 +133,8 @@ class PackagedCliSemanticSettingsIT {
         Result index = cli.run(project, "index");
 
         assertSuccess(index);
-        assertTrue(index.out().contains("deleted: 1\n"), index.out());
-        assertFalse(index.out().contains("embedded:"), index.out());
+        assertTrue(index.out().contains(" unchanged, 1 deleted, "), index.out());
+        assertFalse(index.out().contains("embeddings:"), index.out());
         assertEquals(List.of("guide.md"), filesWithVectors(database));
         // Explicitly lexical: in auto mode an index with vectors would reach for the model.
         assertEquals(

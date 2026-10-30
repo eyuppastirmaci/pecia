@@ -51,7 +51,7 @@ class PackagedCliFailureIT {
         }
 
         assertEquals(1, partial.exitCode());
-        assertTrue(partial.out().contains("\nindexed: 1\n"), partial.out());
+        assertTrue(partial.out().contains("\nfiles: 1 indexed, "), partial.out());
         List<String> lines = partial.err().lines().toList();
         assertEquals(2, lines.size(), partial.err());
         assertTrue(lines.get(0).startsWith("warning: private: PERMISSION_DENIED: "), lines.get(0));
@@ -65,7 +65,7 @@ class PackagedCliFailureIT {
         Result complete = cli.run(project, "index");
 
         assertEquals(0, complete.exitCode(), complete.err());
-        assertTrue(complete.out().contains("\nindexed: 1\nrechunked: 0\nunchanged: 1\n"), complete.out());
+        assertTrue(complete.out().contains("\nfiles: 1 indexed, 0 rechunked, 1 unchanged, "), complete.out());
     }
 
     @Test
@@ -92,6 +92,6 @@ class PackagedCliFailureIT {
         Result rebuilt = cli.run(project, "index");
 
         assertEquals(0, rebuilt.exitCode(), rebuilt.err());
-        assertTrue(rebuilt.out().contains("\nindexed: 1\n"), rebuilt.out());
+        assertTrue(rebuilt.out().contains("\nfiles: 1 indexed, "), rebuilt.out());
     }
 }

@@ -57,7 +57,11 @@ class PackagedCliWarningsIT {
             Result clean = withoutTypo.get(command);
             assertEquals(0, clean.exitCode(), clean.err());
             assertEquals("", clean.err());
-            assertEquals(withTypo.get(command).out(), clean.out(), "Warnings must not change stdout");
+            // An index summary ends with its duration, which varies from run to run.
+            assertEquals(
+                    withoutDuration(withTypo.get(command).out()),
+                    withoutDuration(clean.out()),
+                    "Warnings must not change stdout");
         }
     }
 
@@ -91,5 +95,9 @@ class PackagedCliWarningsIT {
                 Files.delete(path);
             }
         }
+    }
+
+    private static String withoutDuration(String out) {
+        return out.replaceAll("(?m)^time: .*\n", "");
     }
 }

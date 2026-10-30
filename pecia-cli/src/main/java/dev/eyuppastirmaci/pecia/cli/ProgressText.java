@@ -101,11 +101,20 @@ final class ProgressText {
     }
 
     private static Optional<String> rate(IndexProgress progress, double items, String unit) {
-        if (progress.elapsed().compareTo(SETTLED) < 0 || items <= 0) {
+        if (progress.elapsed().compareTo(SETTLED) < 0) {
             return Optional.empty();
         }
 
-        double perSecond = items / (progress.elapsed().toNanos() / 1e9);
+        return rate(items, progress.elapsed(), unit);
+    }
+
+    /** Describes how many items came per second, such as {@code 197 chunks/s}; empty without items or time. */
+    static Optional<String> rate(double items, Duration elapsed, String unit) {
+        if (items <= 0 || elapsed.isZero() || elapsed.isNegative()) {
+            return Optional.empty();
+        }
+
+        double perSecond = items / (elapsed.toNanos() / 1e9);
         String value = perSecond >= 10 ? count(Math.round(perSecond)) : String.format(Locale.ROOT, "%.1f", perSecond);
 
         return Optional.of(value + " " + unit);

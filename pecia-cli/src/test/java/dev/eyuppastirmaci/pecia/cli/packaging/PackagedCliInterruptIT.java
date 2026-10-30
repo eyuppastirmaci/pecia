@@ -33,7 +33,7 @@ class PackagedCliInterruptIT {
     private static final Duration PATIENCE = Duration.ofSeconds(60);
     // Indexing the whole corpus takes several seconds here and longer on slower CI machines.
     private static final Duration INDEXING = Duration.ofSeconds(120);
-    private static final Pattern INDEXED = Pattern.compile("(?m)^indexed: (\\d+)$");
+    private static final Pattern INDEXED = Pattern.compile("(?m)^files: (\\d+) indexed, ");
 
     @TempDir
     Path sandbox;
@@ -53,7 +53,7 @@ class PackagedCliInterruptIT {
         // The JVM reports 128 plus the signal number once the shutdown hook returns.
         assertEquals(143, started.process().exitValue());
         String out = Files.readString(started.stdout());
-        assertTrue(out.contains("candidates: " + FILES + "\n"), out);
+        assertTrue(out.contains(" (" + FILES + " found)\n"), out);
         int indexed = indexed(out);
         assertTrue(indexed > 0 && indexed < FILES, out);
         assertEquals(
@@ -66,7 +66,7 @@ class PackagedCliInterruptIT {
 
         assertEquals(0, next.exitCode(), next.err());
         assertEquals(FILES - indexed, indexed(next.out()));
-        assertTrue(next.out().contains("unchanged: " + indexed + "\n"), next.out());
+        assertTrue(next.out().contains(" rechunked, " + indexed + " unchanged, "), next.out());
     }
 
     @Test
