@@ -72,8 +72,7 @@ jobs:
           # A lexical index first, so the semantic run embeds the stored chunk instead of a changed file.
           java -jar pecia-cli/build/libs/pecia.jar index --no-semantic "$project"
           java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-index.txt"
-          grep -qx 'embedded: 0' "$RUNNER_TEMP/semantic-index.txt"
-          grep -qx 'backfilled: 1' "$RUNNER_TEMP/semantic-index.txt"
+          grep -qx 'embeddings: 0 made, 1 backfilled, 0 discarded' "$RUNNER_TEMP/semantic-index.txt"
           # Queries never download; this one loads the cached model and the bundled vector extension.
           java -jar pecia-cli/build/libs/pecia.jar query --mode semantic --root "$project" "embedding a single passage" | tr -d '\r' | tee "$RUNNER_TEMP/semantic-query.txt"
           head -n 1 "$RUNNER_TEMP/semantic-query.txt" | grep -qx 'readme.md:1-1'

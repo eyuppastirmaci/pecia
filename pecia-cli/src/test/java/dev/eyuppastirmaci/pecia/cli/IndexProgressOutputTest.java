@@ -74,7 +74,8 @@ class IndexProgressOutputTest {
         assertTrue(after.get(0).startsWith("warning: blob.txt: BINARY_CONTENT: "), after.get(0));
         assertTrue(after.get(1).startsWith("pecia index: PARTIAL: "), after.get(1));
         assertTrue(stderr.substring(0, cleared).endsWith(" "), "The last line drawn is blanked out");
-        assertFalse(out.toString().contains("\r"), out.toString());
+        // Windows ends stdout lines with CRLF; no other carriage return may reach stdout.
+        assertFalse(out.toString().replace("\r\n", "\n").contains("\r"), out.toString());
     }
 
     @Test
