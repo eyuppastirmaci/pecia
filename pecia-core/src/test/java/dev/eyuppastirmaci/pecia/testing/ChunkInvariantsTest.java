@@ -1,5 +1,8 @@
 package dev.eyuppastirmaci.pecia.testing;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -68,6 +71,46 @@ class ChunkInvariantsTest {
         assertTrue(ChunkInvariants.violation(blank, chunks, TOKENIZER, MAX_TOKENS, OVERLAP_TOKENS)
                 .startsWith("A whitespace-only source produced"));
         assertNull(ChunkInvariants.violation(blank, List.of(), TOKENIZER, MAX_TOKENS, OVERLAP_TOKENS));
+    }
+
+    @Test
+    void allowsAMarkdownGapOnlyWhenItHoldsNothingButMarkupOutsideCode() {
+        String anchor = "<!-- old -->\n\n> <a id=\"old\"></a>\n\n";
+        String intro = "# Intro\n\n" + "First part of the guide, long enough to stand alone. ".repeat(3) + "\n\n";
+        String next = "# Next\n\n" + "Second part of the guide, long enough as well. ".repeat(3) + "\n\n";
+        String text = intro + anchor + next + "# Last\n\n" + "Third part of the guide, long enough too. ".repeat(3);
+        // A budget that the intro fills, so the anchor can join neither neighbour and is left out.
+        int budget = TOKENIZER.countModelInput(intro) + 2;
+        Document markdown = ChunkingArbitraries.document(DocumentType.MARKDOWN, text);
+        List<Chunk> chunks = DocumentChunkerFactory.create(TOKENIZER, budget, 0)
+                .getChunker(DocumentType.MARKDOWN)
+                .chunk(markdown);
+        Chunk first = chunks.getFirst();
+
+        assertEquals(3, chunks.size(), chunks.toString());
+        assertNull(ChunkInvariants.violation(markdown, chunks, TOKENIZER, budget, 0));
+        assertTrue(ChunkInvariants.onlyMarkup(anchor));
+        assertTrue(ChunkInvariants.onlyMarkup("<!-- generated -->\n<br/>\n"));
+        assertFalse(ChunkInvariants.onlyMarkup("<a id=\"x\"></a> Text\n"));
+        assertFalse(ChunkInvariants.onlyMarkup("---\n"));
+        assertFalse(ChunkInvariants.onlyMarkup("    <div></div>\n"), "Indented code");
+        assertFalse(ChunkInvariants.onlyMarkup("```\n<div></div>\n```\n"), "Fenced code");
+        assertFalse(ChunkInvariants.onlyMarkup("<https://example.com>\n"), "An autolink");
+        Chunk last = chunks.get(2);
+        // The last chunk renumbered to follow the first, so only the gap left by the missing middle one is wrong.
+        Chunk afterAGap = new Chunk(
+                last.sourcePath(), last.documentType(), 1, last.content(), last.sourceLocation(), last.metadata());
+        assertNotNull(
+                ChunkInvariants.violation(markdown, List.of(first, afterAGap), TOKENIZER, budget, 0),
+                "Text between chunks must still be covered");
+    }
+
+    @Test
+    void neverAllowsGapsOutsideMarkdown() {
+        List<Chunk> withoutSecond = new ArrayList<>(chunks);
+        withoutSecond.remove(1);
+
+        assertViolation("has index", withoutSecond, MAX_TOKENS, OVERLAP_TOKENS);
     }
 
     private void assertViolation(String expected, List<Chunk> candidate, int maxTokens, int overlapTokens) {

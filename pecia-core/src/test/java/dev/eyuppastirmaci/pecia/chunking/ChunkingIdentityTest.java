@@ -19,7 +19,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ChunkingIdentityTest {
 
     private static final String EXTRACTION_VERSION = "pecia-utf8-extraction-v1";
-    private static final String CHUNKING_VERSION = "pecia-built-in-chunking-v2";
+    private static final String CHUNKING_VERSION = "pecia-built-in-chunking-v3";
     private static final String VOCABULARY_HASH = "a".repeat(64);
     private static final TokenizerIdentity TOKENIZER =
             new TokenizerIdentity("test-model", "revision-1", "wordpiece", VOCABULARY_HASH, 100, 256, 2);
@@ -39,7 +39,7 @@ class ChunkingIdentityTest {
 
         // Independently generated with Python hashlib/struct: UTF-8 fields with big-endian int32
         // byte lengths (format tag, extraction, chunking, algorithm, digest), then five int32 limits.
-        assertEquals("9041c7866f8da49f83113fe1f929e8d970c418efcf5d8b137bf1cbb0ff3c1bc6", identity.fingerprint());
+        assertEquals("04d83e3c22e5d54b62e33695cd6b98f77471c6ed787b51185bc8b9b551bdf3fd", identity.fingerprint());
         assertEquals(identity.fingerprint(), identity.fingerprint());
         assertTrue(identity.fingerprint().matches("[0-9a-f]{64}"));
     }

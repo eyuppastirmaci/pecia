@@ -11,9 +11,18 @@ import dev.eyuppastirmaci.pecia.tokenization.TokenCounter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /** Chunks Markdown along heading and block boundaries while preserving heading context. */
 public final class MarkdownChunker implements DocumentChunker {
+
+    private static final Pattern HTML_COMMENT = Pattern.compile("(?s)<!--.*?-->");
+    // An opening or closing tag such as <a id="x"> or </kbd>; autolinks such as <https://…> are not tags.
+    private static final Pattern HTML_TAG = Pattern.compile("</?[A-Za-z][A-Za-z0-9-]*(?:\\s[^>]*)?/?>");
+    // What remains of a group made only of markup: whitespace and block-quote markers.
+    private static final Pattern MARKUP_REMAINDER = Pattern.compile("[\\s>]*");
+    // Fenced or indented code, where tags such as <div> are content.
+    private static final Pattern CODE = Pattern.compile("(?m)```|~~~|^(?: {4}|\\t)");
 
     private final MarkdownBlockPlanner planner;
     private final MarkdownGroupMerger merger;
@@ -45,11 +54,13 @@ public final class MarkdownChunker implements DocumentChunker {
     /**
      * Splits Markdown at structural boundaries with token-bounded text fallback and overlap confined
      * to oversized leaf blocks, then joins tiny groups, such as a heading with one short line, to a neighbour under
-     * the same parent heading; a joined chunk carries the heading path both groups share.
+     * the same parent heading; a joined chunk carries the heading path both groups share. A group made only of HTML
+     * markup outside code, such as an anchor kept for old links that could join neither neighbour, is left out, since
+     * it would be found only through its headings.
      *
      * @param document extracted document whose original text and source identity are preserved
      * @return immutable source-ordered chunks with UTF-16 offsets, line ranges, and heading paths, or
-     *     empty for whitespace-only text
+     *     empty for text without visible text
      * @throws NullPointerException if document is null
      * @throws IllegalArgumentException if an indivisible source character cannot fit within the token
      *     budget
@@ -97,7 +108,7 @@ public final class MarkdownChunker implements DocumentChunker {
                         new MarkdownBlockGroup(group.startOffset(), group.endOffset(), true),
                         group.headingPath(),
                         chunks);
-            } else {
+            } else if (!onlyMarkup(document.content().substring(group.startOffset(), group.endOffset()))) {
                 append(document, boundaries, group.startOffset(), group.endOffset(), group.headingPath(), chunks);
             }
         }
@@ -134,6 +145,7 @@ public final class MarkdownChunker implements DocumentChunker {
             int end,
             List<String> headingPath,
             List<Chunk> chunks) {
+        String content = document.content().substring(start, end);
         // Heading context remains metadata only, leaving the exact source slice and its token budget
         // unchanged.
         ChunkMetadata metadata = new ChunkMetadata(
@@ -142,12 +154,20 @@ public final class MarkdownChunker implements DocumentChunker {
                         "startOffset", Integer.toString(start),
                         "endOffset", Integer.toString(end)));
         LineRange location = new LineRange(boundaries.lineAt(start), boundaries.lineAt(end - 1));
-        chunks.add(new Chunk(
-                document.sourcePath(),
-                document.type(),
-                chunks.size(),
-                document.content().substring(start, end),
-                location,
-                metadata));
+        chunks.add(new Chunk(document.sourcePath(), document.type(), chunks.size(), content, location, metadata));
+    }
+
+    /**
+     * Whether a group holds nothing but HTML comments, HTML tags, block-quote markers, and whitespace outside code. Only
+     * whole groups are tested: a piece of an oversized block may be the middle of code, where tags are content.
+     */
+    static boolean onlyMarkup(String content) {
+        if (CODE.matcher(content).find()) {
+            return false;
+        }
+
+        String withoutMarkup =
+                HTML_TAG.matcher(HTML_COMMENT.matcher(content).replaceAll("")).replaceAll("");
+        return MARKUP_REMAINDER.matcher(withoutMarkup).matches();
     }
 }
