@@ -147,7 +147,12 @@ val runtimeImage = tasks.register<Exec>("runtimeImage") {
     val output = layout.buildDirectory.dir("package/runtime")
     inputs.property("modules", runtimeModules)
     outputs.dir(output)
+    val platform = packagePlatform
     doFirst {
+        // jlink builds a runtime only for the machine it runs on, so a package for another platform would be wrong.
+        check(platform.get() == hostPlatform()) {
+            "A package for ${platform.get()} must be built on ${platform.get()}, not on ${hostPlatform()}"
+        }
         delete(output)
         val suffix = if (System.getProperty("os.name").lowercase().startsWith("windows")) ".exe" else ""
         executable = jdk.get().metadata.installationPath.file("bin/jlink$suffix").asFile.absolutePath

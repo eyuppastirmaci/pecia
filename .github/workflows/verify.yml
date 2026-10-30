@@ -101,6 +101,78 @@ jobs:
             **/build/test-results/
           retention-days: 7
 
+  # Builds each platform's package on its own runner, because jlink and jpackage cannot build for another platform,
+  # then runs the extracted package with no Java on PATH and uploads it.
+  package:
+    name: package (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            platform: osx-aarch64
+          - runner: ubuntu-latest
+            platform: linux-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-aarch64
+          - runner: windows-latest
+            platform: win-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # The semantic package check copies the model from this cache, as referenceTest does.
+      - name: Restore the semantic model
+        id: semantic-model
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/pecia-cache/models
+          key: semantic-model-${{ hashFiles('pecia-core/src/main/java/dev/eyuppastirmaci/pecia/semantic/SemanticModel.java') }}
+
+      - name: Download the semantic model on a cache miss
+        if: steps.semantic-model.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
+        run: |
+          ./gradlew :pecia-cli:shadowJar
+          project="$RUNNER_TEMP/model-download"
+          mkdir -p "$project"
+          echo "A semantic run downloads the model it needs." > "$project/readme.md"
+          java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project"
+
+      # The platform is named explicitly, so a runner of another architecture fails instead of building the wrong one.
+      - name: Build and check the package
+        shell: bash
+        env:
+          PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
+        run: ./gradlew -Ppecia.platform=${{ matrix.platform }} :pecia-cli:packageArchive :pecia-cli:packageTest
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v7
+        with:
+          name: pecia-${{ matrix.platform }}-attempt-${{ github.run_attempt }}
+          path: pecia-cli/build/package/dist/
+          retention-days: 7
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-reports-${{ matrix.platform }}-attempt-${{ github.run_attempt }}
+          path: |
+            pecia-cli/build/reports/
+            pecia-cli/build/test-results/
+          retention-days: 7
+
   core-verify:
     name: core-verify (ubuntu-latest)
     runs-on: ubuntu-latest
