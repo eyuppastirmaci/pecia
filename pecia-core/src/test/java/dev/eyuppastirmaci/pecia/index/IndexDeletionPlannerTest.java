@@ -251,6 +251,28 @@ class IndexDeletionPlannerTest {
                 .isEmpty());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"directory", "missing", "file"})
+    void retainsMissingRecordsInASiblingOfTheTarget(String sibling) throws Exception {
+        Path target = Files.createDirectory(root.resolve("docs"));
+        Path other = Files.createDirectory(root.resolve("other"));
+        ProjectContext context = context(target);
+
+        if (!sibling.equals("directory")) {
+            Files.delete(other);
+        }
+
+        if (sibling.equals("file")) {
+            Files.writeString(other, "not a directory");
+        }
+
+        // A run on docs never reached other, so its records stay whether other is a distinct directory, is gone, or
+        // has become a file.
+        assertTrue(new IndexDeletionPlanner(context)
+                .plan(scan(context), List.of(stored(1, "other/gone.txt")))
+                .isEmpty());
+    }
+
     @Test
     void retainsMissingRecordsBelowALinkToTheTargetDirectory() throws Exception {
         Path target = Files.createDirectory(root.resolve("docs"));

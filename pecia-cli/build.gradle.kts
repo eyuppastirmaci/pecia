@@ -65,6 +65,8 @@ tasks.register<Test>("referenceTest") {
         includeTags(referenceTag)
     }
     shouldRunAfter(tasks.named("integrationTest"))
-    // The model lives outside the build, so Gradle cannot tell when a previous result is still valid.
+    // The model lives outside the build, so Gradle cannot tell when a previous result is still valid: never reuse one,
+    // from this build or from the build cache.
     outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("The model lives outside the build") { true }
 }

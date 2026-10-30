@@ -43,24 +43,32 @@ Run these commands from the repository root:
 ./gradlew :pecia-cli:shadowJar  # build the CLI JAR without running tests
 ./gradlew build                 # run all tests and checks, including acceptance tests against the packaged JARs
 ./gradlew referenceTest         # check the real semantic model, through the core API and the CLI JAR
+./gradlew :pecia-core:performanceTest  # measure indexing and query speed on a synthetic corpus
+./gradlew :pecia-core:pitest           # run mutation testing on chunking, incremental indexing, and ranking
 ```
 
 On Windows use `gradlew.bat` instead of `./gradlew`.
 
-The other tasks use a tiny test model and never download anything. Only `referenceTest` uses the real model: it compares its embeddings with committed sentence-transformers outputs, checks its retrieval, and runs the CLI JAR's semantic workflows with it. It is not part of `build`.
+`build` never downloads anything and uses a tiny test model. The other tasks run only on request:
 
-It reads the model from the cache that `PECIA_CACHE_DIR` names and may add ONNX Runtime's libraries there, so give it a separate cache. Copy the `models` directory from your own cache (see [Model cache](#model-cache)):
+| Task | Checks | Report |
+| --- | --- | --- |
+| `referenceTest` | The real model: embeddings, retrieval quality, and the CLI's semantic workflows | `pecia-core/build/reports/retrieval/` |
+| `:pecia-core:performanceTest` | Indexing and query speed on a generated corpus; never fails on time | `pecia-core/build/reports/performance/index.md` |
+| `:pecia-core:pitest` | Which code mutations the unit tests miss | `pecia-core/build/reports/pitest/` |
+
+Retrieval quality is measured on a labelled corpus (`pecia-core/src/test/resources/retrieval`): lexical search in `test`, semantic and hybrid in `referenceTest`. A metric below its threshold fails the run.
+
+`referenceTest` reads the model from `PECIA_CACHE_DIR` and may write there, so point it at a copy of your cache (see [Model cache](#model-cache)). If no model is cached yet, `java -jar pecia-cli/build/libs/pecia.jar index --semantic <folder>` downloads it (about 90 MB) into the cache that the variable names.
 
 ```
 export PECIA_CACHE_DIR=/tmp/pecia-reference-cache
 mkdir -p "$PECIA_CACHE_DIR"
-cp -R ~/Library/Caches/pecia/models "$PECIA_CACHE_DIR"   # macOS; other systems use their own cache path
+cp -R ~/Library/Caches/pecia/models "$PECIA_CACHE_DIR"   # macOS path
 ./gradlew referenceTest
 ```
 
-Without a cached model, a semantic run downloads it (about 90 MB) into that cache: with the variable set, run `java -jar pecia-cli/build/libs/pecia.jar index --semantic` on any small folder.
-
-Retrieval quality is measured on a small labelled corpus in `pecia-core/src/test/resources/retrieval`: `test` checks lexical search and `referenceTest` checks semantic and hybrid search. Each run writes a report per mode to `pecia-core/build/reports/retrieval/` and fails when a metric drops below its committed threshold. That directory's README explains the labels and thresholds.
+A hanging test fails after five minutes with a thread dump in its XML report.
 
 ## CLI reference
 

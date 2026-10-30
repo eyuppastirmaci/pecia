@@ -107,6 +107,10 @@ class IndexDecisionTest {
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, null, PROFILE, STORED, PROFILE));
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, null, STORED, PROFILE));
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, PROFILE, STORED, null));
+        // Changed content decides before the profile is compared, so only validation can reject a missing profile.
+        assertThrows(
+                NullPointerException.class,
+                () -> IndexDecision.evaluate(REQUEST, hash("class Changed {}\n"), null, STORED, PROFILE));
     }
 
     @Test

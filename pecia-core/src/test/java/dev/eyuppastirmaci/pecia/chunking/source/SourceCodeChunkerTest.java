@@ -23,8 +23,11 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.ToIntFunction;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class SourceCodeChunkerTest {
@@ -459,6 +462,65 @@ class SourceCodeChunkerTest {
             assertEquals(chunks, chunker.chunk(document));
             verify(document, chunks, tokenizer, limit, overlap, false);
         }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("shortSlices")
+    void shortSlicesSplitAndOverlapExactlyAsChosen(
+            String name, String text, int maxTokens, int overlap, List<String> expected) {
+        Document document = document(text);
+
+        List<Chunk> chunks = new SourceCodeChunker(tokenizer, maxTokens, overlap).chunk(document);
+
+        verify(document, chunks, tokenizer, maxTokens, overlap, false);
+        assertEquals(expected, chunks.stream().map(Chunk::content).toList());
+    }
+
+    /** Short inputs whose slices and overlaps change under each mutation of the overlap and safe-offset rules. */
+    static Stream<Arguments> shortSlices() {
+        return Stream.of(
+                // No complete line fits the one-token overlap, so the overlap falls back to the last words.
+                Arguments.of(
+                        "word overlap after a line too large",
+                        "    // ödeme kontrolü 😀\r\n\t}",
+                        10,
+                        1,
+                        List.of("    // ödeme kontrolü ", "lü 😀\r\n", "😀\r\n\t}")),
+                // One long word: the overlap is the longest character suffix within the token budget.
+                Arguments.of(
+                        "character overlap inside one word",
+                        "öööööööööööööööööööö",
+                        10,
+                        1,
+                        List.of("ööööööööööööööö", "öööööö")),
+                Arguments.of(
+                        "character overlap up to the end of a word",
+                        "return payment.isValid();\n",
+                        10,
+                        1,
+                        List.of("return ", "rn payment.isValid()", ");\n")),
+                // A lone carriage return ends a line; the slice after it is not moved.
+                Arguments.of(
+                        "lone carriage return",
+                        "\treturn payment.isValid();\r\t\t}\r\n",
+                        8,
+                        0,
+                        List.of("\treturn ", "payment.isValid(", ");\r", "\t\t}\r\n")),
+                Arguments.of(
+                        "mixed lines, ideographs, and an emoji",
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\n漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢\n// ödeme kontrolü 😀",
+                        10,
+                        1,
+                        List.of(
+                                "aaaaaaaaaaaaaaaaa",
+                                "aaaaaaaaaaaaaaaaa\n",
+                                "aaa\n\n",
+                                "漢漢漢漢漢漢漢漢",
+                                "漢漢漢漢漢漢漢漢",
+                                "漢漢漢漢漢漢漢漢",
+                                "漢漢漢\n",
+                                "// ödeme kontrolü ",
+                                "lü 😀")));
     }
 
     private static int startOffset(Chunk chunk) {

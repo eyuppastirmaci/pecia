@@ -55,7 +55,10 @@ class QueryShapeTest {
                 "",
                 "   ",
                 "end of sentence.",
-                "a-b"
+                "a-b",
+                // Separate words never join into one: neither camelCase across the space nor a word with a digit.
+                "user Settings",
+                "page 2"
             })
     void everythingElseIsNaturalLanguage(String query) {
         assertEquals(QueryShape.NATURAL_LANGUAGE, QueryShape.of(query));

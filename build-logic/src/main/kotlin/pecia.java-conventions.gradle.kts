@@ -77,6 +77,12 @@ tasks.withType<Test>().configureEach {
         .gradleProperty("pecia.testForks")
         .map(String::toInt)
         .getOrElse(((Runtime.getRuntime().availableProcessors() + 1) / 2).coerceIn(1, 4))
+    // A test that hangs fails after five minutes instead of stalling until the CI job times out, and prints every
+    // thread's stack first. Each test method runs in its own thread so that the timeout also ends a test blocked in a
+    // call that ignores interrupts, such as a read from a child process; @Timeout sets a tighter limit where needed.
+    systemProperty("junit.jupiter.execution.timeout.default", "5 m")
+    systemProperty("junit.jupiter.execution.timeout.thread.mode.default", "SEPARATE_THREAD")
+    systemProperty("junit.jupiter.execution.timeout.threaddump.enabled", "true")
     // Path-validation tests compare real paths, so give test JVMs a temporary directory without symbolic links
     // (macOS resolves /var through one) or short names (Windows).
     systemProperty("java.io.tmpdir", Path.of(System.getProperty("java.io.tmpdir")).toRealPath().toString())
@@ -134,6 +140,9 @@ val integrationTest = tasks.register<Test>("integrationTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/*IT.class")
+    // Like the unit tests, never the user's cache or one the environment names: CI sets PECIA_CACHE_DIR to the real
+    // model's cache for referenceTest, and a packaged run that found the model would search differently.
+    environment("PECIA_CACHE_DIR", layout.buildDirectory.dir("integration-test-cache").get().asFile.absolutePath)
     shouldRunAfter(tasks.test)
     dependsOn(requireIntegrationTests)
 }

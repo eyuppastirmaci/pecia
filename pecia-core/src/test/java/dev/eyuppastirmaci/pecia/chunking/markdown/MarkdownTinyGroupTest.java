@@ -80,6 +80,53 @@ class MarkdownTinyGroupTest {
     }
 
     @Test
+    void eachTopLevelSectionsChunkCarriesItsOwnHeading() {
+        String text = "# A\n\n" + PARAGRAPH + "\n# B\n\n" + PARAGRAPH;
+
+        List<Chunk> chunks = chunk(text, 256);
+
+        // The second group starts exactly where section A ends, so it already belongs to section B.
+        assertEquals(2, chunks.size());
+        assertEquals(List.of("A"), chunks.get(0).metadata().headingPath());
+        assertEquals(List.of("B"), chunks.get(1).metadata().headingPath());
+    }
+
+    @Test
+    void aTinySectionThatCannotJoinTheNextOneJoinsThePreviousOneMidDocument() {
+        String text = "# Guide\n\n## Intent\n\n" + PARAGRAPH + "\n## Credits\n\nThanks.\n\n# Next\n\n" + PARAGRAPH;
+
+        List<Chunk> chunks = chunk(text, 256);
+
+        // "Credits" cannot join "Next", another top-level section, so it joins its sibling before "Next" is added.
+        assertEquals(2, chunks.size());
+        assertEquals(List.of("Guide"), chunks.get(0).metadata().headingPath());
+        assertTrue(
+                chunks.get(0).content().endsWith("Thanks.\n\n"), chunks.get(0).content());
+        assertEquals(List.of("Next"), chunks.get(1).metadata().headingPath());
+    }
+
+    @Test
+    void aGroupOfExactlyTheThresholdIsNotTiny() {
+        String tail = "# B\n\n" + wordsFilling(MarkdownGroupMerger.MIN_CONTENT_TOKENS, "# B\n\n");
+        String text = "# A\n\n" + PARAGRAPH + "\n" + tail;
+
+        List<Chunk> chunks = chunk(text, 256);
+
+        assertEquals(MarkdownGroupMerger.MIN_CONTENT_TOKENS, tokenizer.count(tail));
+        assertEquals(2, chunks.size(), "A group of exactly 24 tokens stays on its own");
+    }
+
+    @Test
+    void aJoinThatFillsTheBudgetExactlyIsAllowed() {
+        String text = "# A\n\n" + PARAGRAPH + "\n# B\n\nTiny.\n";
+
+        List<Chunk> chunks = chunk(text, tokenizer.countModelInput(text));
+
+        assertEquals(1, chunks.size());
+        assertEquals(text, chunks.getFirst().content());
+    }
+
+    @Test
     void itemsOfASplitListJoinUntilTheyAreNoLongerTiny() {
         StringBuilder list = new StringBuilder("# Features\n\n");
 
@@ -121,6 +168,19 @@ class MarkdownTinyGroupTest {
         // An eight-token budget leaves six content tokens, whose eighth rounds down to zero.
         assertEquals(unmerged(text, 8), chunk(text, 8));
         assertEquals(24, MarkdownGroupMerger.MIN_CONTENT_TOKENS);
+    }
+
+    /** Returns words that bring {@code prefix} plus them, ending in a newline, to exactly {@code tokens} tokens. */
+    private String wordsFilling(int tokens, String prefix) {
+        StringBuilder words = new StringBuilder();
+
+        while (tokenizer.count(prefix + words + "word\n") <= tokens) {
+            words.append("word ");
+        }
+
+        String filled = words.toString().strip() + "\n";
+        assertEquals(tokens, tokenizer.count(prefix + filled), "Each word adds one token");
+        return filled;
     }
 
     private List<Chunk> chunk(String text, int maxTokens) {

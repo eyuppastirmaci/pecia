@@ -27,6 +27,26 @@ class SourceCodeBoundariesTest {
     }
 
     @Test
+    void equalIndentationIsNotADedent() {
+        String text = "root\n  one\n  two\n    deep\nlast";
+        SourceCodeBoundaries boundaries = new SourceCodeBoundaries(text);
+        int deep = text.indexOf("    deep");
+
+        // "two" keeps the indentation of "one", so the latest line end wins over it.
+        assertEquals(OptionalInt.of(deep), boundaries.preferredEnd(0, deep));
+    }
+
+    @Test
+    void aTabAdvancesToTheNextTabStop() {
+        String text = "root\n\tone\n  \ttwo\n\tthree\nlast";
+        SourceCodeBoundaries boundaries = new SourceCodeBoundaries(text);
+        int three = text.indexOf("\tthree");
+
+        // Two spaces and a tab reach the same tab stop as one tab, so "two" is not a dedent.
+        assertEquals(OptionalInt.of(three), boundaries.preferredEnd(0, three));
+    }
+
+    @Test
     void choosesTheLatestBoundaryWithinEachPriority() {
         String text = "first\n\nsecond\n\nthird\n    deep\nend\nlast";
         SourceCodeBoundaries boundaries = new SourceCodeBoundaries(text);

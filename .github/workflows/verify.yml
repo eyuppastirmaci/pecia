@@ -37,22 +37,9 @@ jobs:
       # Validates the wrapper JAR and caches Gradle's downloads between runs.
       - uses: gradle/actions/setup-gradle@v6
 
-      - name: Verify (Linux and macOS)
-        if: runner.os != 'Windows'
-        run: ./gradlew check --profile
-
-      - name: Verify (Windows)
-        if: runner.os == 'Windows'
-        # The default temporary directory is on C:, which is slower than the workspace drive (D:) for the tests' many
-        # small SQLite writes; the build passes this directory on to every test JVM.
-        env:
-          TEMP: ${{ runner.temp }}
-          TMP: ${{ runner.temp }}
-        run: .\gradlew.bat check --profile
-
-      # Only the next three steps use the real model. On a cache miss the packaged CLI downloads it and verifies its
-      # SHA-256; referenceTest then compares its embeddings with the committed sentence-transformers references, checks
-      # its retrieval, and runs the packaged CLI's semantic workflows with it. The test tasks above never download it.
+      # Only referenceTest uses the real model: it compares the model's embeddings with the committed
+      # sentence-transformers references, checks its retrieval, and runs the packaged CLI's semantic workflows with it.
+      # The model is restored first, so one Gradle invocation runs every check; the other test tasks never use it.
       - name: Restore the semantic model
         id: semantic-model
         uses: actions/cache@v6
@@ -61,21 +48,34 @@ jobs:
           # SemanticModel.java holds the pinned revision and SHA-256, so any change to the pin starts a new cache.
           key: semantic-model-${{ hashFiles('pecia-core/src/main/java/dev/eyuppastirmaci/pecia/semantic/SemanticModel.java') }}
 
+      # On a cache miss the packaged CLI downloads the model and verifies its SHA-256.
       - name: Download the semantic model on a cache miss
         if: steps.semantic-model.outputs.cache-hit != 'true'
         shell: bash
         env:
           PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
         run: |
+          ./gradlew :pecia-cli:shadowJar
           project="$RUNNER_TEMP/model-download"
           mkdir -p "$project"
           echo "A semantic run downloads the model it needs." > "$project/readme.md"
           java -jar pecia-cli/build/libs/pecia.jar index --semantic "$project"
 
-      - name: Check the real model against the references and through the packaged CLI
+      - name: Verify (Linux and macOS)
+        if: runner.os != 'Windows'
         env:
           PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
-        run: ${{ runner.os == 'Windows' && '.\gradlew.bat' || './gradlew' }} referenceTest
+        run: ./gradlew check referenceTest --profile
+
+      - name: Verify (Windows)
+        if: runner.os == 'Windows'
+        # The default temporary directory is on C:, which is slower than the workspace drive (D:) for the tests' many
+        # small SQLite writes; the build passes this directory on to every test JVM.
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+          PECIA_CACHE_DIR: ${{ runner.temp }}/pecia-cache
+        run: .\gradlew.bat check referenceTest --profile
 
       # Test results, retrieval-quality reports, and Gradle's profile report from every run, so timings and retrieval
       # metrics can be compared between runs and systems. Artifact names include the attempt, because a re-run cannot

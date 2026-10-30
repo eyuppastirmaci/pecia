@@ -133,6 +133,10 @@ class IndexDecisionIdentityTest {
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, null, STORED, IDENTITY));
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, IDENTITY, null, IDENTITY));
         assertThrows(NullPointerException.class, () -> IndexDecision.evaluate(REQUEST, HASH, IDENTITY, STORED, null));
+        // Changed content decides before the identity is compared, so only validation can reject a missing identity.
+        assertThrows(
+                NullPointerException.class,
+                () -> IndexDecision.evaluate(REQUEST, hash("class Changed {}\n"), null, STORED, IDENTITY));
     }
 
     @Test
