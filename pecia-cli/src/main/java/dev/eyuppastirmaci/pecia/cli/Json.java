@@ -6,7 +6,8 @@ import java.util.Map;
 
 /**
  * Writes JSON documents for {@code --json} output. Values are {@link JsonObject}s, lists, strings, booleans, integers,
- * longs, finite doubles, and null; documents are indented by two spaces so people can read them too.
+ * longs, finite doubles, and null; documents are indented by two spaces so people can read them too, and are plain
+ * ASCII, so they arrive intact whatever encoding the console or the reading program assumes.
  */
 final class Json {
 
@@ -90,8 +91,9 @@ final class Json {
     }
 
     /**
-     * Quotes text, escaping what JSON requires and the line and paragraph separators, which some JavaScript parsers
-     * reject; an unpaired surrogate is escaped too, so the output stays valid UTF-8.
+     * Quotes text, escaping what JSON requires and every character outside printable ASCII as a six-character Unicode
+     * escape; a character outside the Basic Multilingual Plane becomes its escaped surrogate pair, as JSON specifies,
+     * and an unpaired surrogate is escaped like any other character.
      */
     static void writeString(StringBuilder out, String text) {
         out.append('"');
@@ -108,7 +110,7 @@ final class Json {
                 case '\r' -> out.append("\\r");
                 case '\t' -> out.append("\\t");
                 default -> {
-                    if (current < 0x20 || current == '\u2028' || current == '\u2029' || unpaired(text, index)) {
+                    if (current < 0x20 || current > 0x7e) {
                         out.append(String.format("\\u%04x", (int) current));
                     } else {
                         out.append(current);
@@ -118,16 +120,6 @@ final class Json {
         }
 
         out.append('"');
-    }
-
-    private static boolean unpaired(String text, int index) {
-        char current = text.charAt(index);
-
-        if (Character.isHighSurrogate(current)) {
-            return index + 1 >= text.length() || !Character.isLowSurrogate(text.charAt(index + 1));
-        }
-
-        return Character.isLowSurrogate(current) && (index == 0 || !Character.isHighSurrogate(text.charAt(index - 1)));
     }
 
     private static void indent(StringBuilder out, int depth) {

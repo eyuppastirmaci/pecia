@@ -3,7 +3,6 @@ package dev.eyuppastirmaci.pecia.cli;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -55,18 +54,22 @@ class JsonTest {
         String written = Json.write(text.toString());
 
         assertEquals(text.toString(), JsonDocuments.parseValue(written).getAsString());
-        // Raw control characters and separators never reach the output.
-        assertEquals(-1, indexOfAny(written, 0x2028, 0x2029));
-        assertEquals(List.of(), written.chars().filter(c -> c < 0x20).boxed().toList());
-        assertEquals("\"\\u0000\\u001f\\b\\t\\n\\f\\r\"", Json.write("\u0000\u001f\b\t\n\f\r"));
+        // Only printable ASCII reaches the output, so no console or decoder can change it.
+        assertEquals(
+                List.of(),
+                written.chars().filter(c -> c < 0x20 || c > 0x7e).boxed().toList());
+        assertEquals("\"\\u0000\\u001f\\b\\t\\n\\f\\r\\u007f\"", Json.write("\u0000\u001f\b\t\n\f\r\u007f"));
     }
 
     @Test
-    void unpairedSurrogatesAreEscapedAndPairsAreKept() {
+    void textOutsideAsciiIsEscapedAsJsonSpecifies() {
+        assertEquals("\"\\u0130stanbul \\u015fehir \\u00fc ~\"", Json.write("İstanbul şehir ü ~"));
+        assertEquals("\"\\u2028\\u2029\"", Json.write("\u2028\u2029"));
+        // A character outside the Basic Multilingual Plane is written as its surrogate pair.
+        assertEquals("\"\\ud83d\\ude00\"", Json.write("😀"));
+        // Unpaired surrogates are escaped one by one, as any other character.
         assertEquals("\"\\ud83d x\"", Json.write("\ud83d x"));
-        assertEquals("\"x \\ude00\"", Json.write("x \ude00"));
         assertEquals("\"\\ude00\\ud83d\"", Json.write("\ude00\ud83d"));
-        assertEquals("\"😀\"", Json.write("😀"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -98,13 +101,5 @@ class JsonTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new Json.JsonObject().put("a", 1).put("a", 2));
-    }
-
-    private static int indexOfAny(String text, int... characters) {
-        return Arrays.stream(characters)
-                .map(text::indexOf)
-                .filter(index -> index >= 0)
-                .min()
-                .orElse(-1);
     }
 }

@@ -21,8 +21,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * {@code --json} through {@code java -jar}, offline where the command allows it: stdout carries exactly one JSON document for every outcome, in
- * UTF-8, while stderr and exit codes stay those of the text output.
+ * {@code --json} through {@code java -jar}, offline where the command allows it: stdout carries exactly one ASCII JSON
+ * document for every outcome, while stderr and exit codes stay those of the text output.
  */
 class PackagedCliJsonIT {
 
@@ -55,6 +55,10 @@ class PackagedCliJsonIT {
 
         Result query = cli.runReadOnly(project, "query", "istanbul", "--json");
 
+        // Text outside ASCII is escaped, so the document reads the same in any console or decoder.
+        assertEquals(
+                List.of(), query.out().chars().filter(c -> c > 0x7e).boxed().toList());
+        assertTrue(query.out().contains("\\u0130stanbul \\ud83d\\ude00 iade s\\u00fcresi"), query.out());
         JsonObject document = JsonDocuments.parse(query.out());
         // Without embeddings, auto searches lexically and says why only in the document.
         assertEquals("auto", document.get("requestedMode").getAsString());
@@ -70,6 +74,12 @@ class PackagedCliJsonIT {
         String snippet = hit.get("snippet").getAsString();
         assertTrue(snippet.contains("İstanbul 😀 iade süresi beş gün"), snippet);
         assertEquals(List.of("İstanbul", "İSTANBUL"), matched(hit));
+
+        // A console whose code page lacks these letters, as on Windows, still receives the same document.
+        Result ascii = cli.run(project, List.of("-Dsun.stdout.encoding=US-ASCII"), "query", "istanbul", "--json");
+
+        assertEquals(0, ascii.exitCode(), ascii.err());
+        assertEquals(query.out(), ascii.out());
     }
 
     @Test
