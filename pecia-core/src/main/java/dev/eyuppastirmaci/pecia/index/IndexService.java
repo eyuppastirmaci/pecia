@@ -565,12 +565,17 @@ public final class IndexService {
             if (tally.issues.isEmpty() && scanResult.complete()) {
                 IndexDeletionPlanner planner = new IndexDeletionPlanner(context);
                 var missing = planner.plan(scanResult, storage.files().findAll());
-                ProgressReporter.Phase cleanup =
-                        progress.start(IndexProgress.Phase.CLEANUP, OptionalLong.of(missing.size()));
+                // A cleanup with nothing to remove is not worth reporting.
+                ProgressReporter.Phase cleanup = missing.isEmpty()
+                        ? null
+                        : progress.start(IndexProgress.Phase.CLEANUP, OptionalLong.of(missing.size()));
 
                 // Recheck absence and scope immediately before applying the batch.
                 tally.deletedFiles = storage.deleteFiles(planner.plan(scanResult, missing));
-                cleanup.finish(tally.deletedFiles);
+
+                if (cleanup != null) {
+                    cleanup.finish(tally.deletedFiles);
+                }
             }
 
             if (pipeline != null) {

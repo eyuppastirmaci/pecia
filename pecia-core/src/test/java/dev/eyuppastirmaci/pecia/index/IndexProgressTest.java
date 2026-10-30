@@ -93,11 +93,11 @@ class IndexProgressTest {
 
         assertWellFormed();
         assertEquals(
+                // Nothing was deleted, so the cleanup reports nothing.
                 List.of(
                         IndexProgress.Phase.SCAN,
                         IndexProgress.Phase.MODEL,
                         IndexProgress.Phase.FILES,
-                        IndexProgress.Phase.CLEANUP,
                         IndexProgress.Phase.BACKFILL),
                 phases());
         assertFilesEndAt(result);

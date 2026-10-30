@@ -290,7 +290,7 @@ class EmbeddingBackfillTest {
         assertEquals(0, again.backfilledChunks());
         assertEquals(List.of(), dump(again).embeddings());
         assertEquals(
-                List.of(IndexProgress.Phase.SCAN, IndexProgress.Phase.FILES, IndexProgress.Phase.CLEANUP),
+                List.of(IndexProgress.Phase.SCAN, IndexProgress.Phase.FILES),
                 progress.stream().map(IndexProgress::phase).distinct().toList());
         assertEquals(0, embedCalls);
     }

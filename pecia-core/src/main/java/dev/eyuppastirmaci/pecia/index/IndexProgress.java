@@ -59,7 +59,7 @@ public record IndexProgress(
          * its chunks are embedded and written.
          */
         FILES,
-        /** Removing indexed files that are gone; items are files. */
+        /** Removing indexed files that are gone; items are files. Reported only when some are gone. */
         CLEANUP,
         /** Embedding stored chunks that have no embedding yet; items are chunks. Semantic runs only. */
         BACKFILL
