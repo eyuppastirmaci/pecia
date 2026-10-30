@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonNull;
+import com.google.gson.JsonObject;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.index.IndexService;
@@ -55,6 +57,22 @@ class IndexInterruptTest {
         // rather than when its ten-second limit runs out.
         interrupts.hook.join(Duration.ofSeconds(2).toMillis());
         assertFalse(interrupts.hook.isAlive());
+        assertEquals(out.toString() + err, interrupts.printedWhenHookReturned);
+    }
+
+    @Test
+    void anInterruptedJsonRunPrintsItsDocumentBeforeTheHookReturns() throws Exception {
+        interrupts.interruptOnRegister = true;
+
+        assertEquals(130, run(root.toString(), "--no-semantic", "--json"));
+
+        JsonObject document = JsonDocuments.parse(out.toString());
+        assertEquals("CANCELLED", document.get("status").getAsString());
+        assertEquals(JsonNull.INSTANCE, document.get("error"));
+        assertEquals(5, document.getAsJsonObject("files").get("candidates").getAsInt());
+        assertEquals(0, document.getAsJsonObject("files").get("indexed").getAsInt());
+        assertTrue(err.toString().startsWith("pecia index: cancelled;"), err.toString());
+        interrupts.hook.join(Duration.ofSeconds(2).toMillis());
         assertEquals(out.toString() + err, interrupts.printedWhenHookReturned);
     }
 

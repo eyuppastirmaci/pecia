@@ -52,8 +52,16 @@ public class IndexCommand implements Callable<Integer> {
                     "Enable or disable semantic indexing for this run, overriding semantic.enabled in .pecia.toml.")
     Boolean semantic;
 
+    @Option(
+            names = "--json",
+            description = "Print the outcome as one JSON document on stdout; warnings and issues stay on stderr.")
+    boolean json;
+
     // The shell's exit status for a process stopped by SIGINT: 128 plus the signal number.
     static final int INTERRUPTED = 130;
+
+    /** The JSON error reason when the folder or its configuration cannot be read. */
+    static final String IO_ERROR = "IO_ERROR";
 
     @CommandLine.Spec
     CommandLine.Model.CommandSpec spec;
@@ -82,6 +90,8 @@ public class IndexCommand implements Callable<Integer> {
      * changed files, and the stored chunks whose missing embeddings it made in its summary. Every summary also counts
      * the indexed files whose unchanged content was chunked again for new settings. Ctrl+C stops the run before its
      * next file, batch, or page and prints what it finished; the files it indexed stay, and the next run continues.
+     * With {@code --json}, a run prints one JSON document on stdout in place of its summary, whatever its outcome, and
+     * stderr and the exit code stay the same.
      *
      * @return 0 on complete indexing/preview, 1 on invalid input, file or scan issues, an unavailable model or
      *     embedder, an embedding failure, or storage failure, 130 when Ctrl+C stopped the run
@@ -127,6 +137,7 @@ public class IndexCommand implements Callable<Integer> {
                 IndexResult result = indexService.index(path, options.withCancellation(cancellation));
                 WarningPrinter.print(spec.commandLine().getErr(), result.warnings());
                 reportIndex(result);
+                printJson(IndexJson.run(result, null));
 
                 if (result.status() == IndexResult.Status.CANCELLED) {
                     spec.commandLine()
@@ -177,84 +188,74 @@ public class IndexCommand implements Callable<Integer> {
             return 0;
         } catch (IndexException failure) {
             WarningPrinter.print(spec.commandLine().getErr(), failure.result().warnings());
-
-            IndexResult.Status status = failure.result().status();
-
-            if (status == IndexResult.Status.MODEL_UNAVAILABLE && failure.getCause() instanceof ModelException model) {
-                reportSemanticFailure(status, model.reason(), model.getMessage());
-
-                return 1;
-            }
-
-            if (status == IndexResult.Status.EMBEDDER_UNAVAILABLE
-                    && failure.getCause() instanceof EmbeddingException embedding) {
-                reportSemanticFailure(status, embedding.reason(), embedding.getMessage());
-
-                return 1;
-            }
-
-            if (status == IndexResult.Status.EMBEDDING_FAILED
-                    && failure.getCause() instanceof EmbeddingException embedding) {
-                // Earlier files stay committed, so the summary shows what this run wrote before it stopped.
-                reportIndex(failure.result());
-                reportSemanticFailure(status, embedding.reason(), embedding.getMessage());
-
-                return 1;
-            }
-
-            reportIndex(failure.result());
-
-            if (failure.storageFailure().isPresent() && failure.getCause() != null) {
-                StorageFailure reason = failure.storageFailure().orElseThrow();
-
-                spec.commandLine()
-                        .getErr()
-                        .println("pecia index: " + status + ": " + reason + ": "
-                                + failure.getCause().getMessage());
-                spec.commandLine()
-                        .getErr()
-                        .println(
-                                storageAdvice(reason, failure.result().context().databasePath()));
-
-                return 1;
-            }
-
-            String detail =
-                    failure.getCause() == null ? "" : ": " + failure.getCause().getMessage();
-            spec.commandLine().getErr().println("pecia index: " + failure.getMessage() + detail);
+            printJson(IndexJson.run(failure.result(), reportFailure(failure)));
 
             return 1;
         } catch (IOException | IllegalArgumentException failure) {
             spec.commandLine().getErr().println("pecia index: " + failure.getMessage());
+            String reason = failure instanceof IOException ? IO_ERROR : QueryCommand.INVALID_INPUT;
+            printJson(IndexJson.failure(IndexJson.error(reason, failure.getMessage())));
 
             return 1;
         }
     }
 
+    /**
+     * Prints a failed run's summary, if it wrote anything, and why it failed; returns the reason and message as a JSON
+     * error.
+     */
+    private Json.JsonObject reportFailure(IndexException failure) {
+        IndexResult.Status status = failure.result().status();
+
+        if (status == IndexResult.Status.MODEL_UNAVAILABLE && failure.getCause() instanceof ModelException model) {
+            return reportSemanticFailure(status, model.reason(), model.getMessage());
+        }
+
+        if (status == IndexResult.Status.EMBEDDER_UNAVAILABLE
+                && failure.getCause() instanceof EmbeddingException embedding) {
+            return reportSemanticFailure(status, embedding.reason(), embedding.getMessage());
+        }
+
+        if (status == IndexResult.Status.EMBEDDING_FAILED
+                && failure.getCause() instanceof EmbeddingException embedding) {
+            // Earlier files stay committed, so the summary shows what this run wrote before it stopped.
+            reportIndex(failure.result());
+
+            return reportSemanticFailure(status, embedding.reason(), embedding.getMessage());
+        }
+
+        reportIndex(failure.result());
+
+        if (failure.storageFailure().isPresent() && failure.getCause() != null) {
+            StorageFailure reason = failure.storageFailure().orElseThrow();
+            String message = failure.getCause().getMessage();
+
+            spec.commandLine().getErr().println("pecia index: " + status + ": " + reason + ": " + message);
+            spec.commandLine()
+                    .getErr()
+                    .println(storageAdvice(reason, failure.result().context().databasePath()));
+
+            return IndexJson.error(reason.name(), message);
+        }
+
+        String detail =
+                failure.getCause() == null ? "" : ": " + failure.getCause().getMessage();
+        spec.commandLine().getErr().println("pecia index: " + failure.getMessage() + detail);
+
+        return IndexJson.error(status.name(), failure.getMessage() + detail);
+    }
+
+    /** Prints a run's JSON document on stdout when {@code --json} asked for one; dry runs print text. */
+    private void printJson(Json.JsonObject document) {
+        if (json && !dryRun) {
+            spec.commandLine().getOut().println(Json.write(document));
+        }
+    }
+
+    /** Prints the run's summary on stdout, unless JSON replaces it, and its issues on stderr. */
     private void reportIndex(IndexResult result) {
-        PrintWriter out = spec.commandLine().getOut();
-
-        out.println("index: " + result.context().databasePath());
-        out.println("candidates: " + result.candidateCount());
-        out.println("indexed: " + result.indexedFiles());
-        out.println("rechunked: " + result.rechunkedFiles());
-        out.println("unchanged: " + result.unchangedFiles());
-        out.println("deleted: " + result.deletedFiles());
-        out.println("chunks: " + result.writtenChunks());
-        out.println("rejected: " + result.rejectedFiles());
-        out.println("failed: " + result.failedFiles());
-
-        ModelOutcome model = result.semanticModel();
-
-        if (model != null) {
-            out.println("model: "
-                    + model.model().name()
-                    + (model.status() == ModelOutcome.Status.DOWNLOADED
-                            ? " downloaded (" + megabytes(model.model().size()) + ")"
-                            : " cached"));
-            out.println("discarded: " + result.discardedEmbeddings());
-            out.println("embedded: " + result.embeddedChunks());
-            out.println("backfilled: " + result.backfilledChunks());
+        if (!json) {
+            printSummary(result);
         }
 
         for (WalkResult.Issue issue : result.scanIssues()) {
@@ -282,6 +283,33 @@ public class IndexCommand implements Callable<Integer> {
                             + issue.reason()
                             + ": "
                             + issue.message());
+        }
+    }
+
+    private void printSummary(IndexResult result) {
+        PrintWriter out = spec.commandLine().getOut();
+
+        out.println("index: " + result.context().databasePath());
+        out.println("candidates: " + result.candidateCount());
+        out.println("indexed: " + result.indexedFiles());
+        out.println("rechunked: " + result.rechunkedFiles());
+        out.println("unchanged: " + result.unchangedFiles());
+        out.println("deleted: " + result.deletedFiles());
+        out.println("chunks: " + result.writtenChunks());
+        out.println("rejected: " + result.rejectedFiles());
+        out.println("failed: " + result.failedFiles());
+
+        ModelOutcome model = result.semanticModel();
+
+        if (model != null) {
+            out.println("model: "
+                    + model.model().name()
+                    + (model.status() == ModelOutcome.Status.DOWNLOADED
+                            ? " downloaded (" + megabytes(model.model().size()) + ")"
+                            : " cached"));
+            out.println("discarded: " + result.discardedEmbeddings());
+            out.println("embedded: " + result.embeddedChunks());
+            out.println("backfilled: " + result.backfilledChunks());
         }
     }
 
@@ -364,11 +392,13 @@ public class IndexCommand implements Callable<Integer> {
                         + file.getParent());
     }
 
-    private void reportSemanticFailure(IndexResult.Status status, Enum<?> reason, String message) {
+    private Json.JsonObject reportSemanticFailure(IndexResult.Status status, Enum<?> reason, String message) {
         PrintWriter err = spec.commandLine().getErr();
 
         err.println("pecia index: " + status + ": " + reason + ": " + message);
         err.println("Run with --no-semantic to build only the lexical index.");
+
+        return IndexJson.error(reason.name(), message);
     }
 
     private static String megabytes(long bytes) {
