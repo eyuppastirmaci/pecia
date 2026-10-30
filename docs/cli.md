@@ -312,3 +312,5 @@ The model is cached per user, so every project shares one copy. `PECIA_CACHE_DIR
 | Windows | `%LOCALAPPDATA%\pecia\cache` |
 
 The cache holds the model, downloaded from Hugging Face and checked against its pinned size and SHA-256 before use, a verified copy of the sqlite-vec library, placed on the first semantic query, and verified copies of ONNX Runtime's native libraries (about 40 MB), placed when the model is first used, so that later runs load them in place instead of unpacking them each time. Semantic search runs on Linux (x64 and arm64), macOS on Apple silicon, and Windows (x64); lexical search runs wherever Java 21 does.
+
+The model download honours a proxy set with the JVM's `https.proxyHost` and `https.proxyPort` properties or, when those are unset, `https_proxy` (or `HTTPS_PROXY`) as `http://host:port`, with hosts to reach directly in `no_proxy` (or `NO_PROXY`). `HTTP_PROXY` is ignored, because the download uses only HTTPS.

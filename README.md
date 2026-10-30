@@ -4,31 +4,26 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 
 ## Status
 
-**Early development.**
+**v0.1.0**, the first release. Pecia searches UTF-8 text documents and source code; later versions are meant to add more formats.
 
-### Available now
-
-- [x] Project initialization and TOML configuration.
-- [x] File discovery with `.gitignore`, include/exclude filters, and `--dry-run`.
-- [x] Validated UTF-8 text extraction and SHA-256 content hashing.
-- [x] Token-budget chunking for text, Markdown, and source code, using a bundled offline tokenizer.
-- [x] SQLite storage with atomic file replacement and synchronized FTS5 indexing.
-- [x] Incremental indexing: skip unchanged files and remove deleted files.
-- [x] Stable chunk identities and versioned extraction, tokenizer, and chunking compatibility.
-- [x] Offline BM25 search with paths, line ranges, scores, optional headings, and snippets.
-- [x] Optional semantic indexing with all-MiniLM-L6-v2, downloaded once on first use, verified, and cached.
-- [x] Vector storage, resumable embedding backfill, and rebuilds when the embedding model changes.
-- [x] Semantic search with sqlite-vec, hybrid BM25 + vector ranking with reciprocal rank fusion, and an `auto` mode.
-- [x] Parallel embedding with bounded memory, and indexing runs that stop cleanly on Ctrl+C.
-- [x] Failure isolation: unreadable folders and files that cannot be read or embedded are reported while everything else is indexed, storage failures say what to do, and an interrupted or killed run recovers on the next run.
-- [x] Reusable Java core API and runnable JAR with `init`, `index`, and `query` commands.
-- [x] JSON output for indexing, queries, and dry runs, with match ranges for highlighting.
-- [x] Detailed dry runs, live progress, grouped run summaries, and coloured, readable terminal output.
-- [x] End-to-end checks of the packaged CLI with the real model, and retrieval-quality metrics gated in CI.
-
-### Planned for v0.1.0
-
-- [ ] Automated macOS, Linux, and Windows release packages with installation documentation.
+- Project initialization and TOML configuration.
+- File discovery with `.gitignore`, include/exclude filters, and `--dry-run`.
+- Validated UTF-8 text extraction and SHA-256 content hashing.
+- Token-budget chunking for text, Markdown, and source code, using a bundled offline tokenizer.
+- SQLite storage with atomic file replacement and synchronized FTS5 indexing.
+- Incremental indexing: skip unchanged files and remove deleted files.
+- Stable chunk identities and versioned extraction, tokenizer, and chunking compatibility.
+- Offline BM25 search with paths, line ranges, scores, optional headings, and snippets.
+- Optional semantic indexing with all-MiniLM-L6-v2, downloaded once on first use, verified, and cached.
+- Vector storage, resumable embedding backfill, and rebuilds when the embedding model changes.
+- Semantic search with sqlite-vec, hybrid BM25 + vector ranking with reciprocal rank fusion, and an `auto` mode.
+- Parallel embedding with bounded memory, and indexing runs that stop cleanly on Ctrl+C.
+- Failure isolation: unreadable folders and files that cannot be read or embedded are reported while everything else is indexed, storage failures say what to do, and an interrupted or killed run recovers on the next run.
+- Reusable Java core API and runnable JAR with `init`, `index`, and `query` commands.
+- JSON output for indexing, queries, and dry runs, with match ranges for highlighting.
+- Detailed dry runs, live progress, grouped run summaries, and coloured, readable terminal output.
+- End-to-end checks of the packaged CLI with the real model, and retrieval-quality metrics gated in CI.
+- Packages for macOS, Linux, and Windows with a bundled Java runtime, installed through Homebrew or Scoop.
 
 ## Install
 
@@ -112,6 +107,45 @@ Run `index` before `query`. From a source build, use `java -jar pecia-cli/build/
 | `query <text>` | Searches the existing index read-only, without rereading source files, and prints the best-matching chunks. Quote text with several words. | `--mode`, `--limit`, `--root`, `--json` |
 
 The [CLI reference](docs/cli.md) covers every option, the output formats, exit codes, failures, configuration, and the model cache.
+
+## Supported files
+
+Pecia indexes UTF-8 text files of up to 5 MiB (`index.max_file_bytes`):
+
+| Kind | Files |
+| --- | --- |
+| Markdown | `.md`, `.markdown` |
+| Plain text | `.txt`, `.rst`, `.adoc`, and files named `README`, `LICENSE`, `LICENCE`, `NOTICE`, `CHANGELOG`, `AUTHORS`, or `CONTRIBUTING` |
+| Source code | `.java`, `.kt`, `.kts`, `.py`, `.pyi`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, `.cts`, `.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx`, `.cs`, `.go`, `.rs`, `.rb`, `.php`, `.swift`, `.sh`, `.bash`, `.zsh`, `.ps1`, `.psm1`, `.bat`, `.cmd`, `.sql`, `.css`, `.scss`, `.sass`, `.less`, and files named `Dockerfile`, `Containerfile`, `Makefile`, or `Jenkinsfile` |
+| Structured text | `.json`, `.jsonc`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, `.properties`, `.xml` |
+
+By default it skips build and dependency folders (such as `build` and `node_modules`), minified files, lock files, and `.env` files; `.pecia.toml` lists these rules and can change them (see [Configuration](docs/cli.md#configuration)). Files that are not valid UTF-8 or hold binary data are reported and left out.
+
+## Privacy and offline use
+
+Pecia runs entirely on your computer. It sends no telemetry and never uploads your files, your index, or your queries.
+
+Its only network access is the first semantic indexing run, which downloads the model from Hugging Face and checks its pinned size and SHA-256. Lexical indexing and every query work offline. Behind a proxy, set `https_proxy`; see [Model cache](docs/cli.md#model-cache).
+
+The index, `.pecia/index.db` in your project, holds copies of the indexed text, so keep it as private as the files themselves. Deleting `.pecia/` removes it.
+
+## Disk usage
+
+| What | Where | Size |
+| --- | --- | --- |
+| Package | where Homebrew, Scoop, or you installed it | about 57 MB |
+| Index | `.pecia/index.db` in each project | grows with the indexed text: Pecia's own 577 source and documentation files (7,119 chunks) take 15 MB, or 29 MB with embeddings |
+| Model | the [model cache](docs/cli.md#model-cache), shared by all projects | about 86 MB, after the first semantic run |
+| ONNX Runtime and sqlite-vec | the model cache | about 38 MB, after the first semantic run |
+
+## Known limitations
+
+- Only the UTF-8 text formats above are indexed; PDF, Office documents, images, audio, and video are not.
+- The semantic model was trained mainly on English text, so it matches other languages, Turkish included, less well by meaning. Lexical search works in any language.
+- A lexical query may have at most 64 space-separated words; a longer one is refused, and a longer hybrid query is ranked by its semantic side alone. A semantic query embeds only its first 256 tokens. Pecia notes when a query is cut or a side is skipped.
+- The index changes only when `index` runs; Pecia does not watch files.
+- Intel Macs have no package, and semantic search runs only where ONNX Runtime does: Linux x64 and arm64, macOS on Apple silicon, and Windows x64.
+- Packages are not signed; see [security prompts](docs/install.md#macos-security-prompts). On Windows, `java -jar` loses query characters outside the system code page, and command hints use PowerShell quoting; see [Installing Pecia](docs/install.md).
 
 ## How it works
 
