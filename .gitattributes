@@ -19,6 +19,9 @@ pecia-core/src/test/resources/retrieval/** -text
 # Legacy index fixtures are the exact binary output of earlier code and must never be converted or merged.
 pecia-core/src/test/resources/storage/legacy/*.db binary
 
+# The packages' shell launcher must keep LF line endings to run.
+pecia-cli/src/package/launcher/pecia text eol=lf
+
 # Gradle wrapper scripts keep the line endings their shells require, and the wrapper JAR is never converted.
 gradlew text eol=lf
 gradlew.bat text eol=crlf

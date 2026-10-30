@@ -67,7 +67,8 @@ class PackagedCliContractIT {
         Result result = cli.run(project, "--version");
 
         assertSuccess(result);
-        assertEquals("pecia 0.1.0-SNAPSHOT\n", result.out());
+        // The build passes the version it wrote into the JAR, so a release tag changes both together.
+        assertEquals("pecia " + System.getProperty("pecia.it.version") + "\n", result.out());
     }
 
     @Test

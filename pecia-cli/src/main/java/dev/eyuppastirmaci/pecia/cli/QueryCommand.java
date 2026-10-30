@@ -36,6 +36,9 @@ import picocli.CommandLine.Parameters;
         mixinStandardHelpOptions = true)
 public class QueryCommand implements Callable<Integer> {
 
+    /** The system property a platform launcher sets to its own command name, such as {@code pecia}. */
+    static final String COMMAND_PROPERTY = "pecia.command";
+
     @Parameters(index = "0", description = "Plain text to search for (quote multiple words).")
     String text;
 
@@ -166,8 +169,8 @@ public class QueryCommand implements Callable<Integer> {
     }
 
     private String indexCommand(String options) {
-        return "Run: java -jar "
-                + shellQuote(launcherJar())
+        return "Run: "
+                + launchCommand()
                 + " index"
                 + options
                 + " "
@@ -244,6 +247,16 @@ public class QueryCommand implements Callable<Integer> {
         String note = shape.filter(QueryShape.IDENTIFIER::equals).isPresent() ? "; identifier query" : "";
 
         return " (" + String.join(", ", sides) + note + ")";
+    }
+
+    /**
+     * Returns how the user started Pecia: the command name a launcher passes in {@value #COMMAND_PROPERTY}, or
+     * {@code java -jar} with the JAR's path.
+     */
+    static String launchCommand() {
+        String command = System.getProperty(COMMAND_PROPERTY, "");
+
+        return command.isBlank() ? "java -jar " + shellQuote(launcherJar()) : command;
     }
 
     private static String launcherJar() {

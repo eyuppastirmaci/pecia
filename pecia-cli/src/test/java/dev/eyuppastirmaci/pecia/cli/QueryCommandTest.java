@@ -187,6 +187,28 @@ class QueryCommandTest {
         assertEquals(2, lines.size());
     }
 
+    @ParameterizedTest
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "pecia | Run: pecia index --semantic",
+                "'  ' | Run: java -jar 'pecia-cli/build/libs/pecia.jar' index --semantic"
+            })
+    void hintsUseTheLauncherCommandNameWhenOneIsGiven(String command, String hint) throws Exception {
+        Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");
+        IndexService.withModelProvider(loader, listener -> TinyModel.cached()).index(root, IndexOptions.semantic(true));
+        System.setProperty(QueryCommand.COMMAND_PROPERTY, command);
+
+        try {
+            assertEquals(3, run("refunds", "--root", root.toString(), "--mode", "semantic"));
+        } finally {
+            System.clearProperty(QueryCommand.COMMAND_PROPERTY);
+        }
+
+        // A blank name, as an unset launcher variable would give, falls back to java -jar.
+        assertEquals(hint + " '" + root + "'", err.toString().lines().toList().get(1));
+    }
+
     @Test
     void autoSaysWhyItSearchedLexicallyWhenTheIndexHasEmbeddings() throws Exception {
         Files.writeString(root.resolve("refunds.txt"), "Refunds are issued to the original card.\n");

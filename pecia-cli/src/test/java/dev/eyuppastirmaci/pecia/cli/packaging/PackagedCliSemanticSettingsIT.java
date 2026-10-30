@@ -63,6 +63,16 @@ class PackagedCliSemanticSettingsIT {
     }
 
     @Test
+    void hintsNameTheLauncherCommandWhenALauncherPassesIt() throws Exception {
+        assertSuccess(cli.run(project, "index"));
+
+        Result query = cli.run(project, List.of("-Dpecia.command=pecia"), "query", "modeneedle", "--mode", "semantic");
+
+        assertEquals(3, query.exitCode());
+        assertTrue(query.err().endsWith("\nRun: pecia index --semantic '" + project + "'\n"), query.err());
+    }
+
+    @Test
     void modeFlagOverridesAConfiguredModeThatTheIndexCannotServe() throws Exception {
         Files.writeString(config, "[search]\nmode = \"hybrid\"\n");
         assertSuccess(cli.run(project, "index"));
