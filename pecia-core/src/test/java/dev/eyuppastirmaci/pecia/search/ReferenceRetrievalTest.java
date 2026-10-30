@@ -10,12 +10,9 @@ import dev.eyuppastirmaci.pecia.config.SearchMode;
 import dev.eyuppastirmaci.pecia.index.IndexOptions;
 import dev.eyuppastirmaci.pecia.index.IndexResult;
 import dev.eyuppastirmaci.pecia.index.IndexService;
-import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.semantic.ModelCache;
 import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
-import dev.eyuppastirmaci.pecia.semantic.VectorExtensionAccess;
 import dev.eyuppastirmaci.pecia.storage.model.EmbeddingCoverage;
-import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -99,13 +96,7 @@ class ReferenceRetrievalTest {
 
         assertEquals(CORPUS.size(), indexed.embeddedChunks());
 
-        Path cache = sandbox.resolve("cache");
-        service = new QueryService(
-                loader,
-                context -> SqliteStorage.openReadOnly(context.databasePath(), context.projectRoot()),
-                () -> new ModelCache().find(),
-                () -> VectorExtensionAccess.library(cache),
-                () -> EmbeddingProfile.minilm());
+        service = ReferenceQueryServices.withVectorExtensionIn(loader, sandbox.resolve("cache"));
     }
 
     @ParameterizedTest(name = "{0} -> {1}")
