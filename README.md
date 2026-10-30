@@ -42,6 +42,19 @@ Packages bundle their own Java runtime, so no Java installation is needed.
 
 [Installing Pecia](docs/install.md) covers archives from [Releases](https://github.com/eyuppastirmaci/pecia/releases), upgrades, security prompts, and running the JAR with Java 21 or newer. Intel Macs have no package, because ONNX Runtime does not support them.
 
+### Install from source
+
+With Git and JDK 21, clone the repository and build the CLI JAR:
+
+```
+git clone https://github.com/eyuppastirmaci/pecia.git
+cd pecia
+./gradlew :pecia-cli:shadowJar
+java -jar pecia-cli/build/libs/pecia.jar --version
+```
+
+Use `java -jar pecia-cli/build/libs/pecia.jar` wherever the docs say `pecia`. To get a package that runs without Java instead, run `./gradlew :pecia-cli:packageArchive`, extract the archive it writes to `pecia-cli/build/package/dist`, and add its `bin` folder to `PATH`. On Windows, use `gradlew.bat`. [CONTRIBUTING.md](CONTRIBUTING.md) covers the tests and checks.
+
 ## Usage
 
 ### Quick start
