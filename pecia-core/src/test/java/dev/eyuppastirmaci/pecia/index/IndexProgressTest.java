@@ -9,9 +9,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigLoader;
 import dev.eyuppastirmaci.pecia.config.PeciaConfigParser;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
+import dev.eyuppastirmaci.pecia.semantic.DownloadProgressListener;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.semantic.ModelException;
+import dev.eyuppastirmaci.pecia.semantic.ModelOutcome;
 import dev.eyuppastirmaci.pecia.semantic.ModelProvider;
+import dev.eyuppastirmaci.pecia.semantic.SemanticModel;
 import dev.eyuppastirmaci.pecia.storage.sqlite.SqliteStorage;
 import dev.eyuppastirmaci.pecia.testing.IndexDump;
 import dev.eyuppastirmaci.pecia.testing.LexicalTestCorpus;
@@ -152,6 +155,63 @@ class IndexProgressTest {
         assertEquals(List.of(IndexProgress.Phase.SCAN, IndexProgress.Phase.FILES), phases());
         assertEquals(0, last(IndexProgress.Phase.FILES).completed());
         assertEquals(phases(), timed(result));
+    }
+
+    @Test
+    void aDownloadReportsItsBytesInTheModelPhaseAndToTheCaller() throws Exception {
+        long size = 1_000_000;
+        models = listener -> {
+            listener.downloading(SemanticModel.MINILM, root.resolve("model.onnx"));
+
+            // The run's own listener hears bytes, as the model cache tells any progress listener.
+            DownloadProgressListener bytes = (DownloadProgressListener) listener;
+
+            for (long received = 250_000; received <= size; received += 250_000) {
+                bytes.received(received, size);
+            }
+
+            ModelOutcome cached = TinyModel.cached();
+            return new ModelOutcome(ModelOutcome.Status.DOWNLOADED, cached.model(), cached.file());
+        };
+        List<String> heard = new ArrayList<>();
+        IndexOptions options = listening(IndexOptions.semantic(true))
+                .withDownloadListener(new DownloadProgressListener() {
+                    @Override
+                    public void downloading(SemanticModel model, Path file) {
+                        heard.add("downloading");
+                    }
+
+                    @Override
+                    public void received(long received, long total) {
+                        heard.add(received + "/" + total);
+                    }
+                });
+
+        service().index(root, options);
+
+        assertWellFormed();
+        assertEquals(
+                List.of("downloading", "250000/1000000", "500000/1000000", "750000/1000000", "1000000/1000000"), heard);
+        List<IndexProgress> model = of(IndexProgress.Phase.MODEL);
+        assertEquals(OptionalLong.empty(), model.getFirst().total());
+        assertEquals(
+                List.of("UPDATED 250000", "UPDATED 500000", "UPDATED 750000", "UPDATED 1000000", "FINISHED 1000000"),
+                model.subList(1, model.size()).stream()
+                        .map(update -> update.event() + " " + update.completed())
+                        .toList());
+        assertTrue(model.subList(1, model.size()).stream()
+                .allMatch(update -> update.total().equals(OptionalLong.of(size))));
+    }
+
+    @Test
+    void aCachedModelReportsOnlyTheStartAndEndOfTheModelPhase() throws Exception {
+        service().index(root, listening(IndexOptions.semantic(true)));
+
+        assertEquals(
+                List.of("STARTED 0 OptionalLong.empty", "FINISHED 0 OptionalLong.empty"),
+                of(IndexProgress.Phase.MODEL).stream()
+                        .map(update -> update.event() + " " + update.completed() + " " + update.total())
+                        .toList());
     }
 
     @Test
@@ -386,7 +446,10 @@ class IndexProgressTest {
                 IndexProgress current = updates.get(index);
                 assertTrue(current.completed() >= previous.completed(), updates.toString());
                 assertTrue(current.elapsed().compareTo(previous.elapsed()) >= 0, updates.toString());
-                assertEquals(previous.total(), current.total(), updates.toString());
+                // A total that becomes known, such as a download's size, never changes after that.
+                if (previous.total().isPresent()) {
+                    assertEquals(previous.total(), current.total(), updates.toString());
+                }
 
                 if (index < updates.size() - 1) {
                     assertEquals(IndexProgress.Event.UPDATED, current.event(), updates.toString());

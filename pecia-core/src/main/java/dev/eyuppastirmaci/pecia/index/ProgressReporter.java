@@ -63,7 +63,7 @@ final class ProgressReporter {
     final class Phase {
 
         private final IndexProgress.Phase phase;
-        private final OptionalLong total;
+        private OptionalLong total;
         private final long phaseStarted;
         private long lastReport;
         private long completed;
@@ -89,6 +89,17 @@ final class ProgressReporter {
             if (now - lastReport >= UPDATE_INTERVAL.toNanos()) {
                 lastReport = now;
                 report(IndexProgress.Event.UPDATED, now);
+            }
+        }
+
+        /**
+         * Records how far the phase has come of a total it learned only now, such as a download's size, and reports it
+         * unless it reported less than the interval ago.
+         */
+        void update(long completed, long total) {
+            if (!finished) {
+                this.total = OptionalLong.of(total);
+                update(completed);
             }
         }
 

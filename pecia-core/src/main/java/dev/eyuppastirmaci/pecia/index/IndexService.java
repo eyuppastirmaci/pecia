@@ -7,6 +7,7 @@ import dev.eyuppastirmaci.pecia.content.ExtractionException;
 import dev.eyuppastirmaci.pecia.project.ProjectContext;
 import dev.eyuppastirmaci.pecia.project.ProjectContextResolver;
 import dev.eyuppastirmaci.pecia.semantic.DownloadListener;
+import dev.eyuppastirmaci.pecia.semantic.DownloadProgressListener;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingException;
 import dev.eyuppastirmaci.pecia.semantic.EmbeddingProfile;
 import dev.eyuppastirmaci.pecia.semantic.ModelCache;
@@ -483,7 +484,8 @@ public final class IndexService {
         FileIndexer indexer = new FileIndexer(context);
         ProgressReporter.Phase loading =
                 semanticEnabled ? progress.start(IndexProgress.Phase.MODEL, OptionalLong.empty()) : null;
-        ModelOutcome semanticModel = semanticEnabled ? ensureModel(context, candidates, options, progress) : null;
+        ModelOutcome semanticModel =
+                semanticEnabled ? ensureModel(context, candidates, options, progress, loading) : null;
         int workers = context.loadedConfig().config().embedConcurrency();
         // Semantic classes are created only for a semantic run; the profile comes first so nothing can fail between
         // opening the embedder and the try block that closes it.
@@ -614,11 +616,31 @@ public final class IndexService {
     }
 
     private ModelOutcome ensureModel(
-            ProjectContext context, List<Path> candidates, IndexOptions options, ProgressReporter progress)
+            ProjectContext context,
+            List<Path> candidates,
+            IndexOptions options,
+            ProgressReporter progress,
+            ProgressReporter.Phase loading)
             throws IndexException {
         // Semantic classes are reached only here, so lexical runs never initialize them.
-        DownloadListener listener =
+        DownloadListener caller =
                 options.downloadListener() == null ? DownloadListener.NONE : options.downloadListener();
+        // The caller hears the download as before, and the model phase reports its bytes.
+        DownloadListener listener = new DownloadProgressListener() {
+            @Override
+            public void downloading(SemanticModel model, Path file) {
+                caller.downloading(model, file);
+            }
+
+            @Override
+            public void received(long received, long size) {
+                if (caller instanceof DownloadProgressListener progress) {
+                    progress.received(received, size);
+                }
+
+                loading.update(received, size);
+            }
+        };
 
         try {
             return models.ensure(listener);

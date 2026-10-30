@@ -22,6 +22,7 @@ import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
@@ -87,6 +88,65 @@ class ModelCacheTest {
         assertArrayEquals(PAYLOAD, Files.readAllBytes(outcome.file()));
         assertEquals(1, requests.get());
         assertEquals(List.of(".lock", "model.bin"), entries());
+    }
+
+    @Test
+    void aDownloadReportsItsBytesUpToTheSizeAndACachedModelReportsNone() throws Exception {
+        List<String> heard = new ArrayList<>();
+        DownloadProgressListener listener = new DownloadProgressListener() {
+            @Override
+            public void downloading(SemanticModel downloading, Path file) {
+                heard.add("downloading " + file.getFileName());
+            }
+
+            @Override
+            public void received(long received, long size) {
+                heard.add(received + "/" + size);
+            }
+        };
+
+        cache().ensure(listener);
+
+        assertEquals("downloading model.bin", heard.getFirst());
+        List<Long> received = heard.subList(1, heard.size()).stream()
+                .map(update -> Long.parseLong(update.substring(0, update.indexOf('/'))))
+                .toList();
+        assertTrue(received.size() > 1, heard.toString());
+        assertEquals((long) PAYLOAD.length, received.getLast());
+        assertTrue(heard.subList(1, heard.size()).stream().allMatch(update -> update.endsWith("/" + PAYLOAD.length)));
+
+        for (int index = 1; index < received.size(); index++) {
+            assertTrue(received.get(index) > received.get(index - 1), received.toString());
+        }
+
+        heard.clear();
+        cache().ensure(listener);
+
+        assertEquals(List.of(), heard);
+    }
+
+    @Test
+    void anInterruptedTransferNeverReportsTheWholeSize() throws Exception {
+        behavior = exchange -> {
+            exchange.sendResponseHeaders(200, PAYLOAD.length);
+            exchange.getResponseBody().write(PAYLOAD, 0, PAYLOAD.length / 2);
+            exchange.getResponseBody().flush();
+            exchange.close();
+        };
+        List<Long> received = new ArrayList<>();
+        DownloadProgressListener listener = new DownloadProgressListener() {
+            @Override
+            public void downloading(SemanticModel downloading, Path file) {}
+
+            @Override
+            public void received(long bytes, long size) {
+                received.add(bytes);
+            }
+        };
+
+        assertThrows(ModelException.class, () -> cache().ensure(listener));
+
+        assertTrue(received.stream().allMatch(bytes -> bytes <= PAYLOAD.length / 2), received.toString());
     }
 
     @Test

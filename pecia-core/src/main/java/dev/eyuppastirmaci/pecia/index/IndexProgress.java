@@ -10,7 +10,7 @@ import java.util.OptionalLong;
  * and when it finishes, also when the run fails or is cancelled during it.
  *
  * @param completed items of the phase done so far
- * @param total items the phase processes, when known
+ * @param total items the phase processes, when known; it stays the same within a phase once known
  * @param elapsed time since the phase started
  * @param files what happened to the candidates so far; present exactly for {@link Phase#FILES}
  */
@@ -49,7 +49,10 @@ public record IndexProgress(
     public enum Phase {
         /** Finding the candidates; items are files found, and the total is unknown. */
         SCAN,
-        /** Making the semantic model available and opening its embedder; semantic runs only. */
+        /**
+         * Making the semantic model available and opening its embedder; semantic runs only. When the model is
+         * downloaded, items are its bytes, and the total becomes known when the download starts.
+         */
         MODEL,
         /**
          * Reading, chunking, and writing each candidate; items are candidates. In a semantic run a file is done once
