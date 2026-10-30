@@ -140,7 +140,7 @@ Semantic indexing embeds each chunk with [all-MiniLM-L6-v2](https://huggingface.
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build Pecia, run its tests and checks, and publish a release.
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build Pecia, run its tests and checks, and publish a release. The [architecture decision records](docs/adr/README.md) explain the core design choices.
 
 ## License
 
