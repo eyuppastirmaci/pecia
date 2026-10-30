@@ -30,9 +30,10 @@ class DocumentationTest {
     private static final Path ROOT = Path.of("..");
     // User documents that name CLI options; CONTRIBUTING.md names Gradle options instead.
     private static final List<String> USER_DOCUMENTS =
-            List.of("README.md", "docs/cli.md", "docs/install.md", "docs/library.md");
+            List.of("README.md", "README.tr.md", "docs/cli.md", "docs/install.md", "docs/library.md");
     private static final Pattern FENCED_BLOCK = Pattern.compile("(?ms)^```[^\\n]*\\n(.*?)^```");
-    private static final Pattern LINK = Pattern.compile("\\]\\(([^)\\s]+)\\)");
+    // Markdown links, and the href and src attributes of the HTML that the READMEs use for images and language links.
+    private static final Pattern LINK = Pattern.compile("\\]\\(([^)\\s]+)\\)|(?:href|src)=\"([^\"]+)\"");
     private static final Pattern HEADING = Pattern.compile("(?m)^#{1,6} (.+)$");
     private static final Pattern INLINE_CODE = Pattern.compile("`([^`\\n]+)`");
     private static final Pattern OPTION = Pattern.compile("(?<![\\w-])--(\\[no-])?([a-z][a-z-]*)");
@@ -46,7 +47,7 @@ class DocumentationTest {
             Matcher link = LINK.matcher(text);
 
             while (link.find()) {
-                String target = link.group(1);
+                String target = link.group(1) != null ? link.group(1) : link.group(2);
 
                 if (target.matches("[a-z]+:.*")) {
                     continue;

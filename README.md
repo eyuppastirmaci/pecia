@@ -2,6 +2,8 @@
   <img src="docs/assets/banner-dark.png" alt="Pecia: local search for your files" width="100%">
 </p>
 
+<p align="center"><b>English</b> · <a href="README.tr.md">Türkçe</a></p>
+
 <p align="center">
   <img src="docs/assets/query-demo.png" alt="pecia query &quot;stop a thread pool cleanly&quot; finds the Graceful Shutdown and Cleanup chapter of the Rust book by meaning" width="100%">
 </p>
@@ -33,7 +35,7 @@ Pecia is a local command-line tool that turns a folder of documents and source c
 
 ### Planned
 
-- A desktop app with a graphical interface, built on the same core.
+- A desktop app with a graphical interface.
 - Language-aware chunking for source code, splitting at functions and classes instead of lines and indentation.
 - Chunking tuned to more text formats, such as JSON, YAML, and reStructuredText.
 - More file types: PDF, Word and Excel documents, and images.
