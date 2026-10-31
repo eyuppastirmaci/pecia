@@ -35,7 +35,6 @@ Pecia, bir klasördeki belgeleri ve kaynak kodunu aranabilir bir indekse dönü�
 
 ### v0.2.0 için planlananlar
 
-- Grafik arayüzlü bir masaüstü uygulaması.
 - Terminalde tıklanınca dosyayı açan, destekleyen editörlerde doğrudan bulunan satıra giden sonuç yolları.
 - Komutlar ve seçenekler için kabuk otomatik tamamlama.
 - Bir projenin indeksini özetleyen `pecia status` komutu: dosyalar, chunk'lar, embedding'ler, boyut ve son çalıştırma.
@@ -43,19 +42,33 @@ Pecia, bir klasördeki belgeleri ve kaynak kodunu aranabilir bir indekse dönü�
 - Her sonucun çevresinden birkaç satır bağlam.
 - Dosyaya göre gruplanmış sonuçlar; böylece tek bir dosyanın eşleşmeleri listeyi doldurmaz.
 
+### v0.3.0 için planlananlar
+
+- Değiştirilebilir embedding modelleri: Türkçe ve diğer dillerde anlamdan aramayı iyileştiren çok dilli modeller dahil, denenmiş modeller listesinden birini seçmek ya da Pecia'ya bilgisayarınızda zaten bulunan bir modeli göstermek. Listeye hangi modellerin gireceğine herkese açık arama kıyaslamaları yön verir.
+
+### v0.4.0 için planlananlar
+
+- EmbeddingGemma 2 gibi çok modlu bir embedding modeliyle resim, ses ve videoda arama; okunabilir önizlemeler için metin tanıma ve yazıya çevirme.
+
+### v0.5.0 için planlananlar
+
+- İndeksleri yönetmek, arama yapmak ve sonuçları önizleyip açmak için grafik arayüzlü bir masaüstü uygulaması.
+
 ### Daha sonra planlananlar
 
 - Kaynak kodunu satır ve girinti yerine fonksiyon ve sınıf sınırlarından bölen, dile duyarlı bölme.
 - JSON, YAML ve reStructuredText gibi daha fazla metin biçimine göre ayarlanmış bölme.
-- Daha fazla dosya türü: PDF, Word ve Excel belgeleri ve resimler.
+- Daha fazla belge türü: PDF, Word, Excel, PowerPoint ve HTML sayfaları.
 - Yapay zekâ agent'larının bir projeyi Pecia üzerinden arayabilmesi için bir MCP sunucusu.
 - Kelime biçimlerini eşleştirme; böylece `refunds` araması `refund` kelimesini de bulur.
 - `PaymentService` gibi kod adlarını arama için kelimelere ayırma.
+- Bir fonksiyonun ya da sınıfın nerede tanımlandığını ve nerelerde kullanıldığını bulma.
 - Hiçbir sonuç yeterince iyi eşleşmediğinde bunu belirtme.
 - Dosyalar değiştikçe indeksi güncelleyen bir izleme modu.
 - Terminalde interaktif bir arama ekranı.
-- Türkçe ve diğer dillerde anlamdan aramayı iyileştiren, isteğe bağlı çok dilli bir model.
 - Verilen bir dosyaya en çok benzeyen belgeleri bulma.
+- Birden fazla projede aynı anda arama.
+- Yerel bir dil modelinin, kaynak dosyaları göstererek soruları yanıtlaması.
 - Herkese açık arama kıyaslamalarında (BEIR, MTEB, CodeSearchNet ve CoIR) alınan sonuçların, referans değerlerinin yanında yayımlanması.
 
 ## Kurulum
