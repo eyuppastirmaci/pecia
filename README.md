@@ -35,7 +35,6 @@ Pecia is a local search tool that turns a folder of documents and source code in
 
 ### Planned for v0.2.0
 
-- A desktop app with a graphical interface.
 - Clickable result paths in the terminal that open the file, at the matching line in editors that support it.
 - Shell completion for commands and options.
 - A `pecia status` command that summarises a project's index: files, chunks, embeddings, size, and the last run.
@@ -43,19 +42,33 @@ Pecia is a local search tool that turns a folder of documents and source code in
 - A few lines of surrounding context around each result.
 - Results grouped by file, so one file's matches no longer fill the list.
 
+### Planned for v0.3.0
+
+- Pluggable embedding models: choose one from a list of tested models, including multilingual models for better search by meaning in Turkish and other languages, or point Pecia at a model already on your machine. Public retrieval benchmarks guide which models join the list.
+
+### Planned for v0.4.0
+
+- Search in images, audio, and video with a multimodal embedding model such as EmbeddingGemma 2, with text recognition and transcription for readable previews.
+
+### Planned for v0.5.0
+
+- A desktop app with a graphical interface to manage indexes, search, and preview and open results.
+
 ### Planned later
 
 - Language-aware chunking for source code, splitting at functions and classes instead of lines and indentation.
 - Chunking tuned to more text formats, such as JSON, YAML, and reStructuredText.
-- More file types: PDF, Word and Excel documents, and images.
+- More document types: PDF, Word, Excel, PowerPoint, and HTML pages.
 - An MCP server, so AI agents can search a project through Pecia.
 - Matching word forms, so `refunds` also finds `refund`.
 - Splitting code names such as `PaymentService` into words for search.
+- Finding where a function or class is defined and used.
 - Saying so when no result is a confident match.
 - A watch mode that updates the index as files change.
 - An interactive search screen in the terminal.
-- An optional multilingual model for better search by meaning in Turkish and other languages.
 - Finding the documents most similar to a given file.
+- Searching several projects at once.
+- Answers to questions from a local language model, citing the files they come from.
 - Results on public retrieval benchmarks (BEIR, MTEB, CodeSearchNet, and CoIR), published next to their reference numbers.
 
 ## Install
